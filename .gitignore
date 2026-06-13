@@ -3,4 +3,3 @@ __pycache__/
 *.pyo
 .env
 *.log
-~/.config/yakuda-connect/
