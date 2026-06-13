@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=yakuda-connect
+Comment=WiVRn Manager für Linux VR
+Exec=/opt/yakuda-connect/starter.py
+Icon=/opt/yakuda-connect/assets/yakuda_icon.png
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupWMClass=yakuda-connect
