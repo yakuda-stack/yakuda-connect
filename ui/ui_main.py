@@ -22,6 +22,7 @@ class Ui_MainWindow(object):
         if os.path.exists(icon_path):
             main_window.setWindowIcon(QIcon(icon_path))
         main_window.resize(1050, 850)
+        main_window.setMinimumSize(800, 600)
 
         # --- ZENTRALES STYLESHEET FÜR EIN MODERNES DESIGN ---
         main_window.setStyleSheet("""
@@ -101,6 +102,8 @@ class Ui_MainWindow(object):
         # Sidebar
         self.sidebar = QListWidget()
         self.sidebar.setFixedWidth(200)
+        from PySide6.QtWidgets import QSizePolicy
+        self.sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.sidebar.addItems([
             "Installation",
             "Dashboard",
@@ -251,7 +254,7 @@ class Ui_MainWindow(object):
 
         # Auf 350 erhöht, damit die Box groß genug nach unten gezogen wird
         # und alle Punkte (Backups + Performance) gleichzeitig reinpassen!
-        self.txt_free_info.setMinimumHeight(350)
+        self.txt_free_info.setMinimumHeight(150)
 
         # Scrollbalken rigoros abschalten
         self.txt_free_info.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -284,7 +287,18 @@ class Ui_MainWindow(object):
 
 
     def setup_dashboard_tab(self):
-        layout = QVBoxLayout(self.tab_dashboard)
+        from PySide6.QtWidgets import QScrollArea, QSizePolicy
+
+        scroll = QScrollArea(self.tab_dashboard)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        outer = QVBoxLayout(self.tab_dashboard)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+        container = QWidget()
+        scroll.setWidget(container)
+        layout = QVBoxLayout(container)
         layout.setContentsMargins(20, 20, 20, 20)
 
         version_layout = QHBoxLayout()
@@ -325,6 +339,44 @@ class Ui_MainWindow(object):
         """)
         server_layout.addWidget(self.btn_port_status)
         layout.addWidget(server_group)
+
+        # --- APK INSTALLATION ---
+        apk_group = QGroupBox("WiVRn APK — Headset Installation (Meta Quest / Pico)")
+        apk_layout = QVBoxLayout(apk_group)
+
+        apk_info = QLabel("Installiert die WiVRn-App direkt per USB auf dein Headset. USB-Debugging muss aktiviert sein.")
+        apk_info.setStyleSheet("color: #7b88a1; font-size: 11px; font-style: italic;")
+        apk_info.setWordWrap(True)
+        apk_layout.addWidget(apk_info)
+
+        apk_row = QHBoxLayout()
+        self.btn_apk_install = QPushButton("⬇ APK herunterladen & installieren")
+        self.btn_apk_install.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
+                          padding: 7px 14px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
+        """)
+
+        self.btn_apk_cancel = QPushButton("Abbrechen")
+        self.btn_apk_cancel.setVisible(False)
+        self.btn_apk_cancel.setStyleSheet("""
+            QPushButton { background-color: #bf616a; color: white; font-weight: bold;
+                          padding: 7px 14px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #d08770; }
+        """)
+
+        apk_row.addWidget(self.btn_apk_install)
+        apk_row.addWidget(self.btn_apk_cancel)
+        apk_row.addStretch()
+        apk_layout.addLayout(apk_row)
+
+        self.lbl_apk_status = QLabel("")
+        self.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
+        self.lbl_apk_status.setWordWrap(True)
+        apk_layout.addWidget(self.lbl_apk_status)
+
+        layout.addWidget(apk_group)
 
         tracking_group = QGroupBox("Tracking & Display-Optionen")
         tracking_layout = QVBoxLayout(tracking_group)
@@ -387,7 +439,7 @@ class Ui_MainWindow(object):
         headset_layout = QHBoxLayout(self.headset_group)
 
         self.list_headsets = QListWidget()
-        self.list_headsets.setFixedHeight(150)
+        self.list_headsets.setMinimumHeight(80)
         self.list_headsets.setStyleSheet("""
             QListWidget { background-color: #1e222a; color: #d8dee9; border: 1px solid #3b4252; border-radius: 4px; }
             QListWidget::item { padding: 6px; border-bottom: 1px solid #2e3440; }

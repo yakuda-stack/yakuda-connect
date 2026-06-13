@@ -50,6 +50,104 @@ class ToolsStatusWorker(QThread):
             self.result_signal.emit(key, installed, version, has_update)
 
 
+class ApkWorker(QThread):
+    """Lädt die neueste WiVRn APK von GitHub und installiert sie per adb."""
+    status_signal  = QtSignal(str)   # Statustext
+    finished_signal = QtSignal(bool) # Erfolg/Fehler
+
+    GITHUB_API = "https://api.github.com/repos/WiVRn/WiVRn/releases/latest"
+    APK_CACHE  = os.path.expanduser("~/.cache/yakuda-connect/wivrn-latest.apk")
+
+    def __init__(self):
+        super().__init__()
+        self._cancel = False
+
+    def cancel(self):
+        self._cancel = True
+
+    def run(self):
+        import urllib.request
+        import urllib.error
+
+        try:
+            # 1. Neueste Release-Info von GitHub holen
+            self.status_signal.emit("Suche neueste WiVRn Version...")
+            req = urllib.request.Request(self.GITHUB_API,
+                headers={"User-Agent": "yakuda-connect"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+
+            # APK-Asset finden (endet auf -release.apk)
+            apk_url = None
+            tag = data.get("tag_name", "unbekannt")
+            for asset in data.get("assets", []):
+                if asset["name"].endswith("-release.apk"):
+                    apk_url = asset["browser_download_url"]
+                    break
+
+            if not apk_url:
+                self.status_signal.emit("Fehler: Keine APK im aktuellen Release gefunden.")
+                self.finished_signal.emit(False)
+                return
+
+            self.status_signal.emit(f"Gefunden: WiVRn {tag} — starte Download...")
+
+            # 2. APK herunterladen
+            os.makedirs(os.path.dirname(self.APK_CACHE), exist_ok=True)
+            with urllib.request.urlopen(apk_url, timeout=60) as r, \
+                 open(self.APK_CACHE, "wb") as f:
+                total = int(r.headers.get("Content-Length", 0))
+                downloaded = 0
+                while True:
+                    if self._cancel:
+                        self.status_signal.emit("Download abgebrochen.")
+                        self.finished_signal.emit(False)
+                        return
+                    chunk = r.read(65536)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        mb_done = downloaded / 1_000_000
+                        mb_total = total / 1_000_000
+                        self.status_signal.emit(
+                            f"Lade herunter... {mb_done:.1f} MB / {mb_total:.1f} MB")
+
+            # 3. ADB-Gerät suchen
+            self.status_signal.emit("Suche verbundenes Headset per USB...")
+            res = subprocess.run(["adb", "devices"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+            devices = [l.split()[0] for l in res.stdout.splitlines()
+                       if l.strip() and not l.startswith("List") and "device" in l]
+
+            if not devices:
+                self.status_signal.emit(
+                    "Kein Headset gefunden! USB-Debugging aktivieren und Kabel prüfen.")
+                self.finished_signal.emit(False)
+                return
+
+            serial = devices[0]
+            self.status_signal.emit(f"Headset gefunden: {serial} — installiere APK...")
+
+            # 4. APK installieren
+            res = subprocess.run(
+                ["adb", "-s", serial, "install", "-r", self.APK_CACHE],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+            if res.returncode == 0:
+                self.status_signal.emit(f"✔ WiVRn {tag} erfolgreich installiert!")
+                self.finished_signal.emit(True)
+            else:
+                self.status_signal.emit(f"Fehler bei adb install:\n{res.stderr.strip()}")
+                self.finished_signal.emit(False)
+
+        except Exception as e:
+            self.status_signal.emit(f"Fehler: {e}")
+            self.finished_signal.emit(False)
+
+
 class VRApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -151,6 +249,11 @@ class VRApp(QMainWindow):
         self.ui.btn_start.clicked.connect(self.start_wivrn_server)
         self.ui.btn_stop.clicked.connect(self.stop_wivrn_server)
         self.ui.btn_port_status.clicked.connect(self.open_port_9757_firewall)
+
+        # APK Installation
+        self.ui.btn_apk_install.clicked.connect(self.start_apk_install)
+        self.ui.btn_apk_cancel.clicked.connect(self.cancel_apk_install)
+        self._apk_worker = None
 
         # Autosave Trigger
         self.ui.chk_hand_tracking.clicked.connect(self.trigger_auto_save)
@@ -354,6 +457,43 @@ class VRApp(QMainWindow):
             card["btn_install"].setText("Erneut versuchen")
             card["btn_install"].setEnabled(True)
 
+    def start_apk_install(self):
+        """Startet Download und Installation der WiVRn APK."""
+        if self._apk_worker and self._apk_worker.isRunning():
+            return
+
+        # Prüfen ob adb verfügbar ist
+        if not shutil.which("adb"):
+            self.ui.lbl_apk_status.setText(
+                "⚠ android-tools nicht installiert — gehe zu Tools und installiere es zuerst.")
+            self.ui.lbl_apk_status.setStyleSheet("color: #ebcb8b; font-size: 11px; font-weight: bold;")
+            return
+
+        self.ui.btn_apk_install.setEnabled(False)
+        self.ui.btn_apk_cancel.setVisible(True)
+        self.ui.lbl_apk_status.setText("Starte...")
+        self.ui.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
+
+        self._apk_worker = ApkWorker()
+        self._apk_worker.status_signal.connect(self.ui.lbl_apk_status.setText)
+        self._apk_worker.finished_signal.connect(self._on_apk_finished)
+        self._apk_worker.start()
+
+    def cancel_apk_install(self):
+        if self._apk_worker:
+            self._apk_worker.cancel()
+
+    def _on_apk_finished(self, success):
+        self.ui.btn_apk_install.setEnabled(True)
+        self.ui.btn_apk_cancel.setVisible(False)
+        if success:
+            self.ui.lbl_apk_status.setStyleSheet(
+                "color: #a3be8c; font-size: 11px; font-weight: bold;")
+        else:
+            self.ui.lbl_apk_status.setStyleSheet(
+                "color: #bf616a; font-size: 11px;")
+        self._apk_worker = None
+
     def trigger_vr_backup(self):
         if create_vr_backup():
             QMessageBox.information(self, "Backup erfolgreich", "Die VR-Umgebung wurde erfolgreich gesichert!")
@@ -516,16 +656,28 @@ class VRApp(QMainWindow):
                 btn = QPushButton("Browse...")
                 btn.setFixedWidth(80)
 
+                # Debug-Checkbox
+                from PySide6.QtWidgets import QCheckBox
+                chk_debug = QCheckBox("Debug")
+                chk_debug.setToolTip("Terminal anzeigen (für OSC-Programme zum Debuggen)")
+                chk_debug.setFixedWidth(65)
+                chk_debug.setStyleSheet("color: #ebcb8b; font-size: 11px;")
+
                 combo.currentTextChanged.connect(lambda text, le=inp, bb=btn: le.setReadOnly(False) if text == "Custom Path" else bb.setEnabled(False))
                 inp.textChanged.connect(self.trigger_auto_save)
+                chk_debug.stateChanged.connect(self.trigger_auto_save)
                 btn.clicked.connect(lambda checked, le=inp: self.browse_custom_app_for_row(le))
 
                 row_layout.addWidget(lbl)
                 row_layout.addWidget(combo)
                 row_layout.addWidget(inp)
                 row_layout.addWidget(btn)
+                row_layout.addWidget(chk_debug)
                 self.ui.autostart_container_layout.addLayout(row_layout)
-                self.autostart_rows.append({"label": lbl, "combo": combo, "input": inp, "btn": btn, "layout": row_layout})
+                self.autostart_rows.append({
+                    "label": lbl, "combo": combo, "input": inp,
+                    "btn": btn, "chk_debug": chk_debug, "layout": row_layout
+                })
         elif target_count < current_count:
             for _ in range(current_count - target_count):
                 row = self.autostart_rows.pop()
@@ -534,6 +686,7 @@ class VRApp(QMainWindow):
                 row['input'].deleteLater()
                 row['btn'].deleteLater()
                 row['label'].deleteLater()
+                row['chk_debug'].deleteLater()
 
         if not self.ui.num_apps.signalsBlocked(): self.trigger_auto_save()
 
@@ -545,7 +698,11 @@ class VRApp(QMainWindow):
 
     def trigger_auto_save(self):
         if hasattr(self, 'is_loading') and self.is_loading: return
-        apps_data = [{"type": r["combo"].currentText(), "cmd": r["input"].text()} for r in self.autostart_rows]
+        apps_data = [{
+            "type":  r["combo"].currentText(),
+            "cmd":   r["input"].text(),
+            "debug": r["chk_debug"].isChecked()
+        } for r in self.autostart_rows]
         save_all_settings(
             self.ui.chk_hand_tracking.isChecked(),
             self.ui.chk_fbt.isChecked(),
@@ -587,6 +744,7 @@ class VRApp(QMainWindow):
             if i < len(self.autostart_rows):
                 self.autostart_rows[i]["combo"].setCurrentText(app.get("type", "Custom Path"))
                 self.autostart_rows[i]["input"].setText(app.get("cmd", ""))
+                self.autostart_rows[i]["chk_debug"].setChecked(app.get("debug", False))
 
         self.ui.chk_hand_tracking.blockSignals(False)
         self.ui.chk_fbt.blockSignals(False)
@@ -644,7 +802,23 @@ class VRApp(QMainWindow):
 
         for row in self.autostart_rows:
             cmd = row["input"].text().strip()
-            if cmd: subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            if not cmd:
+                continue
+            if row["chk_debug"].isChecked():
+                # Mit sichtbarem Terminal starten
+                from install_worker import find_terminal
+                terminal, flags = find_terminal()
+                if terminal:
+                    subprocess.Popen(
+                        [terminal] + flags + ["bash", "-c", f"{cmd}; echo ''; echo '[Debug] Prozess beendet. Fenster schließen zum Beenden.'; read"],
+                        start_new_session=True
+                    )
+                else:
+                    # Kein Terminal gefunden — still starten als Fallback
+                    subprocess.Popen(cmd, shell=True, start_new_session=True)
+            else:
+                subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
 
         self.server_process = subprocess.Popen(["wivrn-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         QTimer.singleShot(500, self.refresh_headset_list)

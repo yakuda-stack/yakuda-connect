@@ -93,6 +93,14 @@ TOOLS_APPS = [
         "start_cmd": "intiface-central",
         "link":      "https://intiface.com/#intiface-central",
     },
+    {
+        "key":       "android-tools",
+        "name":      "android-tools",
+        "pkg":       "android-tools",
+        "desc":      "VR app per kabel auf VR installieren basiert auf andoid",
+        "start_cmd": "",
+        "link":      "https://developer.android.com/tools?hl=de",
+    },
 ]
 
 
