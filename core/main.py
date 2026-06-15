@@ -20,6 +20,7 @@ from config_manager import load_saved_settings, save_all_settings
 from streaming_tab import StreamingTab
 from backup_manager import create_vr_backup, restore_vr_environment
 from programs import INSTALL_PACKAGES, TOOLS_APPS, TOOLS_OSC
+from translations import tr, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
 
 
@@ -71,7 +72,7 @@ class ApkWorker(QThread):
 
         try:
             # 1. Neueste Release-Info von GitHub holen
-            self.status_signal.emit("Suche neueste WiVRn Version...")
+            self.status_signal.emit("Find the latest version of WiVRn...")
             req = urllib.request.Request(self.GITHUB_API,
                 headers={"User-Agent": "yakuda-connect"})
             with urllib.request.urlopen(req, timeout=10) as r:
@@ -86,11 +87,11 @@ class ApkWorker(QThread):
                     break
 
             if not apk_url:
-                self.status_signal.emit("Fehler: Keine APK im aktuellen Release gefunden.")
+                self.status_signal.emit("Fehler: No APK found in the current release.")
                 self.finished_signal.emit(False)
                 return
 
-            self.status_signal.emit(f"Gefunden: WiVRn {tag} — starte Download...")
+            self.status_signal.emit(f"found: WiVRn {tag} — starting Download...")
 
             # 2. APK herunterladen
             os.makedirs(os.path.dirname(self.APK_CACHE), exist_ok=True)
@@ -100,7 +101,7 @@ class ApkWorker(QThread):
                 downloaded = 0
                 while True:
                     if self._cancel:
-                        self.status_signal.emit("Download abgebrochen.")
+                        self.status_signal.emit("Download interrupted.")
                         self.finished_signal.emit(False)
                         return
                     chunk = r.read(65536)
@@ -115,7 +116,7 @@ class ApkWorker(QThread):
                             f"Lade herunter... {mb_done:.1f} MB / {mb_total:.1f} MB")
 
             # 3. ADB-Gerät suchen
-            self.status_signal.emit("Suche verbundenes Headset per USB...")
+            self.status_signal.emit("Search for a USB-connected headset...")
             res = subprocess.run(["adb", "devices"],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
@@ -124,12 +125,12 @@ class ApkWorker(QThread):
 
             if not devices:
                 self.status_signal.emit(
-                    "Kein Headset gefunden! USB-Debugging aktivieren und Kabel prüfen.")
+                    "No headset found! Enable USB debugging and check the cable.")
                 self.finished_signal.emit(False)
                 return
 
             serial = devices[0]
-            self.status_signal.emit(f"Headset gefunden: {serial} — installiere APK...")
+            self.status_signal.emit(f"Headset found: {serial} — install APK...")
 
             # 4. APK installieren
             res = subprocess.run(
@@ -137,10 +138,10 @@ class ApkWorker(QThread):
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
             if res.returncode == 0:
-                self.status_signal.emit(f"✔ WiVRn {tag} erfolgreich installiert!")
+                self.status_signal.emit(f"✔ WiVRn {tag} successfully installed!")
                 self.finished_signal.emit(True)
             else:
-                self.status_signal.emit(f"Fehler bei adb install:\n{res.stderr.strip()}")
+                self.status_signal.emit(f"Error during adb install going to tools and install android tools:\n{res.stderr.strip()}")
                 self.finished_signal.emit(False)
 
         except Exception as e:
@@ -160,7 +161,7 @@ class VRApp(QMainWindow):
         # === ORDNERSTRUKTUR FIX ===
         PROJEKT_CONFIG_DIR = os.path.expanduser("~/.config/yakuda-connect/config")
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
-        print(f"[System] Ordnerstruktur überprüft/erstellt unter: {PROJEKT_CONFIG_DIR}")
+        print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
         self.APP_VERSION = "v1.0.0-alpha"
         self.server_process = None
@@ -172,7 +173,7 @@ class VRApp(QMainWindow):
         # Dynamische Erstellung der Paket-Status-Labels im UI
         self.prog_labels = {}
         for prog_name in self.required_packages.keys():
-            self.prog_labels[prog_name] = QLabel("Prüfe Status...")
+            self.prog_labels[prog_name] = QLabel("Check status...")
             self.ui.pkg_layout.addRow(QLabel(f"{prog_name}:"), self.prog_labels[prog_name])
 
         self.init_logic_connections()
@@ -183,8 +184,8 @@ class VRApp(QMainWindow):
             self.ui.sidebar.setCurrentRow(0)
             QMessageBox.warning(
                 self,
-                "Komponenten fehlen",
-                "Bitte installiere zuerst die erforderlichen Systemkomponenten, um das Dashboard freizuschalten!"
+                "Components are missing",
+                "Please install the required system components first to enable the dashboard!"
             )
         else:
             self.ui.sidebar.setCurrentRow(1)
@@ -198,7 +199,13 @@ class VRApp(QMainWindow):
         self.is_loading = False
 
 # Erststart- / Willkommenstext für den Nutzer setzen
-        self.ui.txt_free_info.setHtml("""
+        self._set_welcome_text()
+
+    def _set_welcome_text(self):
+        """Setzt den Willkommenstext je nach aktiver Sprache."""
+        lang = get_language()
+        if lang == "de":
+            html = """
             <p style='color: #88c0d0; font-weight: bold; font-size: 15px; margin-bottom: 8px;'>
                 Willkommen bei Linux VR Central!
             </p>
@@ -206,33 +213,38 @@ class VRApp(QMainWindow):
                 Wenn du die Software zum ersten Mal startest, vergewissere dich, dass dein Headset eingeschaltet und im selben Netzwerk ist.
                 <b>Wichtig:</b> Bitte lies dir die folgenden Backup-Hinweise durch. Weiter unten findest du zudem wichtige Informationen zur Performance.
             </p>
-
             <hr style='border: none; border-top: 1px solid #3b4252; margin-bottom: 12px;' />
-
-            <p style='color: #d08770; font-weight: bold; margin-bottom: 4px;'>
-                ⚠️ WICHTIG: Erster Start & OpenXR-Backups
-            </p>
+            <p style='color: #d08770; font-weight: bold; margin-bottom: 4px;'>⚠️ WICHTIG: Erster Start & OpenXR-Backups</p>
             <ul style='margin-top: 0px; margin-bottom: 14px; padding-left: 20px;'>
-                <li style='margin-bottom: 4px;'>
-                    Bitte starte diesen Launcher <b>einmal komplett neu</b>, nachdem du das erste Mal ein Spiel in VR gestartet hast.
-                </li>
-                <li>
-                    Nach dem Neustart erscheinen hier darüber <b>zwei neue Buttons</b>. Damit kannst du ein Backup deiner OpenXR/OpenVR-Umgebung erstellen, da diese im System leider sehr oft beschädigt wird.
-                </li>
+                <li style='margin-bottom: 4px;'>Bitte starte diesen Launcher <b>einmal komplett neu</b>, nachdem du das erste Mal ein Spiel in VR gestartet hast.</li>
+                <li>Nach dem Neustart erscheinen hier darüber <b>zwei neue Buttons</b>. Damit kannst du ein Backup deiner OpenXR/OpenVR-Umgebung erstellen.</li>
             </ul>
-
-            <p style='color: #ebcb8b; font-weight: bold; margin-bottom: 4px;'>
-                ℹ️ Info: Erststart, Performance & OpenVR-Kompatibilität
+            <p style='color: #ebcb8b; font-weight: bold; margin-bottom: 4px;'>ℹ️ Info: Erststart, Performance & OpenVR-Kompatibilität</p>
+            <ul style='margin-top: 0px; padding-left: 20px;'>
+                <li style='margin-bottom: 4px;'>Die OpenVR-Kompatibilität wird beim ersten Mal automatisch auf <b>OpenComposite</b> gestellt.</li>
+                <li>Nach dem ersten erfolgreichen Verbinden kannst du die Runtime für mehr Performance auf <b>xrizer</b> umstellen.</li>
+            </ul>"""
+        else:
+            html = """
+            <p style='color: #88c0d0; font-weight: bold; font-size: 15px; margin-bottom: 8px;'>
+                Welcome to Linux VR Central!
             </p>
-            <ul style='margin-top: 0px; margin-bottom: 0px; padding-left: 20px;'>
-                <li style='margin-bottom: 4px;'>
-                    Die OpenVR-Kompatibilität wird beim ersten Mal automatisch auf <b>OpenComposite</b> gestellt, um alle notwendigen SteamVR-Verlinkungen korrekt aufzubauen.
-                </li>
-                <li>
-                    Nach dem ersten erfolgreichen Verbinden und Spielstart kannst du die Runtime für deutlich mehr Performance wieder auf <b>xrizer</b> umstellen.
-                </li>
+            <p style='margin-bottom: 12px;'>
+                When starting the software for the first time, make sure your headset is powered on and connected to the same network.
+                <b>Important:</b> Please read the backup notes below. You will also find important performance information further down.
+            </p>
+            <hr style='border: none; border-top: 1px solid #3b4252; margin-bottom: 12px;' />
+            <p style='color: #d08770; font-weight: bold; margin-bottom: 4px;'>⚠️ IMPORTANT: First Launch & OpenXR Backups</p>
+            <ul style='margin-top: 0px; margin-bottom: 14px; padding-left: 20px;'>
+                <li style='margin-bottom: 4px;'>Please restart this launcher <b>once</b> after launching a VR game for the first time.</li>
+                <li>After restarting, <b>two new buttons</b> will appear above. Use them to create a backup of your OpenXR/OpenVR environment.</li>
             </ul>
-        """)
+            <p style='color: #ebcb8b; font-weight: bold; margin-bottom: 4px;'>ℹ️ Info: First Launch, Performance & OpenVR Compatibility</p>
+            <ul style='margin-top: 0px; padding-left: 20px;'>
+                <li style='margin-bottom: 4px;'>OpenVR compatibility is automatically set to <b>OpenComposite</b> on first launch.</li>
+                <li>After successfully connecting, you can switch the runtime to <b>xrizer</b> for better performance.</li>
+            </ul>"""
+        self.ui.txt_free_info.setHtml(html)
 
     def init_logic_connections(self):
         """Verknüpft die UI-Komponenten aus ui_main.py mit den Logik-Funktionen."""
@@ -249,6 +261,7 @@ class VRApp(QMainWindow):
         self.ui.btn_start.clicked.connect(self.start_wivrn_server)
         self.ui.btn_stop.clicked.connect(self.stop_wivrn_server)
         self.ui.btn_port_status.clicked.connect(self.open_port_9757_firewall)
+        self.ui.combo_language.currentIndexChanged.connect(self.on_language_changed)
 
         # APK Installation
         self.ui.btn_apk_install.clicked.connect(self.start_apk_install)
@@ -287,6 +300,9 @@ class VRApp(QMainWindow):
             )
         self.ui.btn_tools_check.clicked.connect(self.start_tools_update_check)
 
+        # Settings Tab
+        self.ui.btn_vrchat_symlink.clicked.connect(self.create_vrchat_symlink)
+
     def get_wivrn_version(self):
         try:
             res = subprocess.run(["wivrn-server", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -295,7 +311,7 @@ class VRApp(QMainWindow):
                 return version_match.group(0) if version_match else "Unbekannt"
         except:
             pass
-        return "Nicht installiert"
+        return tr("tools_not_installed")
 
     def are_critical_packages_missing(self):
         if not shutil.which("yay"): return True
@@ -328,23 +344,23 @@ class VRApp(QMainWindow):
                 card["lbl_status"].setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
                 card["lbl_version"].setText("")
                 card["lbl_update"].setText("")
-                card["btn_install"].setText("Installieren")
+                card["btn_install"].setText(tr("tools_install_btn"))
                 card["btn_install"].setEnabled(True)
                 card["cmd_widget"].setVisible(False)
             elif entry.get("installed"):
                 card["lbl_version"].setText(f"v{entry.get('version', '')}")
                 card["lbl_update"].setText("⬆ Update verfügbar" if entry.get("has_update") else "")
-                card["lbl_status"].setText("✔ Installiert")
+                card["lbl_status"].setText(tr("pkg_installed"))
                 card["lbl_status"].setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-                card["btn_install"].setText("Bereits installiert")
+                card["btn_install"].setText(tr("tools_already"))
                 card["btn_install"].setEnabled(False)
                 card["cmd_widget"].setVisible(True)
             else:
                 card["lbl_version"].setText("")
                 card["lbl_update"].setText("")
-                card["lbl_status"].setText("Nicht installiert")
+                card["lbl_status"].setText(tr("tools_not_installed"))
                 card["lbl_status"].setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
-                card["btn_install"].setText("Installieren")
+                card["btn_install"].setText(tr("tools_install_btn"))
                 card["btn_install"].setEnabled(True)
                 card["cmd_widget"].setVisible(False)
 
@@ -367,17 +383,17 @@ class VRApp(QMainWindow):
         if installed:
             card["lbl_version"].setText(f"v{version}")
             card["lbl_update"].setText("⬆ Update verfügbar" if has_update else "")
-            card["lbl_status"].setText("✔ Installiert")
+            card["lbl_status"].setText(tr("pkg_installed"))
             card["lbl_status"].setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-            card["btn_install"].setText("Bereits installiert")
+            card["btn_install"].setText(tr("tools_already"))
             card["btn_install"].setEnabled(False)
             card["cmd_widget"].setVisible(True)
         else:
             card["lbl_version"].setText("")
             card["lbl_update"].setText("")
-            card["lbl_status"].setText("Nicht installiert")
+            card["lbl_status"].setText(tr("tools_not_installed"))
             card["lbl_status"].setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
-            card["btn_install"].setText("Installieren")
+            card["btn_install"].setText(tr("tools_install_btn"))
             card["btn_install"].setEnabled(True)
             card["cmd_widget"].setVisible(False)
 
@@ -430,7 +446,7 @@ class VRApp(QMainWindow):
         if not card:
             return
         card["btn_install"].setEnabled(False)
-        card["btn_install"].setText("Wird installiert...")
+        card["btn_install"].setText(tr("tools_installing"))
         card["lbl_status"].setText("⏳ Installiere...")
         card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
 
@@ -446,15 +462,15 @@ class VRApp(QMainWindow):
         if not card:
             return
         if success:
-            card["lbl_status"].setText("✔ Installiert")
+            card["lbl_status"].setText(tr("pkg_installed"))
             card["lbl_status"].setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-            card["btn_install"].setText("Bereits installiert")
+            card["btn_install"].setText(tr("tools_already"))
             card["btn_install"].setEnabled(False)
             card["cmd_widget"].setVisible(True)
         else:
-            card["lbl_status"].setText("Fehler bei Installation")
+            card["lbl_status"].setText(tr("tools_install_error"))
             card["lbl_status"].setStyleSheet("color: #bf616a; font-size: 12px;")
-            card["btn_install"].setText("Erneut versuchen")
+            card["btn_install"].setText(tr("tools_retry"))
             card["btn_install"].setEnabled(True)
 
     def start_apk_install(self):
@@ -494,6 +510,126 @@ class VRApp(QMainWindow):
                 "color: #bf616a; font-size: 11px;")
         self._apk_worker = None
 
+    def on_language_changed(self, index):
+        lang = "en" if index == 0 else "de"
+        set_language(lang)
+        self.apply_translations()
+        data = load_saved_settings()
+        data["language"] = lang
+        path = os.path.expanduser("~/.config/yakuda-connect/config/config.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(data, f, indent=4)
+
+    def apply_translations(self):
+        """Aktualisiert alle UI-Texte nach Sprachwechsel."""
+        lang = get_language()
+        all_tools = {t["key"]: t for t in TOOLS_APPS + TOOLS_OSC}
+
+        # Sidebar
+        for i, key in enumerate(["nav_installation","nav_dashboard","nav_streaming","nav_tools","nav_settings"]):
+            self.ui.sidebar.item(i).setText(tr(key))
+
+        # Dashboard
+        self.ui.btn_start.setText(tr("dashboard_start"))
+        self.ui.btn_stop.setText(tr("dashboard_stop"))
+        self.ui.btn_port_status.setText(tr("dashboard_firewall"))
+        self.ui.btn_apk_install.setText(tr("dashboard_apk_btn"))
+        self.ui.btn_apk_cancel.setText(tr("dashboard_apk_cancel"))
+        self.ui.btn_refresh_list.setText(tr("dashboard_list_btn"))
+        self.ui.btn_remove_headset.setText(tr("dashboard_remove_btn"))
+        self.ui.btn_disconnect_headset.setText(tr("dashboard_disconnect"))
+        self.ui.chk_hand_tracking.setText(tr("dashboard_hand"))
+        self.ui.chk_fbt.setText(tr("dashboard_fbt"))
+        self.ui.chk_steamvr_tracker.setText(tr("dashboard_steam"))
+        self.ui.chk_pairing.setText(tr("dashboard_pair_chk"))
+        self.ui.headset_group.setTitle(tr("dashboard_headsets"))
+        self.ui.btn_tools_check.setText(tr("tools_check_btn"))
+
+        # Installation tab
+        self.ui.btn_install.setText(tr("install_btn"))
+        self.ui.btn_update.setText(tr("update_btn"))
+        if hasattr(self.ui, 'backup_group'):
+            self.ui.backup_group.setTitle(tr("backup_title"))
+
+        # Info-Text (Willkommen / Welcome)
+        self._set_welcome_text()
+
+        # Server status text (nur wenn inaktiv — laufender Status wird dynamisch gesetzt)
+        current_status = self.ui.lbl_status_text.text()
+        if any(x in current_status for x in ["Ausgeschaltet","Inactive","Inaktiv"]):
+            self.ui.lbl_status_text.setText(tr("dashboard_inactive"))
+
+        # Prog labels in Installation tab
+        if hasattr(self, 'prog_labels'):
+            for prog_name, lbl in self.prog_labels.items():
+                text = lbl.text()
+                if "Update" in text:
+                    lbl.setText(tr("pkg_installed") + " (Update available)" if lang == "en" else tr("pkg_installed") + " (Update verfügbar)")
+                elif "✔" in text:
+                    lbl.setText(tr("pkg_installed"))
+                elif "⚠" in text:
+                    lbl.setText(tr("pkg_incomplete"))
+
+        # Tool-Karten
+        for key, card in self.ui.tool_cards.items():
+            tool = all_tools.get(key, {})
+            if "lbl_desc" in card:
+                desc = tool.get("desc_eng", tool.get("desc","")) if lang == "en" else tool.get("desc","")
+                card["lbl_desc"].setText(desc)
+            status = card["lbl_status"].text()
+            if any(x in status for x in ["Installiert","Installed","✔"]):
+                card["lbl_status"].setText(tr("tools_installed"))
+                card["btn_install"].setText(tr("tools_already"))
+            elif any(x in status for x in ["Unbekannt","Unknown"]):
+                card["lbl_status"].setText(tr("tools_unknown"))
+            elif any(x in status for x in ["Nicht install","Not install"]):
+                card["lbl_status"].setText(tr("tools_not_installed"))
+                card["btn_install"].setText(tr("tools_install_btn"))
+
+    def create_vrchat_symlink(self):
+        """Erstellt einen Symlink vom VRChat Proton-Bilderordner zum Linux Pictures-Ordner."""
+        import pathlib
+
+        vrchat_proton_path = pathlib.Path.home() / \
+            ".local/share/Steam/steamapps/compatdata/438100/pfx/drive_c/users/steamuser/Pictures"
+        linux_pictures = pathlib.Path.home() / "Pictures" / "VRChat"
+
+        # Prüfen ob Proton-Pfad existiert
+        if not vrchat_proton_path.exists():
+            self.ui.lbl_vrchat_status.setText(
+                "⚠ VRChat Proton-Ordner nicht gefunden.\n"
+                "Starte VRChat mindestens einmal bevor du den Symlink erstellst."
+            )
+            self.ui.lbl_vrchat_status.setStyleSheet("color: #ebcb8b; font-size: 11px;")
+            return
+
+        # Schon ein Symlink?
+        if linux_pictures.is_symlink():
+            self.ui.lbl_vrchat_status.setText(
+                f"✔ Symlink existiert bereits:\n{linux_pictures} → {vrchat_proton_path}"
+            )
+            self.ui.lbl_vrchat_status.setStyleSheet("color: #a3be8c; font-size: 11px;")
+            return
+
+        # Pictures-Ordner als echter Ordner vorhanden → umbenennen
+        if linux_pictures.exists():
+            backup = linux_pictures.with_name("VRChat_backup")
+            linux_pictures.rename(backup)
+
+        try:
+            linux_pictures.parent.mkdir(parents=True, exist_ok=True)
+            linux_pictures.symlink_to(vrchat_proton_path)
+            self.ui.lbl_vrchat_status.setText(
+                f"✔ Symlink erfolgreich erstellt!\n{linux_pictures} → {vrchat_proton_path}"
+            )
+            self.ui.lbl_vrchat_status.setStyleSheet("color: #a3be8c; font-size: 11px;")
+            self.ui.btn_vrchat_symlink.setText("✔ Done")
+            self.ui.btn_vrchat_symlink.setEnabled(False)
+        except Exception as e:
+            self.ui.lbl_vrchat_status.setText(f"Fehler: {e}")
+            self.ui.lbl_vrchat_status.setStyleSheet("color: #bf616a; font-size: 11px;")
+
     def trigger_vr_backup(self):
         if create_vr_backup():
             QMessageBox.information(self, "Backup erfolgreich", "Die VR-Umgebung wurde erfolgreich gesichert!")
@@ -524,21 +660,21 @@ class VRApp(QMainWindow):
 
             if prog_installed:
                 if prog_has_update:
-                    self.prog_labels[prog_name].setText("✔ Installiert (Update verfügbar)")
+                    self.prog_labels[prog_name].setText(tr("pkg_installed") + " (Update available)")
                     self.prog_labels[prog_name].setStyleSheet("color: #d08770; font-weight: bold;")
                 else:
-                    self.prog_labels[prog_name].setText("✔ Installiert")
+                    self.prog_labels[prog_name].setText(tr("pkg_installed"))
                     self.prog_labels[prog_name].setStyleSheet("color: #a3be8c; font-weight: bold;")
             else:
-                self.prog_labels[prog_name].setText("⚠ Nicht vollständig im System")
+                self.prog_labels[prog_name].setText(tr("pkg_incomplete"))
                 self.prog_labels[prog_name].setStyleSheet("color: #ebcb8b; font-weight: bold;")
 
         self.ui.lbl_wivrn_ver.setText(f"<b>WiVRn Version:</b> {self.get_wivrn_version()}")
         if updates_available:
-            self.ui.lbl_worker_status.setText("Einige installierte Komponenten haben ausstehende Updates.")
+            self.ui.lbl_worker_status.setText(tr("install_updates_available"))
             self.ui.btn_update.setEnabled(True)
         else:
-            self.ui.lbl_worker_status.setText("System-Check abgeschlossen.")
+            self.ui.lbl_worker_status.setText(tr("install_check_done"))
             self.ui.btn_update.setEnabled(False)
 
     def start_package_installation(self):
@@ -716,6 +852,14 @@ class VRApp(QMainWindow):
         data = load_saved_settings()
         if not data: return
 
+        # Sprache laden und sofort anwenden
+        lang = data.get("language", "en")
+        set_language(lang)
+        self.ui.combo_language.blockSignals(True)
+        self.ui.combo_language.setCurrentIndex(0 if lang == "en" else 1)
+        self.ui.combo_language.blockSignals(False)
+        self.apply_translations()
+
         self.ui.chk_hand_tracking.blockSignals(True)
         self.ui.chk_fbt.blockSignals(True)
         self.ui.chk_steamvr_tracker.blockSignals(True)
@@ -732,11 +876,7 @@ class VRApp(QMainWindow):
         self.ui.num_apps.setText(str(autostart_count))
         self.update_autostart_fields()
 
-        # Das OpenVR/XR VR Backup-System zeigt sich nur, wenn first_time_vr_setup 1 oder höher ist
-        if int(data.get("first_time_vr_setup", 0)) >= 1:
-            self.ui.backup_group.show()
-        else:
-            self.ui.backup_group.hide()
+        # Backup-Gruppe ist jetzt immer in Settings sichtbar
 
 
         saved_apps = data.get("autostart_apps", [])
@@ -755,7 +895,7 @@ class VRApp(QMainWindow):
     def refresh_headset_list(self):
         self.ui.list_headsets.clear()
         if subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode != 0:
-            self.ui.list_headsets.addItem("Server läuft nicht - Keine Headsets abrufbar")
+            self.ui.list_headsets.addItem(tr("dashboard_no_server"))
             return
         try:
             res = subprocess.run(["wivrnctl", "list-paired"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -828,7 +968,7 @@ class VRApp(QMainWindow):
         if self.server_process: self.server_process.terminate()
         else: subprocess.run(["pkill", "wivrn-server"])
         self.ui.list_headsets.clear()
-        self.ui.list_headsets.addItem("Server läuft nicht - Keine Headsets abrufbar")
+        self.ui.list_headsets.addItem(tr("dashboard_no_server"))
 
     def update_server_status_ui(self):
         """Überprüft den Server-Status und passt die Button-Styles dynamisch an."""
@@ -836,7 +976,7 @@ class VRApp(QMainWindow):
 
         if server_running:
             self.ui.lbl_status_dot.setStyleSheet("color: #a3be8c; font-size: 24px; margin-left: 10px;")
-            self.ui.lbl_status_text.setText("Aktiv / Läuft")
+            self.ui.lbl_status_text.setText(tr("dashboard_active"))
             self.ui.lbl_status_text.setStyleSheet("font-weight: bold; color: #a3be8c;")
 
             # Start-Button deaktivieren & ausgrauen
@@ -851,7 +991,7 @@ class VRApp(QMainWindow):
             )
         else:
             self.ui.lbl_status_dot.setStyleSheet("color: #bf616a; font-size: 24px; margin-left: 10px;")
-            self.ui.lbl_status_text.setText("Ausgeschaltet")
+            self.ui.lbl_status_text.setText(tr("dashboard_inactive"))
             self.ui.lbl_status_text.setStyleSheet("font-weight: bold; color: #7b88a1;")
 
             # Start-Button reaktivieren

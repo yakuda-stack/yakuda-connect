@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 # Programme aus zentraler Datei laden
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
 from programs import TOOLS_APPS, TOOLS_OSC
+from translations import tr, get_language
 
 class Ui_MainWindow(object):
     def setupUi(self, main_window):
@@ -109,6 +110,7 @@ class Ui_MainWindow(object):
             "Dashboard",
             "Streaming",
             "Tools",
+            "Settings",
         ])
 
         # Pillen-Design für Sidebar
@@ -147,16 +149,19 @@ class Ui_MainWindow(object):
         self.tab_dashboard = QWidget()
         self.tab_streaming = QWidget()
         self.tab_tools = QWidget()
+        self.tab_settings = QWidget()
 
         self.pages.addWidget(self.tab_installation)    # Index 0
         self.pages.addWidget(self.tab_dashboard)       # Index 1
         self.pages.addWidget(self.tab_streaming)       # Index 2
         self.pages.addWidget(self.tab_tools)           # Index 3
+        self.pages.addWidget(self.tab_settings)        # Index 4
 
         # Initialisiere die einzelnen Bereiche
         self.setup_installation_tab()
         self.setup_dashboard_tab()
         self.setup_tools_tab()
+        self.setup_settings_tab()
         # self.setup_streaming_tab() # DEAKTIVIERT: main.py bettet StreamingTab dynamisch ein und erzeugt das Layout selbst!
 
     def setup_installation_tab(self):
@@ -167,19 +172,19 @@ class Ui_MainWindow(object):
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(title)
 
-        self.pkg_group = QGroupBox("Erforderliche Abhängigkeiten (Arch Linux / AUR)")
+        self.pkg_group = QGroupBox(tr("install_deps_title"))
         self.pkg_layout = QFormLayout(self.pkg_group)
         layout.addWidget(self.pkg_group)
 
         btn_layout = QHBoxLayout()
-        self.btn_install = QPushButton("Fehlende Komponenten installieren")
+        self.btn_install = QPushButton(tr("install_btn"))
         self.btn_install.setFixedHeight(30)
         self.btn_install.setStyleSheet("""
             QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
                           font-size: 11px; border-radius: 4px; border: none; }
             QPushButton:hover { background-color: #81a1c1; }
         """)
-        self.btn_update = QPushButton("Aktualisieren")
+        self.btn_update = QPushButton(tr("update_btn"))
         self.btn_update.setFixedHeight(30)
         self.btn_update.setStyleSheet("""
             QPushButton { background-color: #3b4252; color: #d8dee9; font-weight: bold;
@@ -190,62 +195,16 @@ class Ui_MainWindow(object):
         btn_layout.addWidget(self.btn_update)
         layout.addLayout(btn_layout)
 
-        self.lbl_worker_status = QLabel("Bereit.")
+        self.lbl_worker_status = QLabel(tr("install_ready"))
         self.lbl_worker_status.setStyleSheet("color: #7b88a1; font-style: italic; margin-top: 5px;")
         layout.addWidget(self.lbl_worker_status)
 
         layout.addSpacing(20)
 
-        # Container für dynamische Backup-Buttons
-        self.backup_group = QGroupBox("VR-Umgebung Sicherung & Wiederherstellung")
-        backup_layout = QVBoxLayout(self.backup_group)
-        backup_layout.setSpacing(10)
-
-        self.btn_vr_backup = QPushButton("XR/VR Umgebung backup machen")
-        self.btn_vr_backup.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none; font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
-        backup_layout.addWidget(self.btn_vr_backup)
-
-        self.btn_vr_restore = QPushButton("XR/VR Umgebung wiederherstellen")
-        self.btn_vr_restore.setStyleSheet("""
-            QPushButton { background-color: #4c566a; color: #eceff4; border: none; font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            # QPushButton:hover { background-color: #d08770; color: white; }
-        """)
-        backup_layout.addWidget(self.btn_vr_restore)
-
-        layout.addWidget(self.backup_group)
-
-
-        self.backup_group.hide() # Standardmäßig versteckt
-
-        # Container für dynamische Backup-Buttons
-        self.backup_group = QGroupBox("VR-Umgebung Sicherung & Wiederherstellung")
-        backup_layout = QVBoxLayout(self.backup_group)
-        backup_layout.setSpacing(10)
-
-        self.btn_vr_backup = QPushButton("XR/VR Umgebung backup machen")
-        self.btn_vr_backup.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none; font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
-        backup_layout.addWidget(self.btn_vr_backup)
-
-        self.btn_vr_restore = QPushButton("XR/VR Umgebung wiederherstellen")
-        self.btn_vr_restore.setStyleSheet("""
-            QPushButton { background-color: #4c566a; color: #eceff4; border: none; font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            QPushButton:hover { background-color: #d08770; color: white; }
-        """)
-        backup_layout.addWidget(self.btn_vr_restore)
-
-        layout.addWidget(self.backup_group)
-        self.backup_group.hide() # Standardmäßig versteckt (bleibt wie gewünscht!)
-
 # --- INFO-KASTEN (ERWEITERTE HÖHE FÜR VOLLSTÄNDIGEN TEXT) ---
         from PySide6.QtWidgets import QTextEdit
 
-        self.info_group = QGroupBox("Hinweise & Informationen")
+        self.info_group = QGroupBox(tr("install_hints_title"))
         info_layout = QVBoxLayout(self.info_group)
         info_layout.setSpacing(10)
 
@@ -254,10 +213,10 @@ class Ui_MainWindow(object):
 
         # Auf 350 erhöht, damit die Box groß genug nach unten gezogen wird
         # und alle Punkte (Backups + Performance) gleichzeitig reinpassen!
-        self.txt_free_info.setMinimumHeight(150)
+        self.txt_free_info.setMinimumHeight(400)
 
         # Scrollbalken rigoros abschalten
-        self.txt_free_info.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.txt_free_info.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.txt_free_info.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         # Cursor-Interaktion deaktivieren
@@ -306,12 +265,24 @@ class Ui_MainWindow(object):
         self.lbl_app_ver.setStyleSheet("color: #81a1c1;")
         self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> Prüfe...")
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
+
+        self.combo_language = QComboBox()
+        self.combo_language.addItems(["🇬🇧 English", "🇩🇪 Deutsch"])
+        self.combo_language.setFixedWidth(120)
+        self.combo_language.setStyleSheet("""
+            QComboBox { background-color: #3b4252; color: #d8dee9; border: 1px solid #4c566a;
+                        border-radius: 4px; padding: 2px 6px; font-size: 11px; }
+            QComboBox::drop-down { border: none; }
+        """)
+
         version_layout.addWidget(self.lbl_app_ver)
         version_layout.addStretch()
+        version_layout.addWidget(self.combo_language)
+        version_layout.addSpacing(12)
         version_layout.addWidget(self.lbl_wivrn_ver)
         layout.addLayout(version_layout)
 
-        server_group = QGroupBox("Server Steuerung")
+        server_group = QGroupBox(tr("dashboard_server"))
         server_layout = QVBoxLayout(server_group)
 
         top_row = QHBoxLayout()
@@ -320,7 +291,7 @@ class Ui_MainWindow(object):
 
         self.lbl_status_dot = QLabel("●")
         self.lbl_status_dot.setStyleSheet("color: #bf616a; font-size: 24px; margin-left: 10px;")
-        self.lbl_status_text = QLabel("Ausgeschaltet")
+        self.lbl_status_text = QLabel(tr("dashboard_inactive"))
         self.lbl_status_text.setStyleSheet("font-weight: bold; color: #7b88a1;")
 
         top_row.addWidget(self.btn_start)
@@ -341,43 +312,6 @@ class Ui_MainWindow(object):
         layout.addWidget(server_group)
 
         # --- APK INSTALLATION ---
-        apk_group = QGroupBox("WiVRn APK — Headset Installation (Meta Quest / Pico)")
-        apk_layout = QVBoxLayout(apk_group)
-
-        apk_info = QLabel("Installiert die WiVRn-App direkt per USB auf dein Headset. USB-Debugging muss aktiviert sein.")
-        apk_info.setStyleSheet("color: #7b88a1; font-size: 11px; font-style: italic;")
-        apk_info.setWordWrap(True)
-        apk_layout.addWidget(apk_info)
-
-        apk_row = QHBoxLayout()
-        self.btn_apk_install = QPushButton("⬇ APK herunterladen & installieren")
-        self.btn_apk_install.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
-                          padding: 7px 14px; border-radius: 4px; border: none; }
-            QPushButton:hover { background-color: #81a1c1; }
-            QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
-        """)
-
-        self.btn_apk_cancel = QPushButton("Abbrechen")
-        self.btn_apk_cancel.setVisible(False)
-        self.btn_apk_cancel.setStyleSheet("""
-            QPushButton { background-color: #bf616a; color: white; font-weight: bold;
-                          padding: 7px 14px; border-radius: 4px; border: none; }
-            QPushButton:hover { background-color: #d08770; }
-        """)
-
-        apk_row.addWidget(self.btn_apk_install)
-        apk_row.addWidget(self.btn_apk_cancel)
-        apk_row.addStretch()
-        apk_layout.addLayout(apk_row)
-
-        self.lbl_apk_status = QLabel("")
-        self.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
-        self.lbl_apk_status.setWordWrap(True)
-        apk_layout.addWidget(self.lbl_apk_status)
-
-        layout.addWidget(apk_group)
-
         tracking_group = QGroupBox("Tracking & Display-Optionen")
         tracking_layout = QVBoxLayout(tracking_group)
 
@@ -386,7 +320,7 @@ class Ui_MainWindow(object):
         self.chk_fbt.setChecked(True)
         self.chk_steamvr_tracker = QCheckBox("Enable Steam VR Tracker Device")
 
-        lbl_tracker_note = QLabel("  ↳ Hinweis: OpenComposite muss active genutzt werden!")
+        lbl_tracker_note = QLabel("  ↳ Note: OpenComposite must be enabled!")
         lbl_tracker_note.setStyleSheet("color: #d08770; font-style: italic; font-weight: bold; margin-bottom: 5px;")
 
         refresh_layout = QHBoxLayout()
@@ -405,7 +339,7 @@ class Ui_MainWindow(object):
         tracking_layout.addLayout(refresh_layout)
         layout.addWidget(tracking_group)
 
-        pairing_group = QGroupBox("Pairing Modus")
+        pairing_group = QGroupBox(tr("dashboard_pairing"))
         pairing_layout = QHBoxLayout(pairing_group)
         self.chk_pairing = QCheckBox("Pairing aktivieren")
         self.txt_code = QLineEdit()
@@ -419,14 +353,14 @@ class Ui_MainWindow(object):
         pairing_layout.addStretch()
         layout.addWidget(pairing_group)
 
-        autostart_group = QGroupBox("Autostart Applikationen")
+        autostart_group = QGroupBox(tr("dashboard_autostart"))
         autostart_layout = QVBoxLayout(autostart_group)
         form_layout = QFormLayout()
 
         self.num_apps = QLineEdit("1")
         self.num_apps.setFixedWidth(50)
         self.num_apps.setAlignment(Qt.AlignCenter)
-        form_layout.addRow("Anzahl zu startender Programme:", self.num_apps)
+        form_layout.addRow(tr("dashboard_app_count"), self.num_apps)
         autostart_layout.addLayout(form_layout)
 
         self.autostart_container = QWidget()
@@ -469,6 +403,157 @@ class Ui_MainWindow(object):
         # aber leer gelassen oder nicht in setupUi ausgeführt, damit main.py das Layout setzen kann.
         pass
 
+    def setup_settings_tab(self):
+        from PySide6.QtWidgets import QScrollArea
+
+        scroll = QScrollArea(self.tab_settings)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        outer = QVBoxLayout(self.tab_settings)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+        container = QWidget()
+        scroll.setWidget(container)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+
+        title = QLabel("Settings")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 5px;")
+        layout.addWidget(title)
+
+        # --- GENERAL ---
+        general_group = QGroupBox("General")
+        general_layout = QVBoxLayout(general_group)
+        general_layout.setSpacing(10)
+
+        vrchat_row = QHBoxLayout()
+        vrchat_info = QVBoxLayout()
+
+        lbl_vrchat_title = QLabel("VRChat Picture Folder Fix")
+        lbl_vrchat_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
+        lbl_vrchat_desc = QLabel(
+            "Creates a symlink from the VRChat screenshot folder inside Proton to your Linux Pictures folder.\n"
+            "After this, VRChat screenshots will appear directly in ~/Pictures/VRChat."
+        )
+        lbl_vrchat_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        lbl_vrchat_desc.setWordWrap(True)
+
+        vrchat_info.addWidget(lbl_vrchat_title)
+        vrchat_info.addWidget(lbl_vrchat_desc)
+
+        self.btn_vrchat_symlink = QPushButton("🔗 Create Symlink")
+        self.btn_vrchat_symlink.setFixedWidth(160)
+        self.btn_vrchat_symlink.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
+                          padding: 8px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #81a1c1; }
+        """)
+
+        self.lbl_vrchat_status = QLabel("")
+        self.lbl_vrchat_status.setStyleSheet("font-size: 11px;")
+        self.lbl_vrchat_status.setWordWrap(True)
+
+        vrchat_row.addLayout(vrchat_info)
+        vrchat_row.addStretch()
+        vrchat_row.addWidget(self.btn_vrchat_symlink)
+        general_layout.addLayout(vrchat_row)
+        general_layout.addWidget(self.lbl_vrchat_status)
+
+        # APK Installation
+        apk_divider = QLabel()
+        apk_divider.setFixedHeight(1)
+        apk_divider.setStyleSheet("background-color: #3b4252; margin: 4px 0;")
+        general_layout.addWidget(apk_divider)
+
+        apk_title = QLabel("WiVRn APK — Headset Installation (Meta Quest / Pico)")
+        apk_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
+        general_layout.addWidget(apk_title)
+
+        self.apk_info_lbl = QLabel(tr("dashboard_apk_info"))
+        self.apk_info_lbl.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        self.apk_info_lbl.setWordWrap(True)
+        general_layout.addWidget(self.apk_info_lbl)
+
+        apk_row = QHBoxLayout()
+        self.btn_apk_install = QPushButton(tr("dashboard_apk_btn"))
+        self.btn_apk_install.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
+                          padding: 7px 14px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
+        """)
+        self.btn_apk_cancel = QPushButton(tr("dashboard_apk_cancel"))
+        self.btn_apk_cancel.setVisible(False)
+        self.btn_apk_cancel.setStyleSheet("""
+            QPushButton { background-color: #bf616a; color: white; font-weight: bold;
+                          padding: 7px 14px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #d08770; }
+        """)
+        apk_row.addWidget(self.btn_apk_install)
+        apk_row.addWidget(self.btn_apk_cancel)
+        apk_row.addStretch()
+        general_layout.addLayout(apk_row)
+
+        self.lbl_apk_status = QLabel("")
+        self.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
+        self.lbl_apk_status.setWordWrap(True)
+        general_layout.addWidget(self.lbl_apk_status)
+
+        layout.addWidget(general_group)
+
+        # --- BACKUP ---
+        self.backup_group = QGroupBox(tr("backup_title"))
+        backup_layout = QVBoxLayout(self.backup_group)
+        backup_layout.setSpacing(10)
+
+        self.btn_vr_backup = QPushButton("XR/VR Umgebung backup machen")
+        self.btn_vr_backup.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
+            QPushButton:hover { background-color: #81a1c1; }
+        """)
+        backup_layout.addWidget(self.btn_vr_backup)
+
+        self.btn_vr_restore = QPushButton("XR/VR Umgebung wiederherstellen")
+        self.btn_vr_restore.setStyleSheet("""
+            QPushButton { background-color: #4c566a; color: #eceff4; border: none;
+                          font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
+            QPushButton:hover { background-color: #d08770; color: white; }
+        """)
+        backup_layout.addWidget(self.btn_vr_restore)
+        layout.addWidget(self.backup_group)
+
+        # --- CONTROLS ---
+        controls_group = QGroupBox("Controls")
+        controls_layout = QVBoxLayout(controls_group)
+
+        lbl_touch_title = QLabel("Controller Thumbstick Touch Disable")
+        lbl_touch_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
+        lbl_touch_desc = QLabel(
+            "Disables thumbstick touch detection — useful if your controller falsely registers "
+            "finger contact on the thumbstick (common with worn-out Quest/Pico controllers)."
+        )
+        lbl_touch_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        lbl_touch_desc.setWordWrap(True)
+
+        lbl_touch_coming = QLabel(
+            "⏳  Coming soon — waiting for WiVRn/Monado to expose this in their config API.\n"
+            "    Track progress: github.com/WiVRn/WiVRn/issues/868"
+        )
+        lbl_touch_coming.setStyleSheet(
+            "color: #ebcb8b; font-size: 11px; font-style: italic; "
+            "background-color: #2e3440; border-radius: 4px; padding: 8px;"
+        )
+        lbl_touch_coming.setWordWrap(True)
+
+        controls_layout.addWidget(lbl_touch_title)
+        controls_layout.addWidget(lbl_touch_desc)
+        controls_layout.addWidget(lbl_touch_coming)
+        layout.addWidget(controls_group)
+        layout.addStretch()
+
     def setup_tools_tab(self):
         from PySide6.QtWidgets import QScrollArea
 
@@ -491,7 +576,7 @@ class Ui_MainWindow(object):
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 5px;")
         layout.addWidget(title)
 
-        subtitle = QLabel("Installiere und starte nützliche VR-Begleitprogramme direkt von hier.")
+        subtitle = QLabel(tr("tools_subtitle"))
         subtitle.setStyleSheet("color: #7b88a1; font-style: italic; margin-bottom: 10px;")
         layout.addWidget(subtitle)
 
@@ -517,7 +602,7 @@ class Ui_MainWindow(object):
         columns_layout.setAlignment(Qt.AlignTop)
 
         # Linke Spalte: Anwendungen
-        apps_group = QGroupBox("Anwendungen")
+        apps_group = QGroupBox("Apps")
         apps_layout = QVBoxLayout(apps_group)
         apps_layout.setSpacing(8)
         apps_layout.setAlignment(Qt.AlignTop)
@@ -574,7 +659,7 @@ class Ui_MainWindow(object):
         lbl_update.setStyleSheet("color: #ebcb8b; font-size: 10px; font-weight: bold;")
         top_row.addWidget(lbl_update)
 
-        lbl_status = QLabel("Unbekannt")
+        lbl_status = QLabel(tr("tools_unknown"))
         lbl_status.setStyleSheet("color: #7b88a1; font-size: 10px; font-style: italic;")
         top_row.addWidget(lbl_status)
 
@@ -614,7 +699,7 @@ class Ui_MainWindow(object):
             }
         """)
 
-        btn_copy = QPushButton("Kopieren")
+        btn_copy = QPushButton(tr("tools_copy"))
         btn_copy.setFixedHeight(22)
         btn_copy.setFixedWidth(65)
         btn_copy.setStyleSheet("""
@@ -633,7 +718,7 @@ class Ui_MainWindow(object):
         card_layout.addWidget(cmd_widget)
 
         # Zeile 4: Install-Button — kompakt
-        btn_install = QPushButton("Installieren")
+        btn_install = QPushButton(tr("tools_install_btn"))
         btn_install.setFixedHeight(26)
         btn_install.setStyleSheet("""
             QPushButton { background-color: #5e81ac; color: white; font-weight: bold;

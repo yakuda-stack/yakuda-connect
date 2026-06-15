@@ -1,0 +1,6 @@
+git push --force origin main
+
+cd ~/Schreibtisch
+tar -czf yakuda-connect-v1.0.0.tar.gz yakuda-connect/
+
+bash build_appimage.sh

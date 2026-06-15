@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 
 # Importiert aus dem selben Verzeichnis (core)
 from config_manager import save_all_settings, load_saved_settings
+from translations import tr
 
 
 
@@ -68,18 +69,18 @@ class StreamingTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel("Streaming Einstellungen")
+        title = QLabel(tr("streaming_title"))
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 15px;")
         layout.addWidget(title)
 
         # --- GRUPPE 1: KOMPATIBILITÄT ---
-        compat_group = QGroupBox("Kompatibilität & Laufzeit")
+        compat_group = QGroupBox(tr("streaming_compat"))
         compat_form = QFormLayout(compat_group)
 
         self.combo_openvr = QComboBox()
         self.combo_openvr.addItems(["Auto", "xrizer", "opencomposite"])
 
-        compat_form.addRow("OpenVR Kompatibilität:", self.combo_openvr)
+        compat_form.addRow(tr("streaming_openvr"), self.combo_openvr)
         layout.addWidget(compat_group)
 
         # --- GRUPPE 2: GRAFIK & AUFLÖSUNG ---
@@ -121,12 +122,12 @@ class StreamingTab(QWidget):
         layout.addWidget(video_group)
 
         # --- GRUPPE 3: ENCODER & BITRATE ---
-        encoder_group = QGroupBox("Hardware-Encoder & Performance")
+        encoder_group = QGroupBox(tr("streaming_encoder_grp"))
         encoder_form = QFormLayout(encoder_group)
 
         self.combo_encoder = QComboBox()
         self.combo_encoder.addItems(["Auto", "nvenc", "vaapi", "Vulkan", "x264"])
-        encoder_form.addRow("Encoder:", self.combo_encoder)
+        encoder_form.addRow(tr("streaming_encoder"), self.combo_encoder)
 
         # Codec-Zeile (versteckt) — zum Einblenden: self.row_codec.setVisible(True)
         self.row_codec = QWidget()
@@ -158,25 +159,25 @@ class StreamingTab(QWidget):
 
         layout.addWidget(encoder_group)
         # --- GRUPPE 4: OPENXR RUNTIME ---
-        openxr_group = QGroupBox("OpenXR & Runtime Steuerung")
+        openxr_group = QGroupBox(tr("streaming_openxr"))
         openxr_layout = QFormLayout(openxr_group)
 
-        self.lbl_active_runtime = QLabel("Prüfe aktive Runtime...")
+        self.lbl_active_runtime = QLabel(tr("streaming_checking"))
         self.lbl_active_runtime.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")
 
-        self.btn_switch_wivrn = QPushButton("WiVRn als aktive OpenXR Runtime setzen")
+        self.btn_switch_wivrn = QPushButton(tr("streaming_wivrn_btn"))
         self.btn_switch_wivrn.setStyleSheet(
             "QPushButton { background-color: #81a1c1; color: #2e3440; font-weight: bold; padding: 8px; } "
             "QPushButton:hover { background-color: #88c0d0; }"
         )
 
-        self.btn_switch_steamvr = QPushButton("SteamVR als aktive OpenXR Runtime setzen")
+        self.btn_switch_steamvr = QPushButton(tr("streaming_steam_btn"))
         self.btn_switch_steamvr.setStyleSheet(
             "QPushButton { background-color: #4c566a; color: #eceff4; font-weight: bold; padding: 8px; } "
             "QPushButton:hover { background-color: #5e81ac; }"
         )
 
-        openxr_layout.addRow("Aktiver Status:", self.lbl_active_runtime)
+        openxr_layout.addRow(tr("streaming_status"), self.lbl_active_runtime)
         openxr_layout.addRow(self.btn_switch_wivrn)
         openxr_layout.addRow(self.btn_switch_steamvr)
 

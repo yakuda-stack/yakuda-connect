@@ -18,7 +18,8 @@ def load_saved_settings():
             "refresh_rate": "90",
             "autostart_count": "0",
             "autostart_apps": [],
-            "first_time_vr_setup": 0,  # Standard: Setup wurde noch nie ausgeführt
+            "first_time_vr_setup": 0,
+            "language": "en",
             "streaming_data": {
                 "openvr_compat": "Auto",
                 "render_resolution": 100,
