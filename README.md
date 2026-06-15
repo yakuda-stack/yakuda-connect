@@ -4,6 +4,10 @@
 
 `yakuda-connect` is a powerful configuration hub and dashboard designed for Arch-based Linux systems. It eliminates the need for terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
+
+im using https://claude.ai/
+and https://gemini.google.com/app
+
 ![yakuda-connect Screenshot](assets/yakuda_icon.png)
 ![yakuda-connect Screenshot](assets/dashboard.png)
 ![yakuda-connect Screenshot](assets/installation.png)
