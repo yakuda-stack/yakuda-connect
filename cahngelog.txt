@@ -1,0 +1,10 @@
+
+16.06.2026
+1 : autostart by connect headset
+2 : autostart writing in wivrn deltet im using my autostart funktion
+3 : lange fix
+17.06.2026
+1 : custom ui 1 click for wayvr
+2 : wayvr custom design butten for slimevr user
+3 : autostart fix an kill programms on disconnect from pc
+

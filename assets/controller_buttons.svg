@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 210" font-family="sans-serif">
+  <style>
+    .body { fill:#3b4252; stroke:#5e81ac; stroke-width:2; }
+    .btn  { fill:#4c566a; stroke:#88c0d0; stroke-width:1.5; }
+    .stk  { fill:#434c5e; stroke:#88c0d0; stroke-width:1.5; }
+    .lbl  { fill:#eceff4; font-size:13px; font-weight:bold; }
+    .cap  { fill:#88c0d0; font-size:13px; font-weight:bold; }
+    .side { fill:#d8dee9; font-size:12px; font-style:italic; }
+  </style>
+
+  <!-- LEFT CONTROLLER -->
+  <text x="60" y="18" class="side">Left controller</text>
+  <rect x="35" y="28" width="150" height="150" rx="26" class="body"/>
+  <!-- thumbstick -->
+  <circle cx="72" cy="70" r="17" class="stk"/>
+  <text x="72" y="74" text-anchor="middle" class="lbl">Stk</text>
+  <!-- Y (top) -->
+  <circle cx="140" cy="64" r="15" class="btn"/>
+  <text x="140" y="69" text-anchor="middle" class="cap">Y</text>
+  <!-- X (bottom) -->
+  <circle cx="140" cy="108" r="15" class="btn"/>
+  <text x="140" y="113" text-anchor="middle" class="lbl">X</text>
+  <!-- Menu -->
+  <rect x="58" y="120" width="34" height="20" rx="6" class="btn"/>
+  <text x="75" y="134" text-anchor="middle" class="lbl">Menu</text>
+  <!-- Trigger / Grip captions -->
+  <text x="40" y="172" class="side">Trigger · Grip</text>
+
+  <!-- RIGHT CONTROLLER -->
+  <text x="300" y="18" class="side">Right controller</text>
+  <rect x="275" y="28" width="150" height="150" rx="26" class="body"/>
+  <!-- B (top) -->
+  <circle cx="320" cy="64" r="15" class="btn"/>
+  <text x="320" y="69" text-anchor="middle" class="lbl">B</text>
+  <!-- A (bottom) -->
+  <circle cx="320" cy="108" r="15" class="btn"/>
+  <text x="320" y="113" text-anchor="middle" class="lbl">A</text>
+  <!-- thumbstick -->
+  <circle cx="388" cy="70" r="17" class="stk"/>
+  <text x="388" y="74" text-anchor="middle" class="lbl">Stk</text>
+  <text x="300" y="172" class="side">Trigger · Grip</text>
+
+  <!-- hint -->
+  <text x="35" y="200" class="side">Default: left Y — change above if it clashes with your dashboard button</text>
+</svg>

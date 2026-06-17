@@ -1,0 +1,15 @@
+git push --force origin main
+
+cd ~/Schreibtisch
+tar -czf yakuda-connect-v1.0.0.tar.gz yakuda-connect/
+
+bash build_appimage.sh
+
+
+github donwload prüfen
+
+❯ curl -s -H "Authorization: token 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" "https://api.github.com/repos/yakuda-stack/yakuda-connect/traffic/clones" | jq '{total_clones: .count, unique_voters: .uniques}'
+
+
+❯ curl -s "https://api.github.com/repos/yakuda-stack/yakuda-connect/releases" | jq '.[] | .assets[] | {name: .name, download_count: .download_count}'
+
