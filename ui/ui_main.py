@@ -229,6 +229,9 @@ class Ui_MainWindow(object):
         self.chk_overlay_slimevr.setText(tr("overlay_slimevr_btn"))
         self.lbl_overlay_credits.setText(tr("overlay_credits"))
         self.controls_group.setTitle(tr("settings_controls"))
+        self.openxr_group.setTitle(tr("openxr_group"))
+        self.lbl_openxr_desc.setText(tr("openxr_desc"))
+        self.btn_openxr_fix.setText(tr("openxr_fix_btn"))
         self.lbl_touch_title.setText(tr("settings_touch_title"))
         self.lbl_touch_desc.setText(tr("settings_touch_desc"))
         self.lbl_touch_coming.setText(tr("settings_touch_coming"))
@@ -663,6 +666,31 @@ class Ui_MainWindow(object):
         controls_layout.addWidget(self.lbl_touch_desc)
         controls_layout.addWidget(self.lbl_touch_coming)
         layout.addWidget(self.controls_group)
+
+        # --- OPENXR RUNTIME (Steam-Fix) ---
+        self.openxr_group = QGroupBox(tr("openxr_group"))
+        openxr_layout = QVBoxLayout(self.openxr_group)
+        openxr_layout.setSpacing(8)
+
+        self.lbl_openxr_desc = QLabel(tr("openxr_desc"))
+        self.lbl_openxr_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        self.lbl_openxr_desc.setWordWrap(True)
+        openxr_layout.addWidget(self.lbl_openxr_desc)
+
+        self.btn_openxr_fix = QPushButton(tr("openxr_fix_btn"))
+        self.btn_openxr_fix.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
+            QPushButton:hover { background-color: #81a1c1; }
+        """)
+        openxr_layout.addWidget(self.btn_openxr_fix)
+
+        self.lbl_openxr_status = QLabel("")
+        self.lbl_openxr_status.setStyleSheet("font-size: 11px; padding-top: 2px;")
+        self.lbl_openxr_status.setWordWrap(True)
+        openxr_layout.addWidget(self.lbl_openxr_status)
+
+        layout.addWidget(self.openxr_group)
 
         # Backup & Wiederherstellung ganz nach unten
         layout.addWidget(self.backup_group)

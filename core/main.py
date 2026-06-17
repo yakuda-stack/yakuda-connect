@@ -23,6 +23,7 @@ from overlay_manager import (DesignInstallWorker, set_slimevr_ui,
                              is_slimevr_active, is_design_installed,
                              reset_wayvr_to_default)
 from programs import INSTALL_PACKAGES, TOOLS_APPS, TOOLS_OSC
+import openxr_manager as oxr
 from translations import tr, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
 
@@ -277,7 +278,9 @@ class VRApp(QMainWindow):
         self.ui.btn_overlay_design.clicked.connect(self.start_overlay_design)
         self.ui.btn_overlay_reset.clicked.connect(self.reset_overlay_design)
         self.ui.chk_overlay_slimevr.toggled.connect(self.toggle_overlay_slimevr)
+        self.ui.btn_openxr_fix.clicked.connect(self.apply_openxr_fix)
         self.refresh_overlay_state()
+        self.refresh_openxr_status()
 
         # Dashboard Steuerung
         self.ui.btn_start.clicked.connect(self.start_wivrn_server)
@@ -563,6 +566,37 @@ class VRApp(QMainWindow):
         self.ui.chk_overlay_slimevr.blockSignals(True)
         self.ui.chk_overlay_slimevr.setChecked(design and is_slimevr_active())
         self.ui.chk_overlay_slimevr.blockSignals(False)
+
+    def refresh_openxr_status(self):
+        """Zeigt den aktuellen Zustand der OpenXR-Runtime-Datei farbig an."""
+        try:
+            state, detail = oxr.current_status()
+        except Exception:
+            return
+        if state == "ok":
+            color, text = "#a3be8c", tr("openxr_status_ok")
+        elif state == "broken":
+            color, text = "#bf616a", tr("openxr_status_broken")
+        else:  # missing
+            color, text = "#ebcb8b", tr("openxr_status_missing")
+        self.ui.lbl_openxr_status.setStyleSheet(f"font-size: 11px; padding-top: 2px; color: {color};")
+        self.ui.lbl_openxr_status.setText(text)
+
+    def apply_openxr_fix(self):
+        """Repariert ~/.config/openxr/1/active_runtime.json (absolute Pfade)."""
+        ok, code, detail = oxr.apply_openxr_fix()
+        if ok:
+            msg = tr("openxr_fix_done").format(path=oxr.ACTIVE_RUNTIME)
+            if detail:
+                msg += "\n\n" + tr("openxr_fix_backup").format(backup=detail)
+            QMessageBox.information(self, "OpenXR", msg)
+        elif code == "libs_not_found":
+            QMessageBox.warning(self, "OpenXR", tr("openxr_fix_no_libs"))
+        elif code == "not_elf":
+            QMessageBox.warning(self, "OpenXR", tr("openxr_fix_not_elf").format(path=detail))
+        else:
+            QMessageBox.critical(self, "OpenXR", tr("openxr_fix_error") + "\n\n" + str(detail))
+        self.refresh_openxr_status()
 
     def start_apk_install(self):
         """Startet Download und Installation der WiVRn APK."""

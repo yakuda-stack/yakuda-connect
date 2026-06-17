@@ -118,6 +118,20 @@ TRANSLATIONS = {
         "settings_vrchat_desc":  "Creates a symlink from the VRChat screenshot folder inside Proton to your Linux Pictures folder.\nAfter this, VRChat screenshots will appear directly in ~/Pictures/VRChat.",
         "settings_vrchat_btn":   "🔗 Create Symlink",
         "settings_controls":     "Controls",
+        "openxr_group":          "OpenXR Runtime (Steam Fix)",
+        "openxr_desc":           ("Fixes the Steam/pressure-vessel \"invalid Elf handle\" error by writing a correct "
+                                  "OpenXR runtime file with absolute paths to the WiVRn libraries. Your existing file "
+                                  "is backed up first. After fixing, set this in your VR game's Steam launch options:\n"
+                                  "XR_RUNTIME_JSON=$HOME/.config/openxr/1/active_runtime.json PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%"),
+        "openxr_fix_btn":        "Fix OpenXR runtime for Steam",
+        "openxr_fix_done":       "OpenXR runtime fixed.\nWritten with absolute paths to:\n{path}",
+        "openxr_fix_backup":     "Your previous file was backed up to:\n{backup}",
+        "openxr_fix_no_libs":    "Could not find the WiVRn libraries (libopenxr_wivrn.so). Is WiVRn installed?",
+        "openxr_fix_not_elf":    "The found file is not a valid library:\n{path}",
+        "openxr_fix_error":      "Could not write the OpenXR runtime file:",
+        "openxr_status_ok":      "Status: OK — absolute paths, ready for Steam.",
+        "openxr_status_broken":  "Status: broken — fix recommended (current file has a wrong/relative path).",
+        "openxr_status_missing": "Status: no custom runtime file — using system default (relative paths; may fail under Steam).",
         "settings_touch_title":  "Controller Thumbstick Touch Disable",
         "settings_touch_desc":   "Disables thumbstick touch detection — useful if your controller falsely registers finger contact on the thumbstick (common with worn-out Quest/Pico controllers).",
         "settings_touch_coming": "⏳  Coming soon — waiting for WiVRn/Monado to expose this in their config API.\n    Track progress: github.com/WiVRn/WiVRn/issues/868",
@@ -270,6 +284,21 @@ TRANSLATIONS = {
         "settings_vrchat_desc":  "Erstellt einen Symlink vom VRChat-Screenshot-Ordner in Proton zu deinem Linux-Bilderordner.\nDanach erscheinen VRChat-Screenshots direkt in ~/Pictures/VRChat.",
         "settings_vrchat_btn":   "🔗 Symlink erstellen",
         "settings_controls":     "Steuerung",
+        "openxr_group":          "OpenXR-Runtime (Steam-Fix)",
+        "openxr_desc":           ("Behebt den Steam-/pressure-vessel-Fehler \"invalid Elf handle\", indem eine korrekte "
+                                  "OpenXR-Runtime-Datei mit absoluten Pfaden zu den WiVRn-Bibliotheken geschrieben wird. "
+                                  "Deine vorhandene Datei wird vorher gesichert. Danach in den Steam-Startoptionen deines "
+                                  "VR-Spiels eintragen:\n"
+                                  "XR_RUNTIME_JSON=$HOME/.config/openxr/1/active_runtime.json PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%"),
+        "openxr_fix_btn":        "OpenXR-Runtime für Steam reparieren",
+        "openxr_fix_done":       "OpenXR-Runtime repariert.\nMit absoluten Pfaden geschrieben nach:\n{path}",
+        "openxr_fix_backup":     "Deine vorherige Datei wurde gesichert unter:\n{backup}",
+        "openxr_fix_no_libs":    "WiVRn-Bibliotheken (libopenxr_wivrn.so) nicht gefunden. Ist WiVRn installiert?",
+        "openxr_fix_not_elf":    "Die gefundene Datei ist keine gültige Bibliothek:\n{path}",
+        "openxr_fix_error":      "OpenXR-Runtime-Datei konnte nicht geschrieben werden:",
+        "openxr_status_ok":      "Status: OK — absolute Pfade, bereit für Steam.",
+        "openxr_status_broken":  "Status: defekt — Reparatur empfohlen (aktuelle Datei hat einen falschen/relativen Pfad).",
+        "openxr_status_missing": "Status: keine eigene Runtime-Datei — System-Standard aktiv (relative Pfade; kann unter Steam scheitern).",
         "settings_touch_title":  "Controller-Thumbstick-Touch deaktivieren",
         "settings_touch_desc":   "Deaktiviert die Touch-Erkennung des Thumbsticks — nützlich, wenn dein Controller fälschlicherweise Fingerkontakt am Thumbstick meldet (häufig bei abgenutzten Quest/Pico-Controllern).",
         "settings_touch_coming": "⏳  Demnächst — wartet darauf, dass WiVRn/Monado dies in der Config-API verfügbar macht.\n    Fortschritt verfolgen: github.com/WiVRn/WiVRn/issues/868",

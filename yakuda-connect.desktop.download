@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=yakuda-connect
+GenericName=VR Launcher
+Comment=Launcher für WiVRn/WayVR/SlimeVR auf Arch Linux
+Exec=yakuda-connect
+Icon=yakuda-connect
+Terminal=false
+Categories=Game;Utility;
+Keywords=VR;WiVRn;WayVR;SlimeVR;OpenXR;

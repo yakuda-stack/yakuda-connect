@@ -1,7 +1,11 @@
 #!/bin/bash
-# yakuda-connect — One-Line Installer
-# Verwendung: bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh)
-
+# yakuda-connect — Installer & Updater (Arch-basierte Systeme)
+#
+# Installieren ODER aktualisieren mit EINEM Befehl:
+#   bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh)
+#
+# Re-Run = Update: holt den aktuellen main-Stand und ersetzt /opt/yakuda-connect.
+# Deine Einstellungen unter ~/.config/yakuda-connect bleiben unangetastet.
 set -e
 
 APP="yakuda-connect"
@@ -10,74 +14,89 @@ DESKTOP_FILE="/usr/share/applications/yakuda-connect.desktop"
 ICON_DIR="/usr/share/icons/hicolor/256x256/apps"
 BIN_LINK="/usr/local/bin/yakuda-connect"
 REPO="https://github.com/yakuda-stack/yakuda-connect"
-VERSION="1.0.0"
+BRANCH="main"
 
-echo "=== yakuda-connect Installer v$VERSION ==="
+# Installation oder Update?
+if [ -d "$INSTALL_DIR" ]; then
+    MODE="Aktualisiere"
+else
+    MODE="Installiere"
+fi
+echo "=== yakuda-connect: $MODE ==="
 echo ""
 
-# Prüfen ob python3 vorhanden
+# --- Grundwerkzeuge pruefen ---
+if ! command -v git &>/dev/null; then
+    echo "[Info] git wird benoetigt – installiere es..."
+    sudo pacman -S --needed --noconfirm git
+fi
 if ! command -v python3 &>/dev/null; then
     echo "[Fehler] Python3 ist nicht installiert."
     exit 1
 fi
 
-# PySide6 prüfen
+# --- PySide6 sicherstellen ---
 if ! python3 -c "import PySide6" &>/dev/null; then
-    echo "[Info] PySide6 nicht gefunden..."
-    if command -v yay &>/dev/null; then
-        echo "[Info] Installiere via yay..."
-        yay -S --noconfirm python-pyside6
-    elif command -v pacman &>/dev/null; then
-        echo "[Info] Installiere via pacman..."
-        sudo pacman -S --noconfirm python-pyside6
-    elif command -v pip &>/dev/null; then
-        echo "[Info] Installiere via pip..."
-        pip install PySide6 --break-system-packages
+    echo "[Info] PySide6 nicht gefunden – installiere es..."
+    if command -v pacman &>/dev/null; then
+        sudo pacman -S --needed --noconfirm base-devel
+        sudo pacman -S --needed --noconfirm pyside6
     else
-        echo "[Fehler] Konnte PySide6 nicht installieren. Bitte manuell installieren."
+        echo "[Fehler] Kein pacman gefunden. Dieser Installer ist fuer Arch-basierte"
+        echo "         Systeme (Arch, CachyOS, EndeavourOS, Manjaro)."
         exit 1
     fi
 fi
 
-# Quellcode holen
-echo "[1/4] Lade yakuda-connect herunter..."
-TMP_DIR=$(mktemp -d)
-curl -sL "$REPO/archive/refs/tags/v$VERSION.tar.gz" -o "$TMP_DIR/yakuda-connect.tar.gz"
-tar -xzf "$TMP_DIR/yakuda-connect.tar.gz" -C "$TMP_DIR"
-SRC_DIR="$TMP_DIR/yakuda-connect-$VERSION"
+# --- Quellcode holen (immer aktueller main-Branch) ---
+echo "[1/4] Lade aktuellen Stand herunter..."
+TMP_DIR="$(mktemp -d)"
+git clone --depth 1 --branch "$BRANCH" "$REPO.git" "$TMP_DIR/src"
+SRC_DIR="$TMP_DIR/src"
+NEW_VER="$(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
 
-# Ins Installationsverzeichnis kopieren
-echo "[2/4] Installiere nach $INSTALL_DIR ..."
+# --- Ins Installationsverzeichnis kopieren (Code ersetzen, Configs bleiben separat) ---
+echo "[2/4] $MODE nach $INSTALL_DIR  (Version: $NEW_VER) ..."
 sudo rm -rf "$INSTALL_DIR"
 sudo cp -r "$SRC_DIR" "$INSTALL_DIR"
-sudo chmod +x "$INSTALL_DIR/starter.py"
+sudo rm -rf "$INSTALL_DIR/.git"
 
-# Desktop-Eintrag + Icon
-echo "[3/4] Erstelle Menü-Eintrag & Icon..."
-sudo install -Dm644 "$INSTALL_DIR/assets/yakuda_icon.png" "$ICON_DIR/yakuda-connect.png"
-sudo bash -c "cat > $DESKTOP_FILE" << EOF
+# --- Wrapper-Startbefehl (cd ins Verzeichnis, dann starten) ---
+sudo tee "$BIN_LINK" >/dev/null <<'LAUNCH'
+#!/bin/sh
+cd /opt/yakuda-connect || exit 1
+exec python starter.py "$@"
+LAUNCH
+sudo chmod 755 "$BIN_LINK"
+
+# --- Desktop-Eintrag + Icon ---
+echo "[3/4] Aktualisiere Menue-Eintrag & Icon..."
+if [ -f "$INSTALL_DIR/assets/yakuda_icon.png" ]; then
+    sudo install -Dm644 "$INSTALL_DIR/assets/yakuda_icon.png" "$ICON_DIR/yakuda-connect.png"
+    ICON="yakuda-connect"
+else
+    ICON="applications-games"
+fi
+sudo tee "$DESKTOP_FILE" >/dev/null <<DESK
 [Desktop Entry]
 Name=yakuda-connect
 Comment=WiVRn Manager for Linux VR
-Exec=$INSTALL_DIR/starter.py
-Icon=yakuda-connect
+Exec=$BIN_LINK
+Icon=$ICON
 Terminal=false
 Type=Application
-Categories=Utility;
+Categories=Game;Utility;
 StartupWMClass=yakuda-connect
-EOF
+DESK
 sudo update-desktop-database /usr/share/applications 2>/dev/null || true
 
-# Symlink für Terminal-Aufruf
-echo "[4/4] Erstelle Terminal-Befehl..."
-sudo ln -sf "$INSTALL_DIR/starter.py" "$BIN_LINK"
-
-# Aufräumen
+# --- Aufraeumen ---
+echo "[4/4] Raeume auf..."
 rm -rf "$TMP_DIR"
 
 echo ""
-echo "✔ yakuda-connect v$VERSION erfolgreich installiert!"
+echo "[OK] yakuda-connect ist auf Version $NEW_VER ($MODE abgeschlossen)."
 echo ""
 echo "Starten:"
-echo "  • Im Anwendungsmenü: nach 'yakuda-connect' suchen"
-echo "  • Im Terminal: yakuda-connect"
+echo "  - Im Anwendungsmenue: nach 'yakuda-connect' suchen"
+echo "  - Im Terminal: yakuda-connect"
