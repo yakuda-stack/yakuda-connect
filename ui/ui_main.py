@@ -231,7 +231,10 @@ class Ui_MainWindow(object):
         self.controls_group.setTitle(tr("settings_controls"))
         self.openxr_group.setTitle(tr("openxr_group"))
         self.lbl_openxr_desc.setText(tr("openxr_desc"))
-        self.btn_openxr_fix.setText(tr("openxr_fix_btn"))
+        self.lbl_openxr_path_title.setText(tr("openxr_path_title"))
+        self.lbl_openxr_content_title.setText(tr("openxr_content_title"))
+        self.btn_openxr_copy_path.setText(tr("openxr_copy_btn"))
+        self.btn_openxr_copy_content.setText(tr("openxr_copy_btn"))
         self.lbl_touch_title.setText(tr("settings_touch_title"))
         self.lbl_touch_desc.setText(tr("settings_touch_desc"))
         self.lbl_touch_coming.setText(tr("settings_touch_coming"))
@@ -677,18 +680,41 @@ class Ui_MainWindow(object):
         self.lbl_openxr_desc.setWordWrap(True)
         openxr_layout.addWidget(self.lbl_openxr_desc)
 
-        self.btn_openxr_fix = QPushButton(tr("openxr_fix_btn"))
-        self.btn_openxr_fix.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
-        openxr_layout.addWidget(self.btn_openxr_fix)
+        from PySide6.QtWidgets import QPlainTextEdit
+        _copy_css = ("QPushButton { background-color: #5e81ac; color: white; border: none; "
+                     "font-weight: bold; padding: 6px 10px; border-radius: 4px; font-size: 12px; }"
+                     "QPushButton:hover { background-color: #81a1c1; }")
 
-        self.lbl_openxr_status = QLabel("")
-        self.lbl_openxr_status.setStyleSheet("font-size: 11px; padding-top: 2px;")
-        self.lbl_openxr_status.setWordWrap(True)
-        openxr_layout.addWidget(self.lbl_openxr_status)
+        # Pfad der Datei (kopierbar)
+        self.lbl_openxr_path_title = QLabel(tr("openxr_path_title"))
+        self.lbl_openxr_path_title.setStyleSheet(
+            "color: #eceff4; font-size: 11px; font-weight: bold; padding-top: 4px;")
+        openxr_layout.addWidget(self.lbl_openxr_path_title)
+
+        openxr_path_row = QHBoxLayout()
+        self.txt_openxr_path = QLineEdit()
+        self.txt_openxr_path.setReadOnly(True)
+        openxr_path_row.addWidget(self.txt_openxr_path)
+        self.btn_openxr_copy_path = QPushButton(tr("openxr_copy_btn"))
+        self.btn_openxr_copy_path.setStyleSheet(_copy_css)
+        openxr_path_row.addWidget(self.btn_openxr_copy_path)
+        openxr_layout.addLayout(openxr_path_row)
+
+        # Inhalt für die Datei (kopierbar)
+        self.lbl_openxr_content_title = QLabel(tr("openxr_content_title"))
+        self.lbl_openxr_content_title.setStyleSheet(
+            "color: #eceff4; font-size: 11px; font-weight: bold; padding-top: 6px;")
+        openxr_layout.addWidget(self.lbl_openxr_content_title)
+
+        self.txt_openxr_content = QPlainTextEdit()
+        self.txt_openxr_content.setReadOnly(True)
+        self.txt_openxr_content.setFixedHeight(150)
+        self.txt_openxr_content.setStyleSheet("font-family: monospace; font-size: 11px;")
+        openxr_layout.addWidget(self.txt_openxr_content)
+
+        self.btn_openxr_copy_content = QPushButton(tr("openxr_copy_btn"))
+        self.btn_openxr_copy_content.setStyleSheet(_copy_css)
+        openxr_layout.addWidget(self.btn_openxr_copy_content)
 
         layout.addWidget(self.openxr_group)
 

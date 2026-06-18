@@ -2,13 +2,20 @@
 """
 overlay_manager.py — WayVR-Overlay-Verwaltung für yakuda-connect
 ================================================================
-Stellt die Logik für die beiden Settings-Buttons bereit:
+Neuaufbau auf Basis des cubee-Designs:
 
-  * "WayVR-Design aktualisieren"  -> install_design (Worker, lädt cubee-cb Design,
-                                     legt Backup an, aktiviert Performance-Overlay)
-  * "WayVR SlimeVR-UI hinzufügen"  -> install_slimevr_ui (fügt Reset-Buttons hinzu)
+  Basis-Design   : https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr
+  SlimeVR-Buttons: von sapphire (#wayvr-custom, https://discord.gg/EHAYe3tTYa)
 
-Die mitgelieferten Dateien liegen im Repo-Unterordner "overlay/" (neben "core/").
+Ablauf:
+  * "WayVR-Design aktualisieren" lädt das cubee-Basis-Design herunter (Standard,
+    OHNE Performance-Overlay) und entfernt dabei Reste einer früheren
+    Performance-Anzeige (hwmon) aus einer bestehenden Installation.
+  * Die SlimeVR-Reset-Buttons lassen sich optional einblenden (eine Reihe
+    UNTER den normalen Buttons). Sie sind statisch und verursachen keinen
+    Dauer-IPC – im Gegensatz zur alten Performance-Anzeige, die WayVR bei
+    langen Sessions zum Haengen bringen konnte und deshalb entfernt wurde.
+
 Ziel ist immer ~/.config/wayvr/ .
 """
 import os
@@ -28,29 +35,32 @@ GUI_ASSETS   = os.path.join(GUI_DIR, "assets")
 THEME_ASSETS = os.path.join(THEME_DIR, "assets")
 WATCH_XML    = os.path.join(GUI_DIR, "watch.xml")
 BACKUP_BASE  = os.path.join(HOME, ".config/yakuda-connect/backup")
-PRISTINE_BACKUP = os.path.join(BACKUP_BASE, "wayvr_original")  # einmalige Sicherung des Original-Zustands
+PRISTINE_BACKUP = os.path.join(BACKUP_BASE, "wayvr_original")
+CUBEE_BASE_WATCH = os.path.join(BACKUP_BASE, "cubee_watch_base.xml")
 
 CUBEE_REPO    = "https://github.com/cubee-cb/linux-vr-compat"
 CUBEE_TARBALL = "https://codeload.github.com/cubee-cb/linux-vr-compat/tar.gz/refs/heads/master"
 
+_PERF_LEFTOVERS = [
+    os.path.join(GUI_ASSETS, "hwmon.sh"),
+    os.path.join(GUI_ASSETS, "perf_toggle.sh"),
+    os.path.join(GUI_ASSETS, "media", "perf.svg"),
+    os.path.join(GUI_DIR, "watch_nohwmon.xml"),
+    os.path.join(GUI_DIR, "watch_slimevr.xml"),
+    os.path.join(GUI_DIR, "watch_slimevr_nohwmon.xml"),
+    os.path.join(WAYVR_DIR, ".hwmon_visible"),
+]
 
-# --------------------------------------------------------------------------- #
-#  Pfade / Status
-# --------------------------------------------------------------------------- #
+
 def overlay_dir():
-    """
-    Findet den mitgelieferten overlay/-Ordner.
-    Funktioniert sowohl im Entwicklungs-Layout (overlay/ neben core/) als auch
-    in einem gepackten AppImage (überall dort, wo der Ordner mitgeliefert wird).
-    """
+    """Findet den mitgelieferten overlay/-Ordner (Entwicklungs-Layout oder AppImage)."""
     import sys
     here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
-        os.path.join(os.path.dirname(here), "overlay"),   # <repo>/overlay  (core/ ist Geschwister)
-        os.path.join(here, "overlay"),                    # core/overlay
+        os.path.join(os.path.dirname(here), "overlay"),
+        os.path.join(here, "overlay"),
         os.path.join(here, "..", "overlay"),
     ]
-    # AppImage: $APPDIR zeigt auf das gemountete Wurzelverzeichnis
     appdir = os.environ.get("APPDIR")
     if appdir:
         candidates += [
@@ -59,7 +69,6 @@ def overlay_dir():
             os.path.join(appdir, "usr", "bin", "overlay"),
             os.path.join(appdir, "usr", "share", "yakuda-connect", "overlay"),
         ]
-    # Relativ zum gestarteten Programm (Fallback)
     try:
         exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
         candidates += [
@@ -68,36 +77,33 @@ def overlay_dir():
         ]
     except Exception:
         pass
-
     for c in candidates:
         if os.path.isdir(c):
             return os.path.abspath(c)
     return os.path.abspath(candidates[0])
 
 
+def _slimevr_watch_src():
+    return os.path.join(overlay_dir(), "watch_slimevr.xml")
+
+
+def _slimevr_assets_src():
+    return os.path.join(overlay_dir(), "slimevr", "assets")
+
+
 def is_design_installed():
     return os.path.exists(WATCH_XML)
 
 
-def is_performance_active():
-    try:
-        with open(WATCH_XML, "r", errors="ignore") as f:
-            return 'id="hwmon"' in f.read()
-    except Exception:
-        return False
-
-
 def is_slimevr_active():
+    """SlimeVR-Buttons aktiv? Erkennbar am eepyxr-Button (nur in der SlimeVR-Watch)."""
     try:
         with open(WATCH_XML, "r", errors="ignore") as f:
-            return "YAKUDA_SLIMEVR" in f.read()
+            return 'id="btn_eepyxr"' in f.read()
     except Exception:
         return False
 
 
-# --------------------------------------------------------------------------- #
-#  Backup
-# --------------------------------------------------------------------------- #
 def backup_wayvr():
     """Sichert die aktuelle ~/.config/wayvr nach ~/.config/yakuda-connect/backup/."""
     if not os.path.isdir(WAYVR_DIR):
@@ -110,42 +116,28 @@ def backup_wayvr():
 
 
 def backup_wayvr_pristine():
-    """
-    Sichert EINMALIG den Original-Zustand von ~/.config/wayvr (vor dem Design).
-    Wird nur angelegt, wenn es noch keine Original-Sicherung gibt UND der aktuelle
-    Zustand noch nicht nach unserem Design aussieht – sonst würden wir versehentlich
-    das bereits angepasste Design als 'Original' sichern.
-    """
+    """Sichert EINMALIG den Original-Zustand von ~/.config/wayvr (vor dem Design)."""
     if os.path.exists(PRISTINE_BACKUP):
         return
     if not os.path.isdir(WAYVR_DIR):
         return
-    if is_performance_active():
-        return  # sieht schon nach unserem Design aus -> nicht als Original sichern
+    if is_slimevr_active():
+        return
     os.makedirs(BACKUP_BASE, exist_ok=True)
     shutil.copytree(WAYVR_DIR, PRISTINE_BACKUP)
 
 
 def reset_wayvr_to_default():
-    """
-    Setzt WayVR wieder auf Standard zurück ('Design deinstallieren').
-    1) Existiert eine Original-Sicherung -> diese wiederherstellen.
-    2) Sonst: die vom Launcher installierten Design-Dateien (theme/) entfernen,
-       dann nutzt WayVR seine EINGEBAUTEN Standardwerte.
-    Vorher wird der aktuelle Zustand sicherheitshalber gesichert.
-    Rückgabe: (erfolg: bool, code_oder_fehler: str)  code = 'restored' | 'removed'
-    """
+    """Setzt WayVR wieder auf Standard zurück ('Design deinstallieren')."""
     try:
         stop_hwmon()
-        backup_wayvr()  # Sicherheitskopie des aktuellen (angepassten) Zustands
-
+        _clean_performance_artifacts()
+        backup_wayvr()
         if os.path.isdir(PRISTINE_BACKUP):
             if os.path.isdir(WAYVR_DIR):
                 shutil.rmtree(WAYVR_DIR)
             shutil.copytree(PRISTINE_BACKUP, WAYVR_DIR)
             return True, "restored"
-
-        # Keine Original-Sicherung vorhanden -> Custom-Theme entfernen
         if os.path.isdir(THEME_DIR):
             shutil.rmtree(THEME_DIR)
         return True, "removed"
@@ -153,12 +145,25 @@ def reset_wayvr_to_default():
         return False, str(e)
 
 
-# --------------------------------------------------------------------------- #
-#  Download des cubee-cb Designs
-# --------------------------------------------------------------------------- #
+def stop_hwmon():
+    """Beendet ein evtl. noch laufendes hwmon.sh der alten Performance-Anzeige."""
+    subprocess.run(["pkill", "-f", "hwmon.sh"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _clean_performance_artifacts():
+    """Entfernt Dateireste der alten Performance-Anzeige aus ~/.config/wayvr."""
+    stop_hwmon()
+    for p in _PERF_LEFTOVERS:
+        try:
+            if os.path.isfile(p):
+                os.remove(p)
+        except Exception:
+            pass
+
+
 def _download_design(tmp):
     """Lädt das cubee-cb Design nach tmp und gibt den Pfad zu dotfiles/wayvr zurück."""
-    # 1) Bevorzugt: git clone
     if shutil.which("git"):
         subprocess.run(
             ["git", "clone", "--depth", "1", CUBEE_REPO, os.path.join(tmp, "repo")],
@@ -168,7 +173,6 @@ def _download_design(tmp):
             return path
         raise RuntimeError("dotfiles/wayvr nicht im geklonten Repo gefunden.")
 
-    # 2) Fallback: Tarball via curl/wget
     tar = os.path.join(tmp, "repo.tar.gz")
     if shutil.which("curl"):
         subprocess.run(["curl", "-fL", "-o", tar, CUBEE_TARBALL],
@@ -187,105 +191,35 @@ def _download_design(tmp):
     raise RuntimeError("dotfiles/wayvr nicht im heruntergeladenen Archiv gefunden.")
 
 
-# --------------------------------------------------------------------------- #
-#  Overlay anwenden
-# --------------------------------------------------------------------------- #
-def apply_performance_overlay(with_slimevr=False):
-    """
-    Kopiert die Performance-Overlay-Dateien in die WayVR-Theme und setzt die
-    passende watch.xml. with_slimevr=True nutzt die kombinierte Variante
-    (Performance + SlimeVR-Buttons).
-    """
-    perf = os.path.join(overlay_dir(), "performance")
-    os.makedirs(GUI_ASSETS, exist_ok=True)
-
-    # Assets (hwmon.sh, songname.sh, media/) kopieren
-    shutil.copytree(os.path.join(perf, "assets"), GUI_ASSETS, dirs_exist_ok=True)
-
-    # watch.xml setzen
-    watch_src = "watch_slimevr.xml" if with_slimevr else "watch.xml"
-    shutil.copy2(os.path.join(perf, watch_src), WATCH_XML)
-    # nohwmon-Variante als Fallback mitliefern
-    nohwmon = os.path.join(perf, "watch_nohwmon.xml")
-    if os.path.exists(nohwmon):
-        shutil.copy2(nohwmon, os.path.join(GUI_DIR, "watch_nohwmon.xml"))
-
-    # Shell-Skripte ausführbar machen
-    for f in os.listdir(GUI_ASSETS):
-        if f.endswith(".sh"):
-            try:
-                os.chmod(os.path.join(GUI_ASSETS, f), 0o755)
-            except Exception:
-                pass
-
-
 def copy_slimevr_assets():
-    """Kopiert die SlimeVR-Reset-Icons nach ~/.config/wayvr/theme/assets/."""
-    src = os.path.join(overlay_dir(), "slimevr", "assets")
+    """Kopiert die SlimeVR-Reset-Icons (von sapphire) nach ~/.config/wayvr/theme/assets/."""
+    src = _slimevr_assets_src()
     os.makedirs(THEME_ASSETS, exist_ok=True)
     for f in os.listdir(src):
         shutil.copy2(os.path.join(src, f), os.path.join(THEME_ASSETS, f))
 
 
-# --------------------------------------------------------------------------- #
-#  hwmon-Hintergrundskript (Performance-Werte)
-# --------------------------------------------------------------------------- #
-def stop_hwmon():
-    subprocess.run(["pkill", "-f", "hwmon.sh"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def start_hwmon():
-    """
-    Startet hwmon.sh im Hintergrund (speist die Performance-Anzeige).
-    Benötigt ein laufendes WayVR (wegen wayvrctl). Läuft sonst einfach ins Leere.
-    """
-    script = os.path.join(GUI_ASSETS, "hwmon.sh")
-    if not os.path.exists(script):
-        return False
-    stop_hwmon()
-    try:
-        subprocess.Popen(["bash", script],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True)
-        return True
-    except Exception:
-        return False
-
-
-# --------------------------------------------------------------------------- #
-#  SlimeVR-UI aktivieren
-# --------------------------------------------------------------------------- #
 def install_slimevr_ui():
-    """
-    Aktiviert die SlimeVR-Reset-Buttons in der WayVR-Watch.
-    Setzt ein installiertes Design voraus (erst 'Design aktualisieren').
-    Rückgabe: (erfolg: bool, code_oder_fehler: str)
-    """
+    """Blendet die SlimeVR-Reset-Buttons ein (cubee-Watch + SlimeVR-Reihe darunter)."""
     try:
         if not is_design_installed():
             return False, "no_design"
         copy_slimevr_assets()
-        # watch.xml auf die kombinierte Variante umstellen (Performance bleibt erhalten)
-        apply_performance_overlay(with_slimevr=True)
-        start_hwmon()
+        shutil.copy2(_slimevr_watch_src(), WATCH_XML)
         return True, "ok"
     except Exception as e:
         return False, str(e)
 
 
 def remove_slimevr_ui():
-    """
-    Entfernt die SlimeVR-Buttons wieder. Das Performance-Overlay bleibt erhalten.
-    Rückgabe: (erfolg: bool, code_oder_fehler: str)
-    """
+    """Blendet die SlimeVR-Buttons wieder aus -> zurück zur sauberen cubee-Watch."""
     try:
         if not is_design_installed():
             return False, "no_design"
-        # Zurück auf die reine Performance-watch.xml (ohne SlimeVR-Block)
-        apply_performance_overlay(with_slimevr=False)
-        start_hwmon()
-        return True, "ok"
+        if os.path.isfile(CUBEE_BASE_WATCH):
+            shutil.copy2(CUBEE_BASE_WATCH, WATCH_XML)
+            return True, "ok"
+        return False, "no_base"
     except Exception as e:
         return False, str(e)
 
@@ -295,22 +229,13 @@ def set_slimevr_ui(enabled):
     return install_slimevr_ui() if enabled else remove_slimevr_ui()
 
 
-# --------------------------------------------------------------------------- #
-#  playerctl sicherstellen (für die Media-Buttons der Watch)
-# --------------------------------------------------------------------------- #
 def ensure_playerctl():
-    """
-    Installiert 'playerctl' per yay, falls es noch nicht vorhanden ist.
-    Öffnet dafür ein Terminal (yay braucht sudo-Passwort/Bestätigung).
-    Rückgabe: True wenn playerctl danach vorhanden ist (oder schon war).
-    """
+    """Installiert 'playerctl' per yay, falls es noch nicht vorhanden ist."""
     if shutil.which("playerctl"):
-        return True  # schon installiert
-
+        return True
     terminal, flags = find_terminal()
     if not terminal:
-        return False  # kein Terminal gefunden -> Nutzer muss manuell installieren
-
+        return False
     bash_cmd = (
         "echo '=== Installiere playerctl (fuer die Media-Buttons der WayVR-Watch) ==='; "
         "yay -S playerctl; "
@@ -326,17 +251,14 @@ def ensure_playerctl():
     return shutil.which("playerctl") is not None
 
 
-# --------------------------------------------------------------------------- #
-#  Worker: Design installieren (Netzwerk -> eigener Thread)
-# --------------------------------------------------------------------------- #
 class DesignInstallWorker(QThread):
-    status_signal = Signal(str)        # "backup" | "download" | "install" | "overlay" | "playerctl"
-    finished_signal = Signal(bool, str)  # (erfolg, fehlertext)
+    status_signal = Signal(str)
+    finished_signal = Signal(bool, str)
 
     def run(self):
         try:
             self.status_signal.emit("backup")
-            backup_wayvr_pristine()   # einmalige Original-Sicherung (nur falls noch kein Design da)
+            backup_wayvr_pristine()
             backup_wayvr()
 
             with tempfile.TemporaryDirectory() as tmp:
@@ -347,17 +269,24 @@ class DesignInstallWorker(QThread):
                 os.makedirs(WAYVR_DIR, exist_ok=True)
                 shutil.copytree(dotfiles, WAYVR_DIR, dirs_exist_ok=True)
 
-                self.status_signal.emit("overlay")
-                apply_performance_overlay(with_slimevr=False)
+            self.status_signal.emit("cleanup")
+            _clean_performance_artifacts()
 
-            # playerctl für die Media-Buttons sicherstellen (Fehler hier sind nicht kritisch)
+            if os.path.isfile(WATCH_XML):
+                os.makedirs(BACKUP_BASE, exist_ok=True)
+                shutil.copy2(WATCH_XML, CUBEE_BASE_WATCH)
+
+            try:
+                copy_slimevr_assets()
+            except Exception:
+                pass
+
             self.status_signal.emit("playerctl")
             try:
                 ensure_playerctl()
             except Exception:
                 pass
 
-            start_hwmon()
             self.finished_signal.emit(True, "")
         except subprocess.CalledProcessError as e:
             err = e.stderr.decode("utf-8", "ignore") if isinstance(e.stderr, (bytes, bytearray)) else (e.stderr or str(e))

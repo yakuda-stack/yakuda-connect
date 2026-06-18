@@ -40,7 +40,21 @@ No installation required. Run the software completely isolated as a standalone e
    - **Via Terminal:** Run `chmod +x yakuda-connect-*.AppImage`
 4. Double-click the file to launch!
 
-### Method 2: Manual Installation (From Source)
+
+### Method 2: 1 terminal command
+
+install
+terminal open 
+``` 
+bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh)
+```
+start : 
+``` 
+yakuda-connect
+```
+
+
+### Method 3: Manual Installation (From Source)
 If you prefer to run the application directly from the source code, use the following commands:
 
 ```bash
@@ -55,7 +69,7 @@ bash install.sh
 
 
 
-
+```
 
 
 **Changelog**

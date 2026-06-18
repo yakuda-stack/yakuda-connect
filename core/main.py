@@ -278,9 +278,10 @@ class VRApp(QMainWindow):
         self.ui.btn_overlay_design.clicked.connect(self.start_overlay_design)
         self.ui.btn_overlay_reset.clicked.connect(self.reset_overlay_design)
         self.ui.chk_overlay_slimevr.toggled.connect(self.toggle_overlay_slimevr)
-        self.ui.btn_openxr_fix.clicked.connect(self.apply_openxr_fix)
+        self.ui.btn_openxr_copy_path.clicked.connect(self.copy_openxr_path)
+        self.ui.btn_openxr_copy_content.clicked.connect(self.copy_openxr_content)
         self.refresh_overlay_state()
-        self.refresh_openxr_status()
+        self.fill_openxr_fields()
 
         # Dashboard Steuerung
         self.ui.btn_start.clicked.connect(self.start_wivrn_server)
@@ -567,36 +568,35 @@ class VRApp(QMainWindow):
         self.ui.chk_overlay_slimevr.setChecked(design and is_slimevr_active())
         self.ui.chk_overlay_slimevr.blockSignals(False)
 
-    def refresh_openxr_status(self):
-        """Zeigt den aktuellen Zustand der OpenXR-Runtime-Datei farbig an."""
+    def fill_openxr_fields(self):
+        """Füllt das Pfad-Feld und das Inhalt-Feld für die manuelle OpenXR-Reparatur."""
         try:
-            state, detail = oxr.current_status()
+            self.ui.txt_openxr_path.setText(oxr.ACTIVE_RUNTIME)
+            openxr_so, monado_so = oxr.find_wivrn_libs()
+            if openxr_so:
+                runtime = {"file_format_version": "1.0.0",
+                           "runtime": {"name": "Monado", "library_path": openxr_so}}
+                if monado_so:
+                    runtime["runtime"]["MND_libmonado_path"] = monado_so
+            else:
+                # Bibliotheken nicht gefunden -> Vorlage mit den ueblichen Standardpfaden
+                runtime = {"file_format_version": "1.0.0",
+                           "runtime": {"name": "Monado",
+                                       "library_path": "/usr/lib/wivrn/libopenxr_wivrn.so",
+                                       "MND_libmonado_path": "/usr/lib/wivrn/libmonado_wivrn.so"}}
+            self.ui.txt_openxr_content.setPlainText(json.dumps(runtime, indent=4))
         except Exception:
-            return
-        if state == "ok":
-            color, text = "#a3be8c", tr("openxr_status_ok")
-        elif state == "broken":
-            color, text = "#bf616a", tr("openxr_status_broken")
-        else:  # missing
-            color, text = "#ebcb8b", tr("openxr_status_missing")
-        self.ui.lbl_openxr_status.setStyleSheet(f"font-size: 11px; padding-top: 2px; color: {color};")
-        self.ui.lbl_openxr_status.setText(text)
+            pass
 
-    def apply_openxr_fix(self):
-        """Repariert ~/.config/openxr/1/active_runtime.json (absolute Pfade)."""
-        ok, code, detail = oxr.apply_openxr_fix()
-        if ok:
-            msg = tr("openxr_fix_done").format(path=oxr.ACTIVE_RUNTIME)
-            if detail:
-                msg += "\n\n" + tr("openxr_fix_backup").format(backup=detail)
-            QMessageBox.information(self, "OpenXR", msg)
-        elif code == "libs_not_found":
-            QMessageBox.warning(self, "OpenXR", tr("openxr_fix_no_libs"))
-        elif code == "not_elf":
-            QMessageBox.warning(self, "OpenXR", tr("openxr_fix_not_elf").format(path=detail))
-        else:
-            QMessageBox.critical(self, "OpenXR", tr("openxr_fix_error") + "\n\n" + str(detail))
-        self.refresh_openxr_status()
+    def copy_openxr_path(self):
+        QApplication.clipboard().setText(self.ui.txt_openxr_path.text())
+        self.ui.btn_openxr_copy_path.setText(tr("openxr_copied"))
+        QTimer.singleShot(1500, lambda: self.ui.btn_openxr_copy_path.setText(tr("openxr_copy_btn")))
+
+    def copy_openxr_content(self):
+        QApplication.clipboard().setText(self.ui.txt_openxr_content.toPlainText())
+        self.ui.btn_openxr_copy_content.setText(tr("openxr_copied"))
+        QTimer.singleShot(1500, lambda: self.ui.btn_openxr_copy_content.setText(tr("openxr_copy_btn")))
 
     def start_apk_install(self):
         """Startet Download und Installation der WiVRn APK."""

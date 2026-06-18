@@ -1,20 +1,15 @@
-# overlay/ — WayVR Overlay-Dateien für yakuda-connect
+# yakuda-connect — WayVR Overlay
 
-Diese Dateien werden vom Launcher (core/overlay_manager.py) verwendet, NICHT
-direkt von Hand installiert.
+Basis-Design (wird per "WayVR-Design aktualisieren" live von GitHub geladen):
+  https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr
 
-## performance/   (Performance-Overlay, ersetzt den Chatbox-Bereich)
-- watch.xml           : WayVR-Watch mit Live-Performance-Anzeige (hwmon-Block)
-- watch_slimevr.xml   : wie watch.xml, zusätzlich mit SlimeVR-Reset-Buttons
-- watch_nohwmon.xml   : Variante ohne hwmon (Fallback)
-- assets/hwmon.sh     : speist GPU/CPU-Last & -Temp live via `wayvrctl batch`
-- assets/songname*.sh : Medien-/Songname-Helfer
-- assets/media/*.svg  : Icons für Medien-Steuerung
+SlimeVR-Reset-Buttons (optional, eine Reihe DARUNTER): von sapphire
+#wayvr-custom (Discord): https://discord.gg/EHAYe3tTYa
 
-## slimevr/   (SlimeVR-Reset-Buttons)
-- assets/*.svg        : Icons (yaw/full/mounting/mounting-feet-reset, eepyxr)
-                        -> werden nach ~/.config/wayvr/theme/assets/ kopiert
+Inhalt:
+  watch_slimevr.xml  - aktuelle cubee-Watch + SlimeVR-Reihe darunter
+  slimevr/assets/    - eepyxr- und Reset-Icons (von sapphire)
 
-Hinweise:
-- hwmon.sh ist auf AMD + /sys/class/drm/card1 ausgelegt (sensors: Tctl/edge/junction).
-- SlimeVR-Buttons brauchen `solarxr-cli` (und ggf. `eepyxr`) im PATH.
+Kein Performance-Overlay mehr: Die fruehere hwmon-Anzeige fuetterte WayVR im
+Sekundentakt per IPC und konnte es bei langen Sessions zum Haengen bringen.
+Der Update-Knopf entfernt Reste einer solchen alten Installation automatisch.

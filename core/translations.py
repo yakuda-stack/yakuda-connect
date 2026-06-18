@@ -120,10 +120,14 @@ TRANSLATIONS = {
         "settings_controls":     "Controls",
         "openxr_group":          "OpenXR Runtime (Steam Fix)",
         "openxr_desc":           ("Fixes the Steam/pressure-vessel \"invalid Elf handle\" error by writing a correct "
-                                  "OpenXR runtime file with absolute paths to the WiVRn libraries. Your existing file "
-                                  "is backed up first. After fixing, set this in your VR game's Steam launch options:\n"
+                                  "OpenXR runtime file. Because writing this file can hit permission issues, you do it "
+                                  "yourself: copy the path below, open that file in a text editor, replace its whole "
+                                  "content with the text below and save. Tip: also add this Steam launch option:\n"
                                   "XR_RUNTIME_JSON=$HOME/.config/openxr/1/active_runtime.json PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%"),
-        "openxr_fix_btn":        "Fix OpenXR runtime for Steam",
+        "openxr_path_title":     "File path (open this file):",
+        "openxr_content_title":  "Paste this into the file:",
+        "openxr_copy_btn":       "Copy",
+        "openxr_copied":         "Copied!",
         "openxr_fix_done":       "OpenXR runtime fixed.\nWritten with absolute paths to:\n{path}",
         "openxr_fix_backup":     "Your previous file was backed up to:\n{backup}",
         "openxr_fix_no_libs":    "Could not find the WiVRn libraries (libopenxr_wivrn.so). Is WiVRn installed?",
@@ -138,9 +142,7 @@ TRANSLATIONS = {
         "overlay_credits": (
             "Built on the work of the WayVR community — please support the people behind it:<br>"
             "• Base watch design: <a href='https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr'>cubee-cb / linux-vr-compat</a><br>"
-            "• Performance overlay &amp; SlimeVR buttons: <b>#wayvr-custom</b> channel on Discord<br>"
-            "&nbsp;&nbsp;– SlimeVR buttons by <b>sapphire</b><br>"
-            "&nbsp;&nbsp;– Performance overlay by <b>nwzsvswarchbtwalsosystemd</b><br>"
+            "• SlimeVR buttons by <b>sapphire</b> (<b>#wayvr-custom</b> channel on Discord)<br>"
             "• WayVR Discord: <a href='https://discord.gg/EHAYe3tTYa'>discord.gg/EHAYe3tTYa</a>"
         ),
 
@@ -286,11 +288,14 @@ TRANSLATIONS = {
         "settings_controls":     "Steuerung",
         "openxr_group":          "OpenXR-Runtime (Steam-Fix)",
         "openxr_desc":           ("Behebt den Steam-/pressure-vessel-Fehler \"invalid Elf handle\", indem eine korrekte "
-                                  "OpenXR-Runtime-Datei mit absoluten Pfaden zu den WiVRn-Bibliotheken geschrieben wird. "
-                                  "Deine vorhandene Datei wird vorher gesichert. Danach in den Steam-Startoptionen deines "
-                                  "VR-Spiels eintragen:\n"
+                                  "OpenXR-Runtime-Datei. Da das Schreiben dieser Datei Rechte-Probleme machen kann, machst "
+                                  "du es selbst: den Pfad unten kopieren, die Datei im Texteditor oeffnen, ihren Inhalt "
+                                  "durch den Text unten ersetzen und speichern. Tipp: zusaetzlich diese Steam-Startoption:\n"
                                   "XR_RUNTIME_JSON=$HOME/.config/openxr/1/active_runtime.json PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%"),
-        "openxr_fix_btn":        "OpenXR-Runtime für Steam reparieren",
+        "openxr_path_title":     "Dateipfad (diese Datei oeffnen):",
+        "openxr_content_title":  "Das in die Datei eintragen:",
+        "openxr_copy_btn":       "Kopieren",
+        "openxr_copied":         "Kopiert!",
         "openxr_fix_done":       "OpenXR-Runtime repariert.\nMit absoluten Pfaden geschrieben nach:\n{path}",
         "openxr_fix_backup":     "Deine vorherige Datei wurde gesichert unter:\n{backup}",
         "openxr_fix_no_libs":    "WiVRn-Bibliotheken (libopenxr_wivrn.so) nicht gefunden. Ist WiVRn installiert?",
@@ -305,9 +310,7 @@ TRANSLATIONS = {
         "overlay_credits": (
             "Basiert auf der Arbeit der WayVR-Community — bitte unterstütze die Leute dahinter:<br>"
             "• Basis-Watch-Design: <a href='https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr'>cubee-cb / linux-vr-compat</a><br>"
-            "• Performance-Overlay &amp; SlimeVR-Buttons: Channel <b>#wayvr-custom</b> auf Discord<br>"
-            "&nbsp;&nbsp;– SlimeVR-Buttons von <b>sapphire</b><br>"
-            "&nbsp;&nbsp;– Performance-Overlay von <b>nwzsvswarchbtwalsosystemd</b><br>"
+            "• SlimeVR-Buttons von <b>sapphire</b> (Channel <b>#wayvr-custom</b> auf Discord)<br>"
             "• WayVR-Discord: <a href='https://discord.gg/EHAYe3tTYa'>discord.gg/EHAYe3tTYa</a>"
         ),
 
