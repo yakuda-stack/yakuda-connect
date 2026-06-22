@@ -33,6 +33,10 @@
 
 ---
 
+> 🤖 **Transparency Note:** This project and its documentation are proudly developed and optimized with the support of AI coding assistants (**Claude by Anthropic** & **Gemini**).
+
+---
+
 ## 📦 Installation & Setup
 
 Für Linux-Einsteiger und Power-User gibt es zwei einfache Wege, das Tool zu starten.
