@@ -167,10 +167,16 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.0.2-alpha"
+        self.APP_VERSION = "v1.0.3-alpha"
         self.server_process = None
         self.pairing_process = None
         self._overlay_worker = None
+
+        # Gemerkter Server-Zustand — die Anzeige liest nur noch diese Variable,
+        # statt jede Sekunde per Subprozess zu prüfen. Der manuelle Check-Knopf
+        # gleicht sie bei Bedarf mit der Realität ab.
+        self._server_running = False
+        self._syncing_toggle = False         # True während der Schalter nur angeglichen wird
 
         # --- Autostart: Apps folgen der Headset-Verbindung ---
         # Starten, sobald ein Spieler verbindet; beenden bei Trennung oder Server-Stopp.
@@ -208,11 +214,10 @@ class VRApp(QMainWindow):
         else:
             self.ui.sidebar.setCurrentRow(1)
 
-        # Live-Timer für Server-Status
-        self.status_timer = QTimer()
-        self.status_timer.timeout.connect(self.update_server_status_ui)
-        self.status_timer.timeout.connect(self.check_headset_autostart)
-        self.status_timer.start(1000)
+        # Kein Sekunden-Timer mehr: Der Server-Status wird gemerkt (Toggle) und
+        # nur auf Knopfdruck wirklich nachgeprüft. Beim Start einmal abgleichen,
+        # falls der Server bereits läuft (z. B. aus einer früheren Sitzung).
+        self.manual_server_check()
 
         self.apply_loaded_settings()
         self.is_loading = False
@@ -283,9 +288,9 @@ class VRApp(QMainWindow):
         self.refresh_overlay_state()
         self.fill_openxr_fields()
 
-        # Dashboard Steuerung
-        self.ui.btn_start.clicked.connect(self.start_wivrn_server)
-        self.ui.btn_stop.clicked.connect(self.stop_wivrn_server)
+        # Dashboard Steuerung — Schiebeschalter statt Start/Stop-Buttons
+        self.ui.toggle_server.toggled.connect(self.on_server_toggled)
+        self.ui.btn_server_check.clicked.connect(self.manual_server_check)
         self.ui.btn_port_status.clicked.connect(self.open_port_9757_firewall)
         self.ui.combo_language.currentIndexChanged.connect(self.on_language_changed)
 
@@ -1195,6 +1200,8 @@ class VRApp(QMainWindow):
                 ["wivrn-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         print("[Autostart] Server gestartet – warte auf Headset-Verbindung, bevor Programme starten...")
+        self._server_running = True
+        self.update_server_status_ui()
         QTimer.singleShot(500, self.refresh_headset_list)
 
     def stop_wivrn_server(self):
@@ -1213,40 +1220,47 @@ class VRApp(QMainWindow):
 
         if self.server_process: self.server_process.terminate()
         else: subprocess.run(["pkill", "wivrn-server"])
+        self.server_process = None
+        self._server_running = False
+        self.update_server_status_ui()
         self.ui.list_headsets.clear()
         self.ui.list_headsets.addItem(tr("dashboard_no_server"))
 
     def update_server_status_ui(self):
-        """Überprüft den Server-Status und passt die Button-Styles dynamisch an."""
-        server_running = (self.server_process and self.server_process.poll() is None) or subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode == 0
-
-        if server_running:
+        """Passt die Statusanzeige an den GEMERKTEN Zustand an (kein Subprozess)."""
+        if self._server_running:
             self.ui.lbl_status_dot.setStyleSheet("color: #a3be8c; font-size: 24px; margin-left: 10px;")
             self.ui.lbl_status_text.setText(tr("dashboard_active"))
             self.ui.lbl_status_text.setStyleSheet("font-weight: bold; color: #a3be8c;")
-
-            # Start-Button deaktivieren & ausgrauen
-            self.ui.btn_start.setEnabled(False)
-            self.ui.btn_start.setStyleSheet("QPushButton { background-color: #4c566a; color: #7b88a1; font-weight: normal; }")
-
-            # Stop-Button aktivieren & hellblau aufleuchten lassen
-            self.ui.btn_stop.setEnabled(True)
-            self.ui.btn_stop.setStyleSheet(
-                "QPushButton { background-color: #81a1c1; color: #2e3440; font-weight: bold; border-radius: 4px; padding: 6px; }"
-                "QPushButton:hover { background-color: #88c0d0; }"
-            )
         else:
             self.ui.lbl_status_dot.setStyleSheet("color: #bf616a; font-size: 24px; margin-left: 10px;")
             self.ui.lbl_status_text.setText(tr("dashboard_inactive"))
             self.ui.lbl_status_text.setStyleSheet("font-weight: bold; color: #7b88a1;")
 
-            # Start-Button reaktivieren
-            self.ui.btn_start.setEnabled(True)
-            self.ui.btn_start.setStyleSheet("") # Nutzt wieder das Standard-Theme-Styling
+    def on_server_toggled(self, checked):
+        """Reagiert auf eine ECHTE Nutzer-Betätigung des Schalters."""
+        if self._syncing_toggle:
+            return  # Schalter wird nur an die Realität angeglichen — nicht handeln
+        if checked:
+            self.start_wivrn_server()
+        else:
+            self.stop_wivrn_server()
 
-            # Stop-Button deaktivieren & abdunkeln
-            self.ui.btn_stop.setEnabled(False)
-            self.ui.btn_stop.setStyleSheet("QPushButton { background-color: #4c566a; color: #7b88a1; font-weight: normal; border-radius: 4px; padding: 6px; }")
+    def _set_toggle_silently(self, running):
+        """Stellt den Schalter ohne Auslösen von start/stop auf den Zustand ein."""
+        self._syncing_toggle = True
+        self.ui.toggle_server.setChecked(running)
+        self.ui.toggle_server.sync_offset()
+        self._syncing_toggle = False
+
+    def manual_server_check(self):
+        """Prüft auf Knopfdruck (oder beim Start) einmalig den echten Server-Zustand
+        und gleicht Schalter + Anzeige daran an."""
+        running = (self.server_process and self.server_process.poll() is None) or \
+            subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode == 0
+        self._server_running = running
+        self._set_toggle_silently(running)
+        self.update_server_status_ui()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -5,7 +5,69 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QListWidget,
                                QStackedWidget, QLabel, QPushButton, QCheckBox,
                                QComboBox, QLineEdit, QGroupBox, QFormLayout,
                                QSlider, QTextEdit, QFrame)
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF
+from PySide6.QtGui import QPainter, QColor
+
+
+class ToggleSwitch(QCheckBox):
+    """Schiebeschalter (links = aus, rechts = an) im Stil eines iOS-Toggles.
+
+    Verhält sich wie eine QCheckBox (isChecked/setChecked/toggled), zeichnet
+    sich aber als animierter Schiebeschalter. sync_offset() setzt die
+    Knopfposition ohne Animation passend zum aktuellen Zustand — praktisch,
+    wenn der Zustand programmatisch gesetzt wird (z. B. beim Server-Check).
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(52, 28)
+        self._offset = 3.0
+        self._anim = QPropertyAnimation(self, b"offset", self)
+        self._anim.setDuration(150)
+        self.toggled.connect(self._on_toggled)
+
+    def _knob_end(self):
+        return self.width() - self.height() + 3
+
+    def hitButton(self, pos):
+        # Standardmäßig ist eine QCheckBox nur im kleinen Indikator-Bereich
+        # klickbar. Wir machen die GESAMTE Fläche des Schalters klickbar.
+        return self.rect().contains(pos)
+
+    def _on_toggled(self, checked):
+        self._anim.stop()
+        self._anim.setStartValue(self._offset)
+        self._anim.setEndValue(self._knob_end() if checked else 3.0)
+        self._anim.start()
+
+    def sync_offset(self):
+        """Knopf ohne Animation an den aktuellen Zustand angleichen."""
+        self._anim.stop()
+        self._offset = self._knob_end() if self.isChecked() else 3.0
+        self.update()
+
+    def get_offset(self):
+        return self._offset
+
+    def set_offset(self, value):
+        self._offset = value
+        self.update()
+
+    offset = Property(float, get_offset, set_offset)
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        radius = self.height() / 2
+        track = QColor("#81a1c1") if self.isChecked() else QColor("#4c566a")
+        p.setBrush(track)
+        p.drawRoundedRect(0, 0, self.width(), self.height(), radius, radius)
+        d = self.height() - 6
+        p.setBrush(QColor("#eceff4"))
+        p.drawEllipse(QRectF(self._offset, 3, d, d))
+        p.end()
 
 # Programme aus zentraler Datei laden
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
@@ -190,8 +252,7 @@ class Ui_MainWindow(object):
 
         # --- Dashboard-Tab ---
         self.server_group.setTitle(tr("dashboard_server"))
-        self.btn_start.setText(tr("dashboard_start"))
-        self.btn_stop.setText(tr("dashboard_stop"))
+        self.btn_server_check.setText(tr("dashboard_check"))
         self.btn_port_status.setText(tr("dashboard_firewall"))
         self.tracking_group.setTitle(tr("dashboard_tracking"))
         self.chk_hand_tracking.setText(tr("dashboard_hand"))
@@ -346,7 +407,7 @@ class Ui_MainWindow(object):
         layout.setContentsMargins(20, 20, 20, 20)
 
         version_layout = QHBoxLayout()
-        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.0-alpha")
+        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.3-alpha")
         self.lbl_app_ver.setStyleSheet("color: #81a1c1;")
         self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> Prüfe...")
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
@@ -370,30 +431,41 @@ class Ui_MainWindow(object):
         self.server_group = QGroupBox(tr("dashboard_server"))
         server_layout = QVBoxLayout(self.server_group)
 
+        # Schiebeschalter Start/Stop (links = aus, rechts = an) + Statusanzeige (oben).
         top_row = QHBoxLayout()
-        self.btn_start = QPushButton(tr("dashboard_start"))
-        self.btn_stop = QPushButton(tr("dashboard_stop"))
+        self.toggle_server = ToggleSwitch()
 
-        self.lbl_status_dot = QLabel("●")
-        self.lbl_status_dot.setStyleSheet("color: #bf616a; font-size: 24px; margin-left: 10px;")
         self.lbl_status_text = QLabel(tr("dashboard_inactive"))
         self.lbl_status_text.setStyleSheet("font-weight: bold; color: #7b88a1;")
+        self.lbl_status_dot = QLabel("●")
+        self.lbl_status_dot.setStyleSheet("color: #bf616a; font-size: 24px; margin-left: 10px;")
 
-        top_row.addWidget(self.btn_start)
-        top_row.addWidget(self.btn_stop)
-        top_row.addSpacing(20)
-        top_row.addWidget(self.lbl_status_dot)
+        top_row.addWidget(self.toggle_server)
+        top_row.addSpacing(10)
         top_row.addWidget(self.lbl_status_text)
+        top_row.addWidget(self.lbl_status_dot)
         top_row.addStretch()
         server_layout.addLayout(top_row)
 
+        # Untere Reihe: Firewall-Button + Server-Check NEBENEINANDER (aufgeräumter).
+        action_row = QHBoxLayout()
+
         self.btn_port_status = QPushButton(tr("dashboard_firewall"))
-        self.btn_port_status.setFixedWidth(320)
         self.btn_port_status.setStyleSheet("""
-            QPushButton { background-color: #4c566a; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 6px; margin-top: 5px; }
+            QPushButton { background-color: #4c566a; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 6px; }
             QPushButton:hover { background-color: #5e81ac; }
         """)
-        server_layout.addWidget(self.btn_port_status)
+
+        self.btn_server_check = QPushButton(tr("dashboard_check"))
+        self.btn_server_check.setStyleSheet("""
+            QPushButton { background-color: #434c5e; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 6px; }
+            QPushButton:hover { background-color: #4c566a; }
+        """)
+
+        action_row.addWidget(self.btn_port_status)
+        action_row.addWidget(self.btn_server_check)
+        action_row.addStretch()
+        server_layout.addLayout(action_row)
         layout.addWidget(self.server_group)
 
         # --- APK INSTALLATION ---

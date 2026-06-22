@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import shutil
 import subprocess
 import json
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -164,6 +165,30 @@ class StreamingTab(QWidget):
         self.row_bitrate.setVisible(False)
 
         layout.addWidget(self.encoder_group)
+
+        # --- GRUPPE: VR-PRIORITÄT (Async Reprojection / CAP_SYS_NICE) ---
+        self.prio_group = QGroupBox(tr("streaming_prio"))
+        prio_layout = QVBoxLayout(self.prio_group)
+
+        self.lbl_prio_desc = QLabel(tr("streaming_prio_desc"))
+        self.lbl_prio_desc.setWordWrap(True)
+        self.lbl_prio_desc.setStyleSheet("color: #7b88a1; font-size: 11px;")
+        prio_layout.addWidget(self.lbl_prio_desc)
+
+        prio_row = QHBoxLayout()
+        self.lbl_prio_status = QLabel(tr("streaming_checking"))
+        self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")
+        self.btn_vr_priority = QPushButton(tr("streaming_prio_btn"))
+        self.btn_vr_priority.setStyleSheet(
+            "QPushButton { background-color: #81a1c1; color: #2e3440; font-weight: bold; padding: 8px; } "
+            "QPushButton:hover { background-color: #88c0d0; }"
+        )
+        prio_row.addWidget(self.lbl_prio_status)
+        prio_row.addStretch()
+        prio_row.addWidget(self.btn_vr_priority)
+        prio_layout.addLayout(prio_row)
+
+        layout.addWidget(self.prio_group)
         # --- GRUPPE 4: OPENXR RUNTIME ---
         self.openxr_group = QGroupBox(tr("streaming_openxr"))
         openxr_layout = QFormLayout(self.openxr_group)
@@ -212,6 +237,10 @@ class StreamingTab(QWidget):
         self.btn_switch_steamvr.clicked.connect(self.set_openxr_runtime_steamvr)
         self.check_active_openxr_runtime()
 
+        # VR-Priorität (CAP_SYS_NICE)
+        self.btn_vr_priority.clicked.connect(self.enable_vr_priority)
+        self.check_vr_priority()
+
     def retranslate(self):
         """Setzt alle statischen Texte des Streaming-Tabs neu (nach Sprachwechsel)."""
         self.lbl_title.setText(tr("streaming_title"))
@@ -228,8 +257,12 @@ class StreamingTab(QWidget):
         self.lbl_status_title.setText(tr("streaming_status"))
         self.btn_switch_wivrn.setText(tr("streaming_wivrn_btn"))
         self.btn_switch_steamvr.setText(tr("streaming_steam_btn"))
+        self.prio_group.setTitle(tr("streaming_prio"))
+        self.lbl_prio_desc.setText(tr("streaming_prio_desc"))
+        self.btn_vr_priority.setText(tr("streaming_prio_btn"))
         # Aktiven Runtime-Status neu prüfen/setzen (Text ist sprachabhängig)
         self.check_active_openxr_runtime()
+        self.check_vr_priority()
 
     def update_resolution_label(self, value):
         base_w, base_h = 2160, 2160
@@ -330,6 +363,57 @@ class StreamingTab(QWidget):
             QMessageBox.information(self, tr("streaming_rt_switched"), tr("streaming_rt_steam_ok"))
         except Exception as e:
             QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(e))
+
+    def _wivrn_server_path(self):
+        """Findet die wivrn-server-Binary (Symlinks aufgelöst). None, wenn nicht da."""
+        path = shutil.which("wivrn-server")
+        return os.path.realpath(path) if path else None
+
+    def check_vr_priority(self):
+        """Prüft, ob die wivrn-server-Binary bereits CAP_SYS_NICE besitzt."""
+        path = self._wivrn_server_path()
+        if not path:
+            self.lbl_prio_status.setText(tr("streaming_prio_missing"))
+            self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #bf616a; font-size: 13px;")
+            self.btn_vr_priority.setEnabled(False)
+            return
+
+        try:
+            res = subprocess.run(["getcap", path], stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True)
+            has_cap = "cap_sys_nice" in res.stdout.lower()
+        except Exception:
+            has_cap = False
+
+        if has_cap:
+            self.lbl_prio_status.setText(tr("streaming_prio_on"))
+            self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #a3be8c; font-size: 13px;")
+            self.btn_vr_priority.setEnabled(False)
+        else:
+            self.lbl_prio_status.setText(tr("streaming_prio_off"))
+            self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")
+            self.btn_vr_priority.setEnabled(True)
+
+    def enable_vr_priority(self):
+        """Setzt CAP_SYS_NICE auf die wivrn-server-Binary (per pkexec)."""
+        path = self._wivrn_server_path()
+        if not path:
+            QMessageBox.warning(self, tr("error"), tr("streaming_prio_missing"))
+            return
+        try:
+            res = subprocess.run(
+                ["pkexec", "setcap", "cap_sys_nice+ep", path],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode == 0:
+                QMessageBox.information(self, tr("streaming_prio_ok_title"),
+                                        tr("streaming_prio_ok_text"))
+            else:
+                QMessageBox.critical(self, tr("error"),
+                                     tr("streaming_prio_err") + "\n\n" + (res.stderr or "").strip())
+        except Exception as e:
+            QMessageBox.critical(self, tr("error"),
+                                 tr("streaming_prio_err") + "\n\n" + str(e))
+        self.check_vr_priority()
 
     def trigger_auto_save(self):
         """Reicht die aktuellen Streaming-Werte an die Hauptanwendung weiter und speichert."""
