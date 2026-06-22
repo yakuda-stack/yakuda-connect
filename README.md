@@ -4,12 +4,20 @@
 
 `yakuda-connect` is a powerful configuration hub and dashboard designed for Arch-based Linux systems. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
-![yakuda-connect Screenshot](assets/dashboard.png)
-![yakuda-connect Screenshot](assets/installation.png)
-![yakuda-connect Screenshot](assets/streaming.png)
-![yakuda-connect Screenshot](assets/tools.png)
-![yakuda-connect Screenshot](assets/settings.png)
-![yakuda-connect Screenshot](assets/settings2.png)
+### 📸 Interface Preview
+
+<table>
+  <tr>
+    <td><b>Dashboard</b><br><img src="assets/dashboard.png" alt="Dashboard" width="300"/></td>
+    <td><b>Installation</b><br><img src="assets/installation.png" alt="Installation" width="300"/></td>
+    <td><b>Streaming Settings</b><br><img src="assets/streaming.png" alt="Streaming" width="300"/></td>
+  </tr>
+  <tr>
+    <td><b>Tools Hub</b><br><img src="assets/tools.png" alt="Tools" width="300"/></td>
+    <td><b>General Settings</b><br><img src="assets/settings.png" alt="Settings" width="300"/></td>
+    <td><b>Advanced Settings</b><br><img src="assets/settings2.png" alt="Settings 2" width="300"/></td>
+  </tr>
+</table>
 
 ---
 
@@ -36,7 +44,7 @@ Wähle einfach eine der beiden folgenden Optionen, um am schnellsten ans Ziel zu
 #### Option A: Der 1-Klick-Terminal-Befehl (Schnellste Methode)
 Öffne dein Terminal und füge diesen Befehl ein. Er lädt das Skript, installiert das Tool und startet es direkt:
 
-bash <(curl -s [https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh](https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh)) && yakuda-connect
+bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh) && yakuda-connect
 
 #### Option B: Manuelles AppImage (Keine Installation nötig)
 1. Gehe in den Bereich "Releases" auf GitHub.
@@ -52,7 +60,7 @@ bash <(curl -s [https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/ma
 Wenn du den Quellcode selbst klonen und ausführen möchtest, führe diese Befehle nacheinander aus:
 
 1. Repository klonen:
-git clone [https://github.com/yakuda-stack/yakuda-connect.git](https://github.com/yakuda-stack/yakuda-connect.git)
+git clone https://github.com/yakuda-stack/yakuda-connect.git
 
 2. In das Verzeichnis wechseln:
 cd yakuda-connect
