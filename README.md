@@ -2,6 +2,8 @@
 
 **A sleek and intuitive GUI for WiVRn — Linux VR streaming made easy.**
 
+[![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ZHa3rR2Z8k)
+
 `yakuda-connect` is a powerful configuration hub and dashboard designed for Arch-based Linux systems. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
 ### 📸 Interface Preview
@@ -51,7 +53,7 @@ Wähle einfach eine der beiden folgenden Optionen, um am schnellsten ans Ziel zu
 bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh) && yakuda-connect
 
 #### Option B: Manuelles AppImage (Keine Installation nötig)
-1. Gehe in den Bereich "Releases" auf GitHub.
+1. Gehe in den Bereich "Releases" on GitHub.
 2. Lade die neueste yakuda-connect-x86_64.AppImage herunter.
 3. Mach die Datei ausführbar:
    - Per GUI: Rechtsklick auf die Datei -> Eigenschaften -> Berechtigungen -> "Ausführen von Datei als Programm erlauben" aktivieren.
