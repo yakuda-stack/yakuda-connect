@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 import os
 import json
-import shlex
 
 CONFIG_DIR = os.path.expanduser("~/.config/yakuda-connect/config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 WIVRN_CONFIG_FILE = os.path.expanduser("~/.config/wivrn/config.json")
 
-# Launcher-Skript, das WiVRn über den 'application'-Key beim Verbinden startet.
+# Pfad eines früher von WiVRn benutzten Autostart-Launcher-Skripts.
+# Wird nicht mehr erzeugt — nur noch aufgeräumt, falls es aus einer älteren
+# Version übrig ist (Autostart läuft jetzt über main.py).
 AUTOSTART_LAUNCHER = os.path.expanduser("~/.config/yakuda-connect/autostart-launcher.sh")
 
 
@@ -76,102 +77,6 @@ def save_all_settings(hand, fbt, steam, refresh, count, apps_data, streaming_dat
         print(f"[Config Fehler] Konnte Einstellungen nicht schreiben: {e}")
 
 
-def write_autostart_launcher(apps_data):
-    """
-    Erzeugt ein Bash-Skript, das alle aktiven Autostart-Programme startet.
-    Wird von WiVRn über den 'application'-Key aufgerufen, sobald das Headset
-    verbindet — dadurch braucht unser Tool dafür kein Sekunden-Polling mehr.
-
-      - CMD (ohne Debug)  -> startet still im Hintergrund.
-      - CMD mit Debug     -> startet in einem sichtbaren Terminal.
-      - Custom Path       -> wie CMD, nur dass der ganze Eintrag ein Pfad ist.
-      - 'setsid' löst die Programme vom Launcher, damit sie weiterlaufen,
-        wenn er endet (gewollt: sie sollen die Session über laufen).
-
-    Sicherheit: Vor dem Start wird geprüft, ob der Befehl bzw. Pfad überhaupt
-    existiert. Fehlt er, wird der Eintrag übersprungen und eine Warnung auf
-    stderr ausgegeben (taucht im WiVRn-Server-Log auf), statt still zu scheitern.
-
-    Gibt den Skript-Pfad zurück, oder None wenn keine Programme aktiv sind.
-    """
-    active = [a for a in (apps_data or []) if a.get("cmd", "").strip()]
-
-    # Keine aktiven Einträge -> evtl. altes Skript entfernen
-    if not active:
-        try:
-            if os.path.exists(AUTOSTART_LAUNCHER):
-                os.remove(AUTOSTART_LAUNCHER)
-        except Exception:
-            pass
-        return None
-
-    # Terminal nur ermitteln, wenn überhaupt ein Debug-Eintrag dabei ist
-    terminal, flags = (None, None)
-    if any(a.get("debug") for a in active):
-        try:
-            from install_worker import find_terminal
-            terminal, flags = find_terminal()
-        except Exception:
-            terminal, flags = None, None
-
-    lines = [
-        "#!/usr/bin/env bash",
-        "# Automatisch erzeugt von yakuda-connect — NICHT von Hand bearbeiten.",
-        "# Startet die Autostart-Programme, sobald WiVRn das Headset verbindet.",
-        "",
-    ]
-
-    for a in active:
-        cmd = a["cmd"].strip().replace("\n", " ")
-        is_path = (a.get("type") == "Custom Path")
-
-        # --- Existenz-Prüfung je nach Typ ---
-        if is_path:
-            # Der ganze Eintrag ist ein Dateipfad -> prüfen, ob die Datei da ist.
-            check = f"[ -e {shlex.quote(cmd)} ]"
-        else:
-            # CMD -> erstes Token ist das Programm, im PATH suchen.
-            try:
-                binary = shlex.split(cmd)[0]
-            except Exception:
-                binary = cmd.split()[0] if cmd.split() else cmd
-            check = f"command -v {shlex.quote(binary)} >/dev/null 2>&1"
-
-        # --- Startbefehl ---
-        if a.get("debug") and terminal:
-            term_part = " ".join([terminal] + (flags or []))
-            inner = (f"{cmd}; echo ''; "
-                     f"echo '[Debug] Prozess beendet. Fenster schliessen zum Beenden.'; read")
-            launch = f"setsid {term_part} bash -c {shlex.quote(inner)} &"
-        else:
-            launch = f"setsid bash -c {shlex.quote(cmd)} >/dev/null 2>&1 &"
-
-        warn = "echo " + shlex.quote(
-            f"[yakuda-connect] Uebersprungen (nicht gefunden): {cmd}") + " >&2"
-
-        lines += [
-            f"# Eintrag: {cmd}",
-            f"if {check}; then",
-            f"    {launch}",
-            "else",
-            f"    {warn}",
-            "fi",
-            "",
-        ]
-
-    lines.append("exit 0")
-
-    try:
-        os.makedirs(os.path.dirname(AUTOSTART_LAUNCHER), exist_ok=True)
-        with open(AUTOSTART_LAUNCHER, "w") as f:
-            f.write("\n".join(lines) + "\n")
-        os.chmod(AUTOSTART_LAUNCHER, 0o755)
-        return AUTOSTART_LAUNCHER
-    except Exception as e:
-        print(f"[Autostart] Launcher konnte nicht geschrieben werden: {e}")
-        return None
-
-
 def sync_with_wivrn(config_data):
     """
     Schreibt die Werte im korrekten Format laut WiVRn-Dokumentation:
@@ -200,19 +105,24 @@ def sync_with_wivrn(config_data):
         wivrn_data["refresh_rate"] = 0  # 0 = automatisch laut WiVRn
 
     # --- application (Autostart) ---
-    # WiVRn startet beim Verbinden EIN Programm. Wir geben ihm ein kleines
-    # Launcher-Skript, das ALLE aktiven Autostart-Zeilen startet. Der Pfad
-    # bleibt immer gleich — nur der Inhalt des Skripts ändert sich.
-    # WICHTIG: In main.py darf der Timer die Programme NICHT zusätzlich
-    # starten (sonst doppelte Instanzen). Die Zeile
-    #   self.status_timer.timeout.connect(self.check_headset_autostart)
-    # muss daher entfernt werden.
-    apps_data = config_data.get("autostart_apps", [])
-    launcher = write_autostart_launcher(apps_data)
-    if launcher:
-        wivrn_data["application"] = ["bash", launcher]
-    else:
-        wivrn_data.pop("application", None)
+    # Autostart läuft NICHT mehr über WiVRn.
+    #
+    # Grund: Programme, die WiVRn über den 'application'-Key startet, laufen in
+    # der Umgebung des Servers und erben NICHT die Variablen der Desktop-Sitzung
+    # (DISPLAY/WAYLAND_DISPLAY, XDG_RUNTIME_DIR, DBus-Adresse, ...). Dadurch
+    # starten WayVR, OSC Leash & Co. unzuverlässig oder gar nicht.
+    #
+    # Stattdessen startet yakuda-connect die Programme jetzt selbst direkt aus
+    # der laufenden Sitzung heraus (siehe main.py: Einweg-Timer, der auf
+    # is_headset_connected() wartet). So erben sie alle nötigen Umgebungs-
+    # variablen. Hier wird der 'application'-Key daher entfernt und ein evtl.
+    # vorhandenes altes Launcher-Skript aufgeräumt.
+    wivrn_data.pop("application", None)
+    try:
+        if os.path.exists(AUTOSTART_LAUNCHER):
+            os.remove(AUTOSTART_LAUNCHER)
+    except Exception:
+        pass
 
     # --- scale (float, render resolution) ---
     # 100% -> 1.0, 150% -> 1.5

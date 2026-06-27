@@ -167,7 +167,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.0.3-alpha"
+        self.APP_VERSION = "v1.0.4-alpha"
         self.server_process = None
         self.pairing_process = None
         self._overlay_worker = None
@@ -189,6 +189,16 @@ class VRApp(QMainWindow):
         # Wie viele Sekunden "getrennt" am Stück, bevor die Apps beendet werden
         # (verhindert, dass kurze Aussetzer die Programme killen).
         self._disconnect_grace = 3
+
+        # --- Einweg-Autostart-Timer ---
+        # Wird beim Server-Start scharfgeschaltet, prüft im Sekundentakt
+        # is_headset_connected() und BEENDET SICH SELBST, sobald er die Programme
+        # einmal gestartet hat. Danach läuft kein Polling mehr (schont CPU),
+        # bis er per Button / Server-Neustart neu scharfgeschaltet wird.
+        self._autostart_launched = False     # In diesem Zyklus bereits gestartet?
+        self.autostart_timer = QTimer(self)
+        self.autostart_timer.setInterval(1000)   # 1x pro Sekunde
+        self.autostart_timer.timeout.connect(self._poll_headset_for_autostart)
 
         self.is_loading = True  # Verhindert das Speichern während des Ladens
 
@@ -309,6 +319,10 @@ class VRApp(QMainWindow):
         # Autostart Zeilen-Generierung
         self.ui.num_apps.returnPressed.connect(self.update_autostart_fields)
         self.ui.num_apps.editingFinished.connect(self.update_autostart_fields)
+        # Manueller Reset des Einweg-Autostart-Timers
+        self.ui.btn_autostart_reset.clicked.connect(self.reset_autostart_readiness)
+        # Besen-Button: laufende Autostart-Apps sofort beenden
+        self.ui.btn_autostart_kill.clicked.connect(self.kill_autostart_apps)
 
         # Headset Management
         self.ui.btn_refresh_list.clicked.connect(self.refresh_headset_list)
@@ -700,41 +714,109 @@ class VRApp(QMainWindow):
                 card["lbl_status"].setText(tr("tools_not_installed"))
                 card["btn_install"].setText(tr("tools_install_btn"))
 
+    def _get_pictures_dir(self):
+        """Ermittelt den lokalisierten Bilder-Ordner.
+        Gibt z. B. ~/Bilder auf deutschen, ~/Pictures auf englischen Systemen zurück."""
+        import pathlib
+        home = pathlib.Path.home()
+
+        # 1. Bevorzugt über xdg-user-dir den korrekten, lokalisierten Ordner holen
+        try:
+            res = subprocess.run(
+                ["xdg-user-dir", "PICTURES"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            )
+            if res.returncode == 0:
+                p = res.stdout.strip()
+                # xdg gibt das Home zurück, wenn nichts konfiguriert ist → das ignorieren
+                if p and pathlib.Path(p) != home:
+                    return pathlib.Path(p)
+        except Exception:
+            pass
+
+        # 2. Fallback: bekannte Ordnernamen durchprobieren (existierender gewinnt)
+        for name in ("Bilder", "Pictures"):
+            if (home / name).is_dir():
+                return home / name
+
+        # 3. Letzter Fallback
+        return home / "Bilder"
+
     def create_vrchat_symlink(self):
-        """Erstellt einen Symlink vom VRChat Proton-Bilderordner zum Linux Pictures-Ordner."""
+        """Verlinkt den VRChat Proton-Bilderordner in den lokalen Bilder-Ordner.
+        Alles, was VRChat im Proton-Ordner speichert, erscheint dadurch automatisch
+        auch im normalen Linux-Bilderordner (z. B. ~/Bilder/VRChat)."""
         import pathlib
 
-        vrchat_proton_path = pathlib.Path.home() / \
-            ".local/share/Steam/steamapps/compatdata/438100/pfx/drive_c/users/steamuser/Pictures"
-        linux_pictures = pathlib.Path.home() / "Pictures" / "VRChat"
+        home = pathlib.Path.home()
+        prefix = home / \
+            ".local/share/Steam/steamapps/compatdata/438100/pfx/drive_c/users/steamuser"
+        vrchat_proton_path = prefix / "Pictures" / "VRChat"
 
-        # Prüfen ob Proton-Pfad existiert
-        if not vrchat_proton_path.exists():
+        pictures_dir = self._get_pictures_dir()
+        linux_pictures = pictures_dir / "VRChat"
+
+        # Prüfen, ob das VRChat Proton-Prefix überhaupt existiert
+        # (sonst wurde VRChat nie über Steam/Proton installiert/gestartet)
+        if not prefix.exists():
             self.ui.lbl_vrchat_status.setText(
-                "⚠ VRChat Proton-Ordner nicht gefunden.\n"
-                "Starte VRChat mindestens einmal bevor du den Symlink erstellst."
+                "⚠ VRChat Proton-Prefix nicht gefunden.\n"
+                "Starte VRChat mindestens einmal über Steam, bevor du den Symlink erstellst."
             )
             self.ui.lbl_vrchat_status.setStyleSheet("color: #ebcb8b; font-size: 11px;")
             return
 
-        # Schon ein Symlink?
-        if linux_pictures.is_symlink():
-            self.ui.lbl_vrchat_status.setText(
-                f"✔ Symlink existiert bereits:\n{linux_pictures} → {vrchat_proton_path}"
-            )
-            self.ui.lbl_vrchat_status.setStyleSheet("color: #a3be8c; font-size: 11px;")
+        # VRChat-Ordner im Proton-Prefix anlegen, falls noch nicht vorhanden
+        try:
+            vrchat_proton_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            self.ui.lbl_vrchat_status.setText(f"Fehler beim Anlegen des Proton-Ordners: {e}")
+            self.ui.lbl_vrchat_status.setStyleSheet("color: #bf616a; font-size: 11px;")
             return
 
-        # Pictures-Ordner als echter Ordner vorhanden → umbenennen
-        if linux_pictures.exists():
+        # Schon ein Symlink?
+        if linux_pictures.is_symlink():
+            ziel = pathlib.Path(os.path.realpath(linux_pictures))
+            if ziel == vrchat_proton_path.resolve():
+                # Zeigt bereits korrekt auf den Proton-Ordner → fertig
+                self.ui.lbl_vrchat_status.setText(
+                    f"✔ Symlink existiert bereits:\n{linux_pictures} → {vrchat_proton_path}"
+                )
+                self.ui.lbl_vrchat_status.setStyleSheet("color: #a3be8c; font-size: 11px;")
+                self.ui.btn_vrchat_symlink.setText("✔ Done")
+                self.ui.btn_vrchat_symlink.setEnabled(False)
+                return
+            # Falscher/alter Symlink → entfernen und neu setzen
+            try:
+                linux_pictures.unlink()
+            except Exception as e:
+                self.ui.lbl_vrchat_status.setText(
+                    f"Fehler: alter Symlink ließ sich nicht entfernen: {e}")
+                self.ui.lbl_vrchat_status.setStyleSheet("color: #bf616a; font-size: 11px;")
+                return
+
+        # Echter Ordner vorhanden → unter eindeutigem Namen als Backup sichern,
+        # damit vorhandene Fotos nicht verloren gehen.
+        if linux_pictures.exists() and not linux_pictures.is_symlink():
             backup = linux_pictures.with_name("VRChat_backup")
-            linux_pictures.rename(backup)
+            i = 1
+            while backup.exists():
+                backup = linux_pictures.with_name(f"VRChat_backup_{i}")
+                i += 1
+            try:
+                linux_pictures.rename(backup)
+            except Exception as e:
+                self.ui.lbl_vrchat_status.setText(
+                    f"Fehler beim Sichern des bestehenden Ordners: {e}")
+                self.ui.lbl_vrchat_status.setStyleSheet("color: #bf616a; font-size: 11px;")
+                return
 
         try:
             linux_pictures.parent.mkdir(parents=True, exist_ok=True)
             linux_pictures.symlink_to(vrchat_proton_path)
             self.ui.lbl_vrchat_status.setText(
-                f"✔ Symlink erfolgreich erstellt!\n{linux_pictures} → {vrchat_proton_path}"
+                f"✔ Symlink erfolgreich erstellt!\n{linux_pictures} → {vrchat_proton_path}\n"
+                "Neue VRChat-Fotos erscheinen jetzt automatisch hier."
             )
             self.ui.lbl_vrchat_status.setStyleSheet("color: #a3be8c; font-size: 11px;")
             self.ui.btn_vrchat_symlink.setText("✔ Done")
@@ -1074,43 +1156,91 @@ class VRApp(QMainWindow):
 
         return False
 
-    def check_headset_autostart(self):
+    def _poll_headset_for_autostart(self):
         """
-        Läuft im 1-Sekunden-Takt (am Status-Timer) und hält die Autostart-Programme
-        an die Headset-Verbindung gekoppelt:
-          • Spieler verbindet  -> Programme starten
-          • Spieler trennt sich -> Programme beenden (nach kurzer Karenzzeit)
-          • Server gestoppt     -> Programme beenden
+        Einweg-Timer-Tick (1x pro Sekunde), scharfgeschaltet beim Server-Start.
+
+        Sobald eine echte Headset-Verbindung erkannt wird, werden die Autostart-
+        Programme EINMAL direkt aus dieser laufenden Sitzung gestartet — sie
+        erben damit alle Desktop-Umgebungsvariablen (DISPLAY/WAYLAND_DISPLAY,
+        XDG_RUNTIME_DIR, DBus ...). Danach stoppt sich der Timer SELBST: es
+        findet kein weiteres Polling statt, bis er über
+        'Autostart-Bereitschaft zurücksetzen' oder einen Server-Neustart wieder
+        scharfgeschaltet wird.
         """
-        # Läuft der Server überhaupt?
+        # Server nicht (mehr) aktiv? -> Timer entwaffnen, nichts starten.
         server_running = (self.server_process and self.server_process.poll() is None) or \
             subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode == 0
         if not server_running:
-            if self._headset_connected or self._autostart_procs:
-                print("[Autostart] Server gestoppt – beende Autostart-Programme.")
-                self.stop_autostart_apps()
-            self._headset_connected = False
-            self._disconnect_count = 0
+            self.autostart_timer.stop()
             return
 
-        connected = self.is_headset_connected()
+        if self.is_headset_connected():
+            print("[Autostart] Headset verbunden – starte Programme aus der Sitzung.")
+            self.launch_autostart_apps()
+            self._autostart_launched = True
+            self._headset_connected = True
+            # Selbst-Beendigung: ab hier kein Polling mehr.
+            self.autostart_timer.stop()
+            print("[Autostart] Programme gestartet – Timer beendet (kein weiteres Polling).")
 
-        if connected:
-            self._disconnect_count = 0
-            if not self._headset_connected:
-                # Steigende Flanke: Spieler hat (wieder) verbunden
-                self._headset_connected = True
-                print("[Autostart] Headset verbunden – starte Autostart-Programme.")
-                self.launch_autostart_apps()
-        else:
-            if self._headset_connected:
-                # Erst nach mehreren "getrennt"-Messungen tatsächlich beenden
-                self._disconnect_count += 1
-                if self._disconnect_count >= self._disconnect_grace:
-                    self._headset_connected = False
-                    self._disconnect_count = 0
-                    print("[Autostart] Headset getrennt – beende Autostart-Programme.")
-                    self.stop_autostart_apps()
+    def arm_autostart_timer(self):
+        """
+        Schaltet den Einweg-Autostart-Timer scharf. Startet noch NICHTS — der
+        Timer wartet nur darauf, dass sich das Headset verbindet. Ohne
+        konfigurierte Programme bleibt er aus (kein unnötiges Polling).
+        """
+        self._autostart_launched = False
+        self._headset_connected = False
+        has_apps = any(r["input"].text().strip() for r in self.autostart_rows)
+        if not has_apps:
+            self.autostart_timer.stop()
+            print("[Autostart] Keine Programme konfiguriert – Timer bleibt aus.")
+            return
+        if not self.autostart_timer.isActive():
+            self.autostart_timer.start()
+        print("[Autostart] Bereitschaft scharf – warte auf Headset-Verbindung.")
+
+    def reset_autostart_readiness(self):
+        """
+        Manueller Reset über den Dashboard-Button: schaltet den Einweg-Timer
+        erneut scharf, OHNE den Server neu zu starten. Bereits laufende
+        Autostart-Programme werden vorher beendet, damit es beim nächsten
+        Verbinden keine doppelten Instanzen gibt.
+        """
+        server_running = (self.server_process and self.server_process.poll() is None) or \
+            subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode == 0
+        if not server_running:
+            QMessageBox.information(
+                self, tr("autostart_reset_title"), tr("autostart_reset_no_server"))
+            return
+
+        self.stop_autostart_apps()
+        self.arm_autostart_timer()
+
+        # Kurzes visuelles Feedback am Button (wie bei den OpenXR-Copy-Buttons).
+        self.ui.btn_autostart_reset.setText(tr("autostart_reset_done"))
+        QTimer.singleShot(
+            1500,
+            lambda: self.ui.btn_autostart_reset.setText(tr("dashboard_autostart_reset")))
+
+    def kill_autostart_apps(self):
+        """
+        Besen-Button: beendet sofort ALLE laufenden Autostart-Programme
+        (WayVR, OSC Leash ...). Reine Aufräumaktion für eine Pause:
+          • der Einweg-Timer wird NICHT neu scharfgeschaltet
+          • der WiVRn-Server läuft weiter
+        Sollen die Apps später wieder kommen, einfach 'Timer zurücksetzen'.
+        """
+        self.stop_autostart_apps()
+        self._headset_connected = False   # keine aktive App-Sitzung mehr
+        print("[Autostart] Laufende Programme manuell beendet (Besen-Button).")
+
+        # Kurzes visuelles Feedback am Button.
+        self.ui.btn_autostart_kill.setText(tr("autostart_kill_done"))
+        QTimer.singleShot(
+            1500,
+            lambda: self.ui.btn_autostart_kill.setText(tr("dashboard_autostart_kill")))
 
     def launch_autostart_apps(self):
         """Startet die in den Autostart-Zeilen hinterlegten Programme und merkt sich die Prozesse."""
@@ -1178,11 +1308,13 @@ class VRApp(QMainWindow):
             create_vr_backup()
 
         # WICHTIG: Autostart-Apps werden NICHT sofort gestartet, sondern erst
-        # sobald check_headset_autostart() eine echte Headset-Verbindung erkennt –
-        # und automatisch wieder beendet, wenn der Spieler sich trennt.
+        # sobald der Einweg-Timer (_poll_headset_for_autostart) eine echte
+        # Headset-Verbindung erkennt. Sie starten direkt aus dieser Sitzung und
+        # erben deren Umgebungsvariablen.
         self.stop_autostart_apps()        # evtl. Reste einer vorherigen Session beenden
         self._headset_connected = False
         self._disconnect_count = 0
+        self.arm_autostart_timer()        # Einweg-Timer scharfschalten (wartet auf Headset)
 
         # Server-Ausgabe in eine Logdatei umleiten (statt DEVNULL), damit das
         # "Client connected"-Ereignis sauber erkannt werden kann. Eine Datei
@@ -1208,6 +1340,7 @@ class VRApp(QMainWindow):
         self.ui.chk_pairing.setChecked(False)
 
         # Autostart-Programme beenden und Zustand zurücksetzen
+        self.autostart_timer.stop()       # Einweg-Timer entwaffnen
         self.stop_autostart_apps()
         self._headset_connected = False
         self._disconnect_count = 0

@@ -266,6 +266,9 @@ class Ui_MainWindow(object):
         self.txt_code.setPlaceholderText(tr("dashboard_pair_gen"))
         self.autostart_group.setTitle(tr("dashboard_autostart"))
         self.lbl_app_count.setText(tr("dashboard_app_count"))
+        self.btn_autostart_reset.setText(tr("dashboard_autostart_reset"))
+        self.btn_autostart_kill.setText(tr("dashboard_autostart_kill"))
+        self.btn_autostart_kill.setToolTip(tr("autostart_kill_tip"))
         self.headset_group.setTitle(tr("dashboard_headsets"))
         self.btn_refresh_list.setText(tr("dashboard_list_btn"))
         self.btn_remove_headset.setText(tr("dashboard_remove_btn"))
@@ -275,7 +278,7 @@ class Ui_MainWindow(object):
         self.lbl_settings_title.setText(tr("settings_title"))
         self.general_group.setTitle(tr("settings_general"))
         self.lbl_vrchat_title.setText(tr("settings_vrchat_title"))
-        self.lbl_vrchat_desc.setText(tr("settings_vrchat_desc"))
+        self.lbl_vrchat_desc.setText(tr("settings_vrchat_desc_short"))
         self.btn_vrchat_symlink.setText(tr("settings_vrchat_btn"))
         self.lbl_apk_title.setText(tr("dashboard_apk_title"))
         self.apk_info_lbl.setText(tr("dashboard_apk_info"))
@@ -289,16 +292,12 @@ class Ui_MainWindow(object):
         self.btn_overlay_reset.setText(tr("overlay_reset_btn"))
         self.chk_overlay_slimevr.setText(tr("overlay_slimevr_btn"))
         self.lbl_overlay_credits.setText(tr("overlay_credits"))
-        self.controls_group.setTitle(tr("settings_controls"))
         self.openxr_group.setTitle(tr("openxr_group"))
         self.lbl_openxr_desc.setText(tr("openxr_desc"))
         self.lbl_openxr_path_title.setText(tr("openxr_path_title"))
         self.lbl_openxr_content_title.setText(tr("openxr_content_title"))
         self.btn_openxr_copy_path.setText(tr("openxr_copy_btn"))
         self.btn_openxr_copy_content.setText(tr("openxr_copy_btn"))
-        self.lbl_touch_title.setText(tr("settings_touch_title"))
-        self.lbl_touch_desc.setText(tr("settings_touch_desc"))
-        self.lbl_touch_coming.setText(tr("settings_touch_coming"))
 
         # --- Tools-Tab ---
         self.lbl_tools_title.setText(tr("tools_title"))
@@ -407,7 +406,7 @@ class Ui_MainWindow(object):
         layout.setContentsMargins(20, 20, 20, 20)
 
         version_layout = QHBoxLayout()
-        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.3-alpha")
+        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.4-alpha")
         self.lbl_app_ver.setStyleSheet("color: #81a1c1;")
         self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> Prüfe...")
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
@@ -513,14 +512,35 @@ class Ui_MainWindow(object):
 
         self.autostart_group = QGroupBox(tr("dashboard_autostart"))
         autostart_layout = QVBoxLayout(self.autostart_group)
-        form_layout = QFormLayout()
 
+        # Kopfzeile: Label + Zähler links, kompakte Aktions-Buttons rechts.
+        count_row = QHBoxLayout()
+        self.lbl_app_count = QLabel(tr("dashboard_app_count"))
         self.num_apps = QLineEdit("1")
         self.num_apps.setFixedWidth(50)
         self.num_apps.setAlignment(Qt.AlignCenter)
-        self.lbl_app_count = QLabel(tr("dashboard_app_count"))
-        form_layout.addRow(self.lbl_app_count, self.num_apps)
-        autostart_layout.addLayout(form_layout)
+        count_row.addWidget(self.lbl_app_count)
+        count_row.addWidget(self.num_apps)
+        count_row.addStretch()
+
+        # Timer neu scharfschalten (kompakt, rechts neben dem Zähler).
+        self.btn_autostart_reset = QPushButton(tr("dashboard_autostart_reset"))
+        self.btn_autostart_reset.setStyleSheet("""
+            QPushButton { background-color: #434c5e; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 4px 12px; }
+            QPushButton:hover { background-color: #5e81ac; }
+        """)
+
+        # Besen-Button: laufende Autostart-Apps sofort beenden (Clean-Up).
+        self.btn_autostart_kill = QPushButton(tr("dashboard_autostart_kill"))
+        self.btn_autostart_kill.setToolTip(tr("autostart_kill_tip"))
+        self.btn_autostart_kill.setStyleSheet("""
+            QPushButton { background-color: #bf616a; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 4px 12px; }
+            QPushButton:hover { background-color: #d08770; }
+        """)
+
+        count_row.addWidget(self.btn_autostart_reset)
+        count_row.addWidget(self.btn_autostart_kill)
+        autostart_layout.addLayout(count_row)
 
         self.autostart_container = QWidget()
         self.autostart_container_layout = QVBoxLayout(self.autostart_container)
@@ -582,57 +602,43 @@ class Ui_MainWindow(object):
         self.lbl_settings_title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 5px;")
         layout.addWidget(self.lbl_settings_title)
 
-        # --- GENERAL ---
+        # --- GENERAL (zwei Boxen nebeneinander) ---
         self.general_group = QGroupBox(tr("settings_general"))
         general_layout = QVBoxLayout(self.general_group)
         general_layout.setSpacing(10)
 
-        vrchat_row = QHBoxLayout()
-        vrchat_info = QVBoxLayout()
+        # Horizontale Reihe: links APK-Box, rechts VRChat-Box
+        general_row = QHBoxLayout()
+        general_row.setSpacing(16)
 
-        self.lbl_vrchat_title = QLabel(tr("settings_vrchat_title"))
-        self.lbl_vrchat_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
-        self.lbl_vrchat_desc = QLabel(tr("settings_vrchat_desc"))
-        self.lbl_vrchat_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
-        self.lbl_vrchat_desc.setWordWrap(True)
+        # Gemeinsamer Card-Stil (passt zum restlichen Design)
+        _card_css = """
+            QFrame#settingsCard {
+                background-color: #21252b;
+                border: 1px solid #2e3440;
+                border-radius: 6px;
+            }
+        """
 
-        vrchat_info.addWidget(self.lbl_vrchat_title)
-        vrchat_info.addWidget(self.lbl_vrchat_desc)
-
-        self.btn_vrchat_symlink = QPushButton(tr("settings_vrchat_btn"))
-        self.btn_vrchat_symlink.setFixedWidth(160)
-        self.btn_vrchat_symlink.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
-                          padding: 8px; border-radius: 4px; border: none; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
-
-        self.lbl_vrchat_status = QLabel("")
-        self.lbl_vrchat_status.setStyleSheet("font-size: 11px;")
-        self.lbl_vrchat_status.setWordWrap(True)
-
-        vrchat_row.addLayout(vrchat_info)
-        vrchat_row.addStretch()
-        vrchat_row.addWidget(self.btn_vrchat_symlink)
-        general_layout.addLayout(vrchat_row)
-        general_layout.addWidget(self.lbl_vrchat_status)
-
-        # APK Installation
-        apk_divider = QLabel()
-        apk_divider.setFixedHeight(1)
-        apk_divider.setStyleSheet("background-color: #3b4252; margin: 4px 0;")
-        general_layout.addWidget(apk_divider)
+        # ---------- LINKS: WiVRn APK-Installation ----------
+        apk_card = QFrame()
+        apk_card.setObjectName("settingsCard")
+        apk_card.setStyleSheet(_card_css)
+        apk_box = QVBoxLayout(apk_card)
+        apk_box.setContentsMargins(12, 12, 12, 12)
+        apk_box.setSpacing(8)
 
         self.lbl_apk_title = QLabel(tr("dashboard_apk_title"))
         self.lbl_apk_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
-        general_layout.addWidget(self.lbl_apk_title)
+        self.lbl_apk_title.setWordWrap(True)
+        apk_box.addWidget(self.lbl_apk_title)
 
         self.apk_info_lbl = QLabel(tr("dashboard_apk_info"))
         self.apk_info_lbl.setStyleSheet("color: #d8dee9; font-size: 11px;")
         self.apk_info_lbl.setWordWrap(True)
-        general_layout.addWidget(self.apk_info_lbl)
+        apk_box.addWidget(self.apk_info_lbl)
 
-        apk_row = QHBoxLayout()
+        apk_btn_row = QHBoxLayout()
         self.btn_apk_install = QPushButton(tr("dashboard_apk_btn"))
         self.btn_apk_install.setStyleSheet("""
             QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
@@ -647,22 +653,64 @@ class Ui_MainWindow(object):
                           padding: 7px 14px; border-radius: 4px; border: none; }
             QPushButton:hover { background-color: #d08770; }
         """)
-        apk_row.addWidget(self.btn_apk_install)
-        apk_row.addWidget(self.btn_apk_cancel)
-        apk_row.addStretch()
-        general_layout.addLayout(apk_row)
+        apk_btn_row.addWidget(self.btn_apk_install)
+        apk_btn_row.addWidget(self.btn_apk_cancel)
+        apk_btn_row.addStretch()
+        apk_box.addLayout(apk_btn_row)
 
         self.lbl_apk_status = QLabel("")
         self.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
         self.lbl_apk_status.setWordWrap(True)
-        general_layout.addWidget(self.lbl_apk_status)
+        apk_box.addWidget(self.lbl_apk_status)
+        apk_box.addStretch()
+
+        # ---------- RECHTS: VRChat Picture Folder Fix ----------
+        vrchat_card = QFrame()
+        vrchat_card.setObjectName("settingsCard")
+        vrchat_card.setStyleSheet(_card_css)
+        vrchat_box = QVBoxLayout(vrchat_card)
+        vrchat_box.setContentsMargins(12, 12, 12, 12)
+        vrchat_box.setSpacing(8)
+
+        self.lbl_vrchat_title = QLabel(tr("settings_vrchat_title"))
+        self.lbl_vrchat_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
+        self.lbl_vrchat_title.setWordWrap(True)
+        vrchat_box.addWidget(self.lbl_vrchat_title)
+
+        self.lbl_vrchat_desc = QLabel(tr("settings_vrchat_desc_short"))
+        self.lbl_vrchat_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        self.lbl_vrchat_desc.setWordWrap(True)
+        vrchat_box.addWidget(self.lbl_vrchat_desc)
+
+        self.btn_vrchat_symlink = QPushButton(tr("settings_vrchat_btn"))
+        self.btn_vrchat_symlink.setFixedWidth(160)
+        self.btn_vrchat_symlink.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
+                          padding: 8px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #81a1c1; }
+        """)
+        vrchat_box.addWidget(self.btn_vrchat_symlink, alignment=Qt.AlignLeft)
+
+        self.lbl_vrchat_status = QLabel("")
+        self.lbl_vrchat_status.setStyleSheet("font-size: 11px;")
+        self.lbl_vrchat_status.setWordWrap(True)
+        vrchat_box.addWidget(self.lbl_vrchat_status)
+        vrchat_box.addStretch()
+
+        # Beide Boxen gleich breit nebeneinander (stretch-Faktor 1/1)
+        general_row.addWidget(apk_card, 1)
+        general_row.addWidget(vrchat_card, 1)
+        general_layout.addLayout(general_row)
 
         layout.addWidget(self.general_group)
 
-        # --- BACKUP ---
+        # --- BACKUP (jetzt oben, beide Buttons nebeneinander) ---
         self.backup_group = QGroupBox(tr("backup_title"))
         backup_layout = QVBoxLayout(self.backup_group)
         backup_layout.setSpacing(10)
+
+        backup_btn_row = QHBoxLayout()
+        backup_btn_row.setSpacing(10)
 
         self.btn_vr_backup = QPushButton(tr("backup_create_btn"))
         self.btn_vr_backup.setStyleSheet("""
@@ -670,7 +718,7 @@ class Ui_MainWindow(object):
                           font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
             QPushButton:hover { background-color: #81a1c1; }
         """)
-        backup_layout.addWidget(self.btn_vr_backup)
+        backup_btn_row.addWidget(self.btn_vr_backup)
 
         self.btn_vr_restore = QPushButton(tr("backup_restore_btn"))
         self.btn_vr_restore.setStyleSheet("""
@@ -678,12 +726,18 @@ class Ui_MainWindow(object):
                           font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
             QPushButton:hover { background-color: #d08770; color: white; }
         """)
-        backup_layout.addWidget(self.btn_vr_restore)
+        backup_btn_row.addWidget(self.btn_vr_restore)
+
+        backup_layout.addLayout(backup_btn_row)
 
         # --- WAYVR OVERLAY (UI Design) ---
         self.overlay_group = QGroupBox(tr("overlay_group"))
         overlay_layout = QVBoxLayout(self.overlay_group)
         overlay_layout.setSpacing(10)
+
+        # Beide Buttons nebeneinander in einer horizontalen Reihe
+        overlay_btn_row = QHBoxLayout()
+        overlay_btn_row.setSpacing(10)
 
         self.btn_overlay_design = QPushButton(tr("overlay_design_btn"))
         self.btn_overlay_design.setStyleSheet("""
@@ -692,7 +746,7 @@ class Ui_MainWindow(object):
             QPushButton:hover { background-color: #81a1c1; }
             QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
         """)
-        overlay_layout.addWidget(self.btn_overlay_design)
+        overlay_btn_row.addWidget(self.btn_overlay_design)
 
         self.btn_overlay_reset = QPushButton(tr("overlay_reset_btn"))
         self.btn_overlay_reset.setStyleSheet("""
@@ -701,7 +755,9 @@ class Ui_MainWindow(object):
             QPushButton:hover { background-color: #bf616a; color: white; }
             QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
         """)
-        overlay_layout.addWidget(self.btn_overlay_reset)
+        overlay_btn_row.addWidget(self.btn_overlay_reset)
+
+        overlay_layout.addLayout(overlay_btn_row)
 
         self.chk_overlay_slimevr = QCheckBox(tr("overlay_slimevr_btn"))
         self.chk_overlay_slimevr.setStyleSheet("font-size: 13px; padding: 4px;")
@@ -720,27 +776,8 @@ class Ui_MainWindow(object):
 
         layout.addWidget(self.overlay_group)
 
-        # --- CONTROLS ---
-        self.controls_group = QGroupBox(tr("settings_controls"))
-        controls_layout = QVBoxLayout(self.controls_group)
-
-        self.lbl_touch_title = QLabel(tr("settings_touch_title"))
-        self.lbl_touch_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
-        self.lbl_touch_desc = QLabel(tr("settings_touch_desc"))
-        self.lbl_touch_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
-        self.lbl_touch_desc.setWordWrap(True)
-
-        self.lbl_touch_coming = QLabel(tr("settings_touch_coming"))
-        self.lbl_touch_coming.setStyleSheet(
-            "color: #ebcb8b; font-size: 11px; font-style: italic; "
-            "background-color: #2e3440; border-radius: 4px; padding: 8px;"
-        )
-        self.lbl_touch_coming.setWordWrap(True)
-
-        controls_layout.addWidget(self.lbl_touch_title)
-        controls_layout.addWidget(self.lbl_touch_desc)
-        controls_layout.addWidget(self.lbl_touch_coming)
-        layout.addWidget(self.controls_group)
+        # Backup-Box zwischen WayVR-Overlay und OpenXR-Runtime einordnen
+        layout.addWidget(self.backup_group)
 
         # --- OPENXR RUNTIME (Steam-Fix) ---
         self.openxr_group = QGroupBox(tr("openxr_group"))
@@ -790,8 +827,6 @@ class Ui_MainWindow(object):
 
         layout.addWidget(self.openxr_group)
 
-        # Backup & Wiederherstellung ganz nach unten
-        layout.addWidget(self.backup_group)
         layout.addStretch()
 
     def setup_tools_tab(self):
