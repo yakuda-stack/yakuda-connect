@@ -15,44 +15,38 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.ui_main import Ui_MainWindow
 
 # Interne Importe (liegen im selben Ordner 'core')
-from install_worker import InstallWorker
+from install_worker import InstallWorker, UpdateWorker
+from appimage_installer import AppImageInstallWorker
+import appimage_installer as appimg
+import vr_environment as venv
 from config_manager import load_saved_settings, save_all_settings
 from streaming_tab import StreamingTab
 from backup_manager import create_vr_backup, restore_vr_environment
 from overlay_manager import (DesignInstallWorker, set_slimevr_ui,
                              is_slimevr_active, is_design_installed,
                              reset_wayvr_to_default)
-from programs import INSTALL_PACKAGES, TOOLS_APPS, TOOLS_OSC
+from programs import INSTALL_PACKAGES, INSTALL_FLATPAK, TOOLS_APPS, TOOLS_OSC
 import openxr_manager as oxr
 from translations import tr, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
 
 
 class ToolsStatusWorker(QThread):
-    """Prüft den Installationsstatus aller Tools im Hintergrund — ein Signal pro Tool."""
-    result_signal = QtSignal(str, bool, str, bool)  # key, installed, version, has_update
+    """Prüft den Status aller Tools im Hintergrund — ein Signal pro Tool (voller Bericht)."""
+    result_signal = QtSignal(str, object)  # key, status-dict
 
-    def __init__(self, packages: dict):
+    def __init__(self, tools: dict):
         super().__init__()
-        self.packages = packages  # {key: pkg_name}
+        self.tools = tools  # {key: tool_dict}
 
     def run(self):
-        for key, pkg in self.packages.items():
-            res = subprocess.run(
-                f"yay -Q {pkg}", shell=True,
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
-            )
-            installed = res.returncode == 0
-            version = ""
-            has_update = False
-            if installed:
-                version = res.stdout.strip().split()[-1] if res.stdout.strip() else ""
-                res_upd = subprocess.run(
-                    f"yay -Qu {pkg}", shell=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
-                )
-                has_update = res_upd.returncode == 0 and bool(res_upd.stdout.strip())
-            self.result_signal.emit(key, installed, version, has_update)
+        import appimage_installer as appimg
+        for key, tool in self.tools.items():
+            try:
+                status = appimg.compute_status(tool)
+            except Exception:
+                status = {}
+            self.result_signal.emit(key, status)
 
 
 class ApkWorker(QThread):
@@ -167,7 +161,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.0.4-alpha"
+        self.APP_VERSION = "v1.0.5-alpha"
         self.server_process = None
         self.pairing_process = None
         self._overlay_worker = None
@@ -204,13 +198,11 @@ class VRApp(QMainWindow):
 
         self.required_packages = INSTALL_PACKAGES
 
-        # Dynamische Erstellung der Paket-Status-Labels im UI
+        # Paket-Status-Labels werden methoden-abhängig erzeugt (_rebuild_package_rows)
         self.prog_labels = {}
-        for prog_name in self.required_packages.keys():
-            self.prog_labels[prog_name] = QLabel("Check status...")
-            self.ui.pkg_layout.addRow(QLabel(f"{prog_name}:"), self.prog_labels[prog_name])
 
         self.init_logic_connections()
+        self._rebuild_package_rows()
         self.check_system_packages()
 
         # Start-Tab Sperren-Logik (Lock)
@@ -287,7 +279,11 @@ class VRApp(QMainWindow):
 
         # Installation / Update
         self.ui.btn_install.clicked.connect(self.start_package_installation)
-        self.ui.btn_update.clicked.connect(self.start_package_installation)
+        self.ui.btn_update.clicked.connect(self.start_system_update)
+        self._populate_install_method_combo()
+        self.ui.combo_install_method.currentIndexChanged.connect(self._on_install_method_changed)
+        # NixOS: ggf. auf Flatpak hinweisen / Flathub einrichten (nach Fensterstart)
+        QTimer.singleShot(400, self._maybe_offer_nixos_flatpak)
         self.ui.btn_vr_backup.clicked.connect(self.trigger_vr_backup)
         self.ui.btn_vr_restore.clicked.connect(self.trigger_vr_restore)
         self.ui.btn_overlay_design.clicked.connect(self.start_overlay_design)
@@ -338,17 +334,23 @@ class VRApp(QMainWindow):
         self.streaming_settings = StreamingTab(self)
         stream_layout.addWidget(self.streaming_settings)
 
-        # Tools Tab — Install-Buttons verknüpfen
+        # Tools Tab — Buttons verknüpfen (Dispatcher: Installieren/Aktualisieren/Löschen)
         for key, card in self.ui.tool_cards.items():
             card["btn_install"].clicked.connect(
-                lambda checked=False, k=key: self.install_tool(k)
+                lambda checked=False, k=key: self.on_tool_action(k)
             )
+            self._populate_method_combo(card)
         self.ui.btn_tools_check.clicked.connect(self.start_tools_update_check)
 
         # Settings Tab
         self.ui.btn_vrchat_symlink.clicked.connect(self.create_vrchat_symlink)
 
     def get_wivrn_version(self):
+        # Flatpak: Version aus 'flatpak info' lesen
+        if self._install_method() == "flatpak" and INSTALL_FLATPAK:
+            ok, ver = appimg.flatpak_query({"flatpak_id": INSTALL_FLATPAK[0]})
+            if ok:
+                return ver or "Flatpak"
         try:
             res = subprocess.run(["wivrn-server", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if res.returncode == 0:
@@ -358,13 +360,30 @@ class VRApp(QMainWindow):
             pass
         return tr("tools_not_installed")
 
+    def _runtime_installed(self):
+        """Ist die WiVRn-Runtime für die aktuell gewählte Methode installiert?"""
+        method = self._install_method()
+        if not method:
+            return False
+        if method == "flatpak":
+            if not INSTALL_FLATPAK:
+                return False
+            ok, _ = appimg.flatpak_query({"flatpak_id": INSTALL_FLATPAK[0]})
+            return ok
+        if method == "native":
+            return shutil.which("wivrn-server") is not None
+        # yay/paru: WiVRn/Monado-Pakete vorhanden?
+        if not shutil.which(method):
+            return False
+        for pkg in INSTALL_PACKAGES.get("WiVRn / Monado", []):
+            res = subprocess.run(f"{method} -Q {pkg}", shell=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                return False
+        return True
+
     def are_critical_packages_missing(self):
-        if not shutil.which("yay"): return True
-        for prog_name, pkgs in self.required_packages.items():
-            for pkg in pkgs:
-                res = subprocess.run(f"yay -Q {pkg}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                if res.returncode != 0: return True
-        return False
+        return not self._runtime_installed()
 
     def on_tab_changed(self, index):
         if index != 0 and self.are_critical_packages_missing():
@@ -384,69 +403,124 @@ class VRApp(QMainWindow):
         for key, card in self.ui.tool_cards.items():
             entry = cache.get(key)
             if entry is None:
-                # Noch nie geprüft
                 card["lbl_status"].setText("Unbekannt — bitte Update-Check starten")
                 card["lbl_status"].setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
                 card["lbl_version"].setText("")
                 card["lbl_update"].setText("")
                 card["btn_install"].setText(tr("tools_install_btn"))
-                card["btn_install"].setEnabled(True)
+                card["btn_install"].setEnabled(bool(card.get("methods")))
                 card["cmd_widget"].setVisible(False)
-            elif entry.get("installed"):
-                card["lbl_version"].setText(f"v{entry.get('version', '')}")
-                card["lbl_update"].setText("⬆ Update verfügbar" if entry.get("has_update") else "")
-                card["lbl_status"].setText(tr("pkg_installed"))
-                card["lbl_status"].setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-                card["btn_install"].setText(tr("tools_already"))
-                card["btn_install"].setEnabled(False)
-                card["cmd_widget"].setVisible(True)
+                card["status"] = {}
             else:
-                card["lbl_version"].setText("")
-                card["lbl_update"].setText("")
-                card["lbl_status"].setText(tr("tools_not_installed"))
-                card["lbl_status"].setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
-                card["btn_install"].setText(tr("tools_install_btn"))
-                card["btn_install"].setEnabled(True)
-                card["cmd_widget"].setVisible(False)
+                self._render_tool_card(key, entry)
 
-    def _apply_tool_status(self, key, installed, version, has_update):
-        """Wird vom Worker pro Tool aufgerufen, aktualisiert UI und Cache."""
+    def _render_tool_card(self, key, status):
+        """Zentrale UI-Logik einer Tool-Karte aus dem Status-Dict."""
         card = self.ui.tool_cards.get(key)
         if not card:
             return
+        if not isinstance(status, dict):
+            status = {}
+        card["status"] = status
 
-        # Cache aktualisieren
-        cache = self._load_programs_cache()
-        cache[key] = {
-            "installed":  installed,
-            "version":    version,
-            "has_update": has_update,
-        }
-        self._save_programs_cache(cache)
+        appimage_inst = status.get("appimage_installed", False)
+        appimage_ver  = status.get("appimage_version", "")
+        appimage_upd  = status.get("appimage_has_update", False)
+        pm_inst       = status.get("pm_installed", False)
+        pm_helper     = status.get("pm_helper", "")
+        pm_ver        = status.get("pm_version", "")
+        pm_upd        = status.get("pm_has_update", False)
+        flatpak_inst  = status.get("flatpak_installed", False)
+        flatpak_ver   = status.get("flatpak_version", "")
+        config_ok     = status.get("config_present", False)
 
-        # UI aktualisieren
-        if installed:
-            card["lbl_version"].setText(f"v{version}")
-            card["lbl_update"].setText("⬆ Update verfügbar" if has_update else "")
-            card["lbl_status"].setText(tr("pkg_installed"))
-            card["lbl_status"].setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-            card["btn_install"].setText(tr("tools_already"))
-            card["btn_install"].setEnabled(False)
+        methods = card.get("methods") or []
+        combo = card.get("combo_method")
+
+        btn = card["btn_install"]
+        st = card["lbl_status"]
+
+        # Dropdown nur zeigen, wenn Auswahl besteht UND noch installiert/aktualisiert werden kann
+        show_combo = (combo is not None and len(methods) >= 2
+                      and not appimage_inst and not pm_inst and not flatpak_inst)
+        if combo is not None:
+            combo.setVisible(show_combo)
+
+        if appimage_inst:
+            card["lbl_version"].setText(appimage_ver or "")
+            st.setText(tr("tools_appimage_ok"))
+            st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
             card["cmd_widget"].setVisible(True)
+            if appimage_upd:
+                card["lbl_update"].setText(tr("tools_update"))
+                btn.setText(tr("tools_update_btn"))   # ⬆ Aktualisieren
+            else:
+                card["lbl_update"].setText("")
+                btn.setText(tr("tools_delete"))         # 🗑 Löschen
+            btn.setEnabled(True)
+
+        elif pm_inst:
+            card["lbl_version"].setText(f"v{pm_ver}" if pm_ver else "")
+            card["lbl_update"].setText("⬆ Update verfügbar" if pm_upd else "")
+            st.setText(tr("tools_pm_ok").format(helper=pm_helper))
+            st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
+            btn.setText(tr("tools_already"))
+            btn.setEnabled(False)
+            card["cmd_widget"].setVisible(True)
+
+        elif flatpak_inst:
+            card["lbl_version"].setText(flatpak_ver or "")
+            card["lbl_update"].setText("")
+            st.setText(tr("tools_flatpak_ok"))
+            st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
+            btn.setText(tr("tools_already"))
+            btn.setEnabled(False)
+            card["cmd_widget"].setVisible(True)
+
+        elif config_ok:
+            card["lbl_version"].setText("")
+            card["lbl_update"].setText("")
+            st.setText(tr("tools_native"))
+            st.setStyleSheet("color: #ebcb8b; font-size: 12px; font-weight: bold;")
+            btn.setText(tr("tools_install_btn"))
+            btn.setEnabled(bool(methods))
+            card["cmd_widget"].setVisible(True)
+
         else:
             card["lbl_version"].setText("")
             card["lbl_update"].setText("")
-            card["lbl_status"].setText(tr("tools_not_installed"))
-            card["lbl_status"].setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
-            card["btn_install"].setText(tr("tools_install_btn"))
-            card["btn_install"].setEnabled(True)
+            if methods:
+                st.setText(tr("tools_not_installed"))
+                st.setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
+                btn.setText(tr("tools_install_btn"))
+                btn.setEnabled(True)
+            else:
+                # keine Methode verfügbar (z. B. AUR-Tool ohne yay/paru / nicht Arch)
+                st.setText(tr("tools_no_method"))
+                st.setStyleSheet("color: #bf616a; font-size: 12px; font-style: italic;")
+                btn.setText(tr("tools_install_btn"))
+                btn.setEnabled(False)
             card["cmd_widget"].setVisible(False)
 
+    def _apply_tool_status(self, key, status):
+        """Vom Worker pro Tool aufgerufen: Cache aktualisieren + rendern."""
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        if not isinstance(status, dict):
+            status = {}
+        cache = self._load_programs_cache()
+        cache[key] = status
+        self._save_programs_cache(cache)
+        self._render_tool_card(key, status)
+
     def start_tools_update_check(self):
-        """Startet den echten Versions-Check im Hintergrund (nur auf Knopfdruck)."""
+        """Startet den echten Versions-Check im Hintergrund."""
+        import time
         if hasattr(self, '_tools_status_worker') and self._tools_status_worker is not None:
             if self._tools_status_worker.isRunning():
                 return  # Läuft bereits
+        self._last_tools_check_ts = time.time()
 
         self.ui.btn_tools_check.setEnabled(False)
         self.ui.btn_tools_check.setText("⏳ Prüfe...")
@@ -455,8 +529,9 @@ class VRApp(QMainWindow):
             card["lbl_status"].setText("Prüfe...")
             card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px; font-style: italic;")
 
-        packages = {key: card["pkg"] for key, card in self.ui.tool_cards.items()}
-        self._tools_status_worker = ToolsStatusWorker(packages)
+        tools = {key: card.get("tool", {"pkg": card["pkg"]})
+                 for key, card in self.ui.tool_cards.items()}
+        self._tools_status_worker = ToolsStatusWorker(tools)
         self._tools_status_worker.result_signal.connect(self._apply_tool_status)
         self._tools_status_worker.finished.connect(self._on_tools_check_done)
         self._tools_status_worker.start()
@@ -485,33 +560,173 @@ class VRApp(QMainWindow):
         except Exception as e:
             print(f"[Cache] Konnte programs.json nicht schreiben: {e}")
 
-    def install_tool(self, key):
-        """Startet die Installation eines Tools über den InstallWorker."""
+    def _populate_method_combo(self, card):
+        """Füllt das Methoden-Dropdown einer Karte (AppImage/yay/paru) und wählt vor."""
+        tool = card.get("tool", {})
+        combo = card.get("combo_method")
+        if combo is None:
+            return
+        methods = appimg.detect_install_methods(tool)
+        card["methods"] = methods
+        labels = {"appimage": "AppImage", "yay": "yay", "paru": "paru",
+                  "flatpak": "Flatpak"}
+        combo.blockSignals(True)
+        combo.clear()
+        for mthd in methods:
+            combo.addItem(labels.get(mthd, mthd), mthd)
+        default = appimg.default_method(methods)
+        if default:
+            idx = combo.findData(default)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+        combo.setVisible(len(methods) >= 2)
+
+    def _selected_method(self, card):
+        """Aktuell im Dropdown gewählte Methode (oder die einzige verfügbare)."""
+        combo = card.get("combo_method")
+        methods = card.get("methods") or appimg.detect_install_methods(card.get("tool", {}))
+        if combo is not None and combo.count() > 0:
+            data = combo.currentData()
+            if data:
+                return data
+        return appimg.default_method(methods)
+
+    def on_tool_action(self, key):
+        """Dispatcher des Karten-Buttons: Installieren / Aktualisieren / Löschen."""
         card = self.ui.tool_cards.get(key)
         if not card:
             return
+        status = card.get("status", {}) or {}
+        # AppImage installiert + kein Update -> Löschen
+        if status.get("appimage_installed") and not status.get("appimage_has_update"):
+            self.delete_tool(key)
+        else:
+            # sonst Installieren bzw. Aktualisieren (per gewählter Methode)
+            self.install_tool(key)
+
+    def install_tool(self, key):
+        """Installiert/aktualisiert ein Tool — per gewählter Methode (AppImage/yay/paru)."""
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        tool = card.get("tool", {})
+        status = card.get("status", {}) or {}
+        method = self._selected_method(card)
+        if not method:
+            QMessageBox.information(self, tool.get("name", key), tr("tools_no_method"))
+            return
+
+        updating = bool(status.get("appimage_installed") and status.get("appimage_has_update"))
+
+        # AppImage, aber Config-Ordner schon vorhanden -> vorher warnen (Konflikte vermeiden)
+        if method == "appimage" and status.get("config_present") and not status.get("appimage_installed"):
+            name = tool.get("name", key)
+            hint = appimg.config_path_hint(tool)
+            path = f" ({hint})" if hint else ""
+            reply = QMessageBox.question(
+                self, tr("tools_native_title"),
+                tr("tools_native_text").format(name=name, path=path),
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                self._render_tool_card(key, status)
+                return
+
         card["btn_install"].setEnabled(False)
-        card["btn_install"].setText(tr("tools_installing"))
-        card["lbl_status"].setText("⏳ Installiere...")
+        card["btn_install"].setText(tr("tools_updating") if updating else tr("tools_installing"))
+        card["lbl_status"].setText("⏳ ...")
         card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
 
-        self.tool_worker = InstallWorker([card["pkg"]])
-        self.tool_worker.finished_signal.connect(
-            lambda success, k=key: self.on_tool_installed(k, success)
-        )
-        self.tool_worker.start()
+        if method == "appimage":
+            self.tool_worker = AppImageInstallWorker(tool)
+            self.tool_worker.status_signal.connect(
+                lambda msg, k=key: self._set_tool_status(k, msg)
+            )
+            self.tool_worker.finished_signal.connect(
+                lambda success, k=key: self.on_tool_installed(k, success)
+            )
+            self.tool_worker.start()
+        elif method == "flatpak":
+            self.tool_worker = InstallWorker([tool.get("flatpak_id", "")], helper="flatpak")
+            self.tool_worker.finished_signal.connect(
+                lambda success, k=key: self.on_tool_installed(k, success)
+            )
+            self.tool_worker.start()
+        else:
+            # method ist 'yay' oder 'paru'
+            self.tool_worker = InstallWorker([card["pkg"]], helper=method)
+            self.tool_worker.finished_signal.connect(
+                lambda success, k=key: self.on_tool_installed(k, success)
+            )
+            self.tool_worker.start()
+
+    def delete_tool(self, key):
+        """Entfernt eine AppImage-Installation; fragt zusätzlich nach dem Config-Ordner."""
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        tool = card.get("tool", {})
+        name = tool.get("name", key)
+        hint = appimg.config_path_hint(tool)
+        path = f" ({hint})" if hint else ""
+
+        # Vor dem Löschen fragen, ob auch der Konfigurationsordner mit entfernt werden soll
+        also_config = False
+        if tool.get("config_dirs"):
+            reply = QMessageBox.question(
+                self, tr("tools_delete_config_title"),
+                tr("tools_delete_config_text").format(name=name, path=path),
+                QMessageBox.Yes | QMessageBox.No
+            )
+            also_config = (reply == QMessageBox.Yes)
+
+        card["btn_install"].setEnabled(False)
+        card["btn_install"].setText(tr("tools_deleting"))
+
+        # AppImage, Symlink und Desktop-Eintrag immer entfernen
+        try:
+            appimg.uninstall(tool)
+        except Exception as e:
+            print(f"[AppImage] Löschen fehlgeschlagen: {e}")
+
+        # Config-Ordner nur auf Wunsch
+        if also_config:
+            try:
+                appimg.delete_config(tool)
+            except Exception as e:
+                print(f"[AppImage] Config-Löschen fehlgeschlagen: {e}")
+
+        # Status frisch berechnen und anzeigen
+        self._refresh_single_tool(key)
+
+    def _refresh_single_tool(self, key):
+        """Berechnet den Status eines einzelnen Tools neu (lokal/PM) und rendert ihn."""
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        tool = card.get("tool", {})
+        try:
+            status = appimg.compute_status(tool)
+        except Exception:
+            status = {}
+        self._apply_tool_status(key, status)
+
+    def _set_tool_status(self, key, msg):
+        """Live-Statustext einer Tool-Karte aktualisieren (AppImage-Fortschritt)."""
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        card["lbl_status"].setText(msg)
+        card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
 
     def on_tool_installed(self, key, success):
-        """Callback nach abgeschlossener Tool-Installation."""
+        """Callback nach abgeschlossener Tool-Installation/-Aktualisierung."""
         card = self.ui.tool_cards.get(key)
         if not card:
             return
         if success:
-            card["lbl_status"].setText(tr("pkg_installed"))
-            card["lbl_status"].setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-            card["btn_install"].setText(tr("tools_already"))
-            card["btn_install"].setEnabled(False)
-            card["cmd_widget"].setVisible(True)
+            self._refresh_single_tool(key)
             # Nach WayVR-Installation: Hinweis auf das bessere UI-Design in den Settings
             if key == "wayvr":
                 QMessageBox.information(self, tr("overlay_popup_title"), tr("overlay_popup_text"))
@@ -590,8 +805,8 @@ class VRApp(QMainWindow):
     def fill_openxr_fields(self):
         """Füllt das Pfad-Feld und das Inhalt-Feld für die manuelle OpenXR-Reparatur."""
         try:
-            self.ui.txt_openxr_path.setText(oxr.ACTIVE_RUNTIME)
-            openxr_so, monado_so = oxr.find_wivrn_libs()
+            self.ui.txt_openxr_path.setText(venv.primary_active_runtime())
+            openxr_so, monado_so = venv.find_wivrn_libs()
             if openxr_so:
                 runtime = {"file_format_version": "1.0.0",
                            "runtime": {"name": "Monado", "library_path": openxr_so}}
@@ -698,21 +913,13 @@ class VRApp(QMainWindow):
                 elif "⚠" in text:
                     lbl.setText(tr("pkg_incomplete"))
 
-        # Tool-Karten (Beschreibung + Status sind zustandsabhängig)
+        # Tool-Karten: Beschreibung neu setzen, Status/Buttons aus dem Cache rendern
         for key, card in self.ui.tool_cards.items():
             tool = all_tools.get(key, {})
             if "lbl_desc" in card:
                 desc = tool.get("desc_eng", tool.get("desc", "")) if lang == "en" else tool.get("desc", "")
                 card["lbl_desc"].setText(desc)
-            status = card["lbl_status"].text()
-            if any(x in status for x in ["Installiert", "Installed", "✔"]):
-                card["lbl_status"].setText(tr("tools_installed"))
-                card["btn_install"].setText(tr("tools_already"))
-            elif any(x in status for x in ["Unbekannt", "Unknown"]):
-                card["lbl_status"].setText(tr("tools_unknown"))
-            elif any(x in status for x in ["Nicht install", "Not install"]):
-                card["lbl_status"].setText(tr("tools_not_installed"))
-                card["btn_install"].setText(tr("tools_install_btn"))
+        self.check_tools_status()
 
     def _get_pictures_dir(self):
         """Ermittelt den lokalisierten Bilder-Ordner.
@@ -749,8 +956,8 @@ class VRApp(QMainWindow):
         import pathlib
 
         home = pathlib.Path.home()
-        prefix = home / \
-            ".local/share/Steam/steamapps/compatdata/438100/pfx/drive_c/users/steamuser"
+        # Prefix nativ ODER Flatpak-Steam automatisch finden
+        prefix = pathlib.Path(venv.vrchat_proton_prefix())
         vrchat_proton_path = prefix / "Pictures" / "VRChat"
 
         pictures_dir = self._get_pictures_dir()
@@ -835,66 +1042,226 @@ class VRApp(QMainWindow):
         # FIX: 'self' übergeben, da die Funktion das Parent-Fenster für die Dialoge braucht
         restore_vr_environment(self)
 
+    def _package_groups_for(self, method):
+        """Welche Status-Zeilen je Methode? Flatpak/Nativ = nur 'WiVRn'."""
+        if method == "flatpak":
+            return {"WiVRn": list(INSTALL_FLATPAK)}
+        if method == "native":
+            return {"WiVRn": ["wivrn-server"]}
+        return dict(INSTALL_PACKAGES)
+
+    def _rebuild_package_rows(self):
+        """Baut die Status-Zeilen im Installations-Tab passend zur gewählten Methode neu auf."""
+        layout = self.ui.pkg_layout
+        while layout.rowCount():
+            layout.removeRow(0)
+        self.prog_labels = {}
+        for name in self._package_groups_for(self._install_method()).keys():
+            lbl = QLabel("…")
+            self.prog_labels[name] = lbl
+            layout.addRow(QLabel(f"{name}:"), lbl)
+
+    def _on_install_method_changed(self, *args):
+        """Dropdown gewechselt -> Zeilen neu aufbauen und Status prüfen."""
+        self._rebuild_package_rows()
+        self.check_system_packages()
+
     def check_system_packages(self):
+        method = self._install_method()
+        groups = self._package_groups_for(method)
         updates_available = False
-        if not shutil.which("yay"): return
 
-        for prog_name, pkgs in self.required_packages.items():
-            if prog_name not in self.prog_labels: continue
-            prog_installed = True
-            prog_has_update = False
+        for name, idents in groups.items():
+            if name not in self.prog_labels:
+                continue
+            installed = True
+            has_update = False
 
-            for pkg in pkgs:
-                res_check = subprocess.run(f"yay -Q {pkg}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                if res_check.returncode != 0: prog_installed = False
-                else:
-                    res_update = subprocess.run(f"yay -Qu {pkg}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if res_update.returncode == 0:
-                        prog_has_update = True
-                        updates_available = True
-
-            if prog_installed:
-                if prog_has_update:
-                    self.prog_labels[prog_name].setText(tr("pkg_installed") + " (Update available)")
-                    self.prog_labels[prog_name].setStyleSheet("color: #d08770; font-weight: bold;")
-                else:
-                    self.prog_labels[prog_name].setText(tr("pkg_installed"))
-                    self.prog_labels[prog_name].setStyleSheet("color: #a3be8c; font-weight: bold;")
+            if method == "flatpak":
+                for fid in idents:
+                    ok, _ = appimg.flatpak_query({"flatpak_id": fid})
+                    if not ok:
+                        installed = False
+            elif method == "native":
+                # Selbst installiert -> nur prüfen, ob die Binary da ist; kein Update-Check
+                installed = shutil.which("wivrn-server") is not None
             else:
-                self.prog_labels[prog_name].setText(tr("pkg_incomplete"))
-                self.prog_labels[prog_name].setStyleSheet("color: #ebcb8b; font-weight: bold;")
+                if not shutil.which(method):
+                    installed = False
+                else:
+                    for pkg in idents:
+                        res_check = subprocess.run(f"{method} -Q {pkg}", shell=True,
+                                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        if res_check.returncode != 0:
+                            installed = False
+                        else:
+                            res_update = subprocess.run(f"{method} -Qu {pkg}", shell=True,
+                                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            if res_update.returncode == 0:
+                                has_update = True
+                                updates_available = True
+
+            if installed:
+                if has_update:
+                    self.prog_labels[name].setText(tr("pkg_installed") + " (Update available)")
+                    self.prog_labels[name].setStyleSheet("color: #d08770; font-weight: bold;")
+                else:
+                    self.prog_labels[name].setText(tr("pkg_installed"))
+                    self.prog_labels[name].setStyleSheet("color: #a3be8c; font-weight: bold;")
+            else:
+                self.prog_labels[name].setText(tr("pkg_incomplete"))
+                self.prog_labels[name].setStyleSheet("color: #ebcb8b; font-weight: bold;")
 
         self.ui.lbl_wivrn_ver.setText(f"<b>WiVRn Version:</b> {self.get_wivrn_version()}")
         if updates_available:
             self.ui.lbl_worker_status.setText(tr("install_updates_available"))
-            self.ui.btn_update.setEnabled(True)
         else:
             self.ui.lbl_worker_status.setText(tr("install_check_done"))
-            self.ui.btn_update.setEnabled(False)
+        # Aktualisieren-Knopf je nach Methode (bei 'native' deaktiviert)
+        self._update_update_button()
+
+    def _maybe_offer_nixos_flatpak(self):
+        """Auf NixOS: Flatpak erklären bzw. Flathub-Remote per Klick einrichten."""
+        try:
+            if not appimg.is_nixos():
+                return
+            if not appimg.flatpak_available():
+                # Flatpak gar nicht aktiv -> Anleitung zeigen (Rebuild nötig, kein Klick möglich)
+                QMessageBox.information(self, tr("nixos_title"), tr("nixos_no_flatpak_text"))
+                return
+            if not appimg.flathub_remote_present():
+                # Flatpak da, aber Flathub fehlt -> direkt anbieten einzurichten
+                reply = QMessageBox.question(
+                    self, tr("nixos_add_flathub_title"), tr("nixos_add_flathub_text"),
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    if appimg.add_flathub_remote():
+                        QMessageBox.information(self, tr("nixos_title"), tr("nixos_flathub_ok"))
+                        self._populate_install_method_combo()
+                        self._rebuild_package_rows()
+                        self.check_system_packages()
+                    else:
+                        QMessageBox.warning(self, tr("nixos_title"), tr("nixos_flathub_fail"))
+        except Exception as e:
+            print(f"[NixOS-Check] {e}")
+
+    def _populate_install_method_combo(self):
+        """Füllt das Methoden-Dropdown des Installations-Tabs (yay/paru/flatpak)."""
+        combo = getattr(self.ui, "combo_install_method", None)
+        methods = appimg.available_update_methods()
+        self._install_methods = methods
+        if combo is None:
+            return
+        labels = {"yay": "yay", "paru": "paru", "flatpak": "Flatpak", "native": "Nativ"}
+        combo.blockSignals(True)
+        combo.clear()
+        for mthd in methods:
+            combo.addItem(labels.get(mthd, mthd), mthd)
+        default = appimg.default_update_method(methods)
+        if default:
+            idx = combo.findData(default)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+        combo.setVisible(len(methods) >= 2)
+        self._update_update_button()
+
+    def _update_update_button(self):
+        """Aktualisieren-Knopf: aktiv nur, wenn es eine Methode gibt und sie NICHT 'native' ist."""
+        methods = getattr(self, "_install_methods", None) or appimg.available_update_methods()
+        enable = bool(methods) and self._install_method() != "native"
+        self.ui.btn_update.setEnabled(enable)
+
+    def _install_method(self):
+        """Aktuell gewählte Methode des Installations-Tabs."""
+        combo = getattr(self.ui, "combo_install_method", None)
+        methods = getattr(self, "_install_methods", None) or appimg.available_update_methods()
+        if combo is not None and combo.count() > 0:
+            data = combo.currentData()
+            if data:
+                return data
+        return appimg.default_update_method(methods)
+
+    def start_system_update(self):
+        """Update-Knopf: führt ein Ökosystem-Update über die gewählte Methode aus."""
+        method = self._install_method()
+        if method == "native":
+            QMessageBox.information(self, tr("native_update_title"), tr("native_update_text"))
+            return
+        if not method:
+            self.ui.lbl_worker_status.setText("Keine Update-Methode verfügbar (yay/paru/flatpak).")
+            return
+        self.ui.btn_install.setEnabled(False)
+        self.ui.btn_update.setEnabled(False)
+        self.update_worker = UpdateWorker(method)
+        self.update_worker.status_signal.connect(self.ui.lbl_worker_status.setText)
+        self.update_worker.finished_signal.connect(self.on_installation_finished)
+        self.update_worker.start()
 
     def start_package_installation(self):
-        packages_to_process = []
-        if self.sender() == self.ui.btn_update:
-            for pkgs in self.required_packages.values(): packages_to_process.extend(pkgs)
-        else:
+        """Install-Knopf: installiert die WiVRn-Runtime über die gewählte Methode."""
+        method = self._install_method()
+        if method == "native":
+            QMessageBox.information(self, tr("native_install_title"), tr("native_install_text"))
+            return
+        if not method:
+            self.ui.lbl_worker_status.setText("Keine Installationsmethode verfügbar (yay/paru/flatpak).")
+            return
+
+        if method in ("yay", "paru"):
+            # nur fehlende AUR-Pakete installieren
+            packages_to_process = []
             for prog_name, pkgs in self.required_packages.items():
                 for pkg in pkgs:
-                    result = subprocess.run(f"yay -Q {pkg}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if result.returncode != 0: packages_to_process.append(pkg)
+                    result = subprocess.run(f"{method} -Q {pkg}", shell=True,
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if result.returncode != 0:
+                        packages_to_process.append(pkg)
+            if not packages_to_process:
+                self.ui.lbl_worker_status.setText(tr("install_check_done"))
+                return
+            worker_pkgs, helper = packages_to_process, method
+        else:  # flatpak
+            worker_pkgs, helper = list(INSTALL_FLATPAK), "flatpak"
 
-        if not packages_to_process: return
         self.ui.btn_install.setEnabled(False)
         self.ui.btn_update.setEnabled(False)
 
-        self.worker = InstallWorker(packages_to_process)
+        self._last_install_method = method
+        self.worker = InstallWorker(worker_pkgs, helper=helper)
         self.worker.status_signal.connect(self.ui.lbl_worker_status.setText)
         self.worker.finished_signal.connect(self.on_installation_finished)
         self.worker.start()
 
     def on_installation_finished(self, success):
         self.ui.btn_install.setEnabled(True)
+        self._update_update_button()
+        # Methode der Runtime-Installation in der Config merken (für flatpak-Pfade)
+        m = getattr(self, "_last_install_method", "")
+        if success and m:
+            venv.set_runtime_method(m)
+            # Flatpak: Ordner (config/openxr/openvr) entstehen erst beim ersten Start
+            if m == "flatpak":
+                self._offer_wivrn_first_run()
         self.check_system_packages()
         if not self.are_critical_packages_missing(): self.ui.sidebar.setCurrentRow(1)
+
+    def _offer_wivrn_first_run(self):
+        """Nach Flatpak-Installation: Hinweis + Angebot, WiVRn einmal zu starten."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(tr("flatpak_firstrun_title"))
+        box.setText(tr("flatpak_firstrun_text"))
+        launch_btn = box.addButton(tr("flatpak_firstrun_launch"), QMessageBox.AcceptRole)
+        box.addButton(tr("flatpak_firstrun_later"), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() == launch_btn:
+            try:
+                subprocess.Popen(["flatpak", "run", venv.WIVRN_FLATPAK_ID])
+            except Exception as e:
+                QMessageBox.warning(self, tr("error"),
+                                    tr("flatpak_firstrun_launch_fail") + str(e))
 
     def open_port_9757_firewall(self):
         """

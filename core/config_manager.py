@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import os
 import json
+import vr_environment as venv
 
 CONFIG_DIR = os.path.expanduser("~/.config/yakuda-connect/config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+# Fallback-Konstante (nativ). Der tatsächliche Pfad wird zur Laufzeit
+# methoden-abhängig über venv.wivrn_config_file() bestimmt.
 WIVRN_CONFIG_FILE = os.path.expanduser("~/.config/wivrn/config.json")
 
 # Pfad eines früher von WiVRn benutzten Autostart-Launcher-Skripts.
@@ -83,9 +86,10 @@ def sync_with_wivrn(config_data):
     https://github.com/WiVRn/WiVRn/blob/master/docs/configuration.md
     """
     wivrn_data = {}
-    if os.path.exists(WIVRN_CONFIG_FILE):
+    wivrn_path = venv.wivrn_config_file()
+    if os.path.exists(wivrn_path):
         try:
-            with open(WIVRN_CONFIG_FILE, 'r') as f:
+            with open(wivrn_path, 'r') as f:
                 content = f.read().strip()
                 if content:
                     wivrn_data = json.loads(content)
@@ -169,9 +173,9 @@ def sync_with_wivrn(config_data):
         wivrn_data.pop(old_key, None)
 
     try:
-        os.makedirs(os.path.dirname(WIVRN_CONFIG_FILE), exist_ok=True)
-        with open(WIVRN_CONFIG_FILE, 'w') as f:
+        os.makedirs(os.path.dirname(wivrn_path), exist_ok=True)
+        with open(wivrn_path, 'w') as f:
             json.dump(wivrn_data, f, indent=4)
-        print(f"[WiVRn Sync] config.json erfolgreich aktualisiert.")
+        print(f"[WiVRn Sync] config.json erfolgreich aktualisiert ({wivrn_path}).")
     except Exception as e:
         print(f"Fehler beim Schreiben der wivrn.json: {e}")

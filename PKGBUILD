@@ -1,4 +1,5 @@
-# Maintainer: DEIN NAME <deine@mail>
+# Maintainer: steven(yakuda)  <yakuda@outlook.de>
+# DC Yakuda_nya_owo
 # PKGBUILD fuer yakuda-connect — VR-Launcher fuer WiVRn/WayVR (Arch Linux)
 #
 # Installieren (zieht alle Abhaengigkeiten automatisch):  yay -S yakuda-connect-git
@@ -6,10 +7,10 @@
 pkgname=yakuda-connect-git
 pkgver=r1
 pkgrel=1
-pkgdesc="VR-Launcher fuer WiVRn/WayVR/SlimeVR auf Arch Linux"
+pkgdesc="VR launcher for WiVRn/WayVR/SlimeVR and other Linux VR gaming tools"
 arch=('any')
-url="https://github.com/DEINNAME/yakuda-connect"
-license=('MIT')                       # ggf. an deine Lizenz anpassen
+url="https://github.com/yakuda-stack/yakuda-connect"
+license=('GPL3')
 # Pflicht-Abhaengigkeiten -> werden automatisch mitinstalliert:
 depends=('python' 'pyside6')
 # Optionale Laufzeit-Werkzeuge (dein Tool ruft sie auf, falls vorhanden):
@@ -17,11 +18,13 @@ optdepends=('iproute2: Headset-Verbindungserkennung (ss)'
             'libpulse: Headset-Verbindungserkennung (pactl)'
             'polkit: Wiederherstellen von System-VR-Dateien (pkexec)'
             'git: Herunterladen des WayVR-Overlay-Designs'
-            'playerctl: Media-Tasten in der WayVR-Watch')
+            'playerctl: Media-Tasten in der WayVR-Watch'
+            'flatpak: Installation/Updates ueber Flatpak'
+            'fuse2: Ausfuehren von AppImage-Tools')
 makedepends=('git')
 provides=('yakuda-connect')
 conflicts=('yakuda-connect')
-source=("$pkgname::git+https://github.com/DEINNAME/yakuda-connect.git")
+source=("$pkgname::git+https://github.com/yakuda-stack/yakuda-connect.git")
 sha256sums=('SKIP')
 
 pkgver() {
@@ -39,7 +42,7 @@ package() {
         [ -e "$item" ] && cp -r "$item" "$dest/"
     done
 
-    # Startbefehl /usr/bin/yakuda-connect anlegen
+    # Startbefehl /usr/bin/yakuda-connect anlegen (Einstiegspunkt: starter.py)
     install -d "$pkgdir/usr/bin"
     cat > "$pkgdir/usr/bin/yakuda-connect" <<'LAUNCH'
 #!/bin/sh
@@ -48,9 +51,11 @@ exec python starter.py "$@"
 LAUNCH
     chmod 755 "$pkgdir/usr/bin/yakuda-connect"
 
-    # .desktop-Eintrag
-    install -Dm644 "$srcdir/yakuda-connect.desktop" \
-        "$pkgdir/usr/share/applications/yakuda-connect.desktop"
+    # .desktop-Eintrag (liegt im Repo-Root)
+    if [ -f yakuda-connect.desktop ]; then
+        install -Dm644 yakuda-connect.desktop \
+            "$pkgdir/usr/share/applications/yakuda-connect.desktop"
+    fi
 
     # Icon installieren, falls eines in assets/ liegt
     local icon

@@ -20,8 +20,10 @@ import json
 import shutil
 import datetime
 
+import vr_environment as venv
+
 HOME = os.path.expanduser("~")
-WIVRN_MANIFEST     = "/usr/share/openxr/1/openxr_wivrn.json"
+WIVRN_MANIFEST     = venv.find_wivrn_manifest()
 ACTIVE_RUNTIME_DIR = os.path.join(HOME, ".config/openxr/1")
 ACTIVE_RUNTIME     = os.path.join(ACTIVE_RUNTIME_DIR, "active_runtime.json")
 
@@ -90,13 +92,15 @@ def _walk_search():
 def find_wivrn_libs():
     """
     Findet (libopenxr_wivrn.so, libmonado_wivrn.so) als absolute Pfade.
-    Reihenfolge: Manifest auflösen -> bekannte Verzeichnisse -> Suche.
-    Gibt (openxr_so | None, monado_so | None) zurück.
+    Erst zentraler Resolver (nativ/flatpak/nix), dann Manifest -> Verzeichnisse -> Suche.
     """
+    o, m = venv.find_wivrn_libs()
+    if o and os.path.exists(o):
+        return o, m
+
     o, m = _resolve_from_manifest()
     if o and os.path.exists(o):
         if not (m and os.path.exists(m)):
-            # Monado-Lib neben der OpenXR-Lib suchen
             sib = os.path.join(os.path.dirname(o), _MONADO_SO)
             m = sib if os.path.exists(sib) else m
         return o, m
@@ -164,17 +168,6 @@ def apply_openxr_fix():
     if not _is_elf(openxr_so):
         return False, "not_elf", openxr_so
 
-    # Vorhandene Datei sichern (nichts kaputt machen)
-    backup = ""
-    try:
-        os.makedirs(ACTIVE_RUNTIME_DIR, exist_ok=True)
-        if os.path.exists(ACTIVE_RUNTIME):
-            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup = ACTIVE_RUNTIME + f".bak.{stamp}"
-            shutil.copy2(ACTIVE_RUNTIME, backup)
-    except Exception:
-        backup = ""
-
     runtime = {
         "file_format_version": "1.0.0",
         "runtime": {
@@ -185,10 +178,30 @@ def apply_openxr_fix():
     if monado_so and os.path.exists(monado_so):
         runtime["runtime"]["MND_libmonado_path"] = monado_so
 
-    try:
-        with open(ACTIVE_RUNTIME, "w") as f:
-            json.dump(runtime, f, indent=4)
-    except Exception as e:
-        return False, "write_failed", str(e)
+    # In alle relevanten Verzeichnisse schreiben: Host-Config IMMER, und bei
+    # Steam-Flatpak zusätzlich dessen Sandbox-Config (sonst findet das
+    # gesandboxte Steam die WiVRn-Runtime nicht) -> "OpenXR-SteamFix".
+    backup = ""
+    wrote_any = False
+    for d in venv.openxr_config_dirs():
+        target = os.path.join(d, "active_runtime.json")
+        try:
+            os.makedirs(d, exist_ok=True)
+            if os.path.exists(target):
+                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                bak = target + f".bak.{stamp}"
+                shutil.copy2(target, bak)
+                if target == ACTIVE_RUNTIME:
+                    backup = bak
+            with open(target, "w") as f:
+                json.dump(runtime, f, indent=4)
+            wrote_any = True
+        except Exception as e:
+            if target == ACTIVE_RUNTIME:
+                return False, "write_failed", str(e)
+            print(f"[OpenXR] Konnte {target} nicht schreiben: {e}")
+
+    if not wrote_any:
+        return False, "write_failed", ""
 
     return True, "ok", backup

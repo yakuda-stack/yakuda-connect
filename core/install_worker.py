@@ -33,13 +33,56 @@ def find_terminal():
     return None, None
 
 
+class UpdateWorker(QThread):
+    """Führt ein System-/Ökosystem-Update über die gewählte Methode im Terminal aus."""
+    status_signal = Signal(str)
+    finished_signal = Signal(bool)
+
+    def __init__(self, method):
+        super().__init__()
+        self.method = method
+
+    def run(self):
+        terminal, exec_flags = find_terminal()
+        if terminal is None:
+            self.status_signal.emit("Fehler: Kein unterstütztes Terminal gefunden!")
+            self.finished_signal.emit(False)
+            return
+
+        cmds = {
+            "yay":     "yay -Syu",
+            "paru":    "paru -Syu",
+            "flatpak": "flatpak update",
+        }
+        update_cmd = cmds.get(self.method, "yay -Syu")
+        self.status_signal.emit(f"Update läuft ({self.method}) ...")
+
+        bash_cmd = (
+            f"echo '=== System-Update ({self.method}) ==='; "
+            f"{update_cmd}; "
+            f"echo ''; "
+            f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
+            f"sleep 2"
+        )
+        cmd = [terminal] + exec_flags + ["bash", "-c", bash_cmd]
+        try:
+            proc = subprocess.Popen(cmd)
+            proc.wait()
+            self.status_signal.emit("Update abgeschlossen.")
+            self.finished_signal.emit(proc.returncode == 0)
+        except Exception as e:
+            self.status_signal.emit(f"Fehler beim Update: {e}")
+            self.finished_signal.emit(False)
+
+
 class InstallWorker(QThread):
     status_signal = Signal(str)
     finished_signal = Signal(bool)
 
-    def __init__(self, packages):
+    def __init__(self, packages, helper="yay"):
         super().__init__()
         self.packages = packages
+        self.helper = helper if helper in ("yay", "paru", "flatpak") else "yay"
 
     def run(self):
         if not self.packages:
@@ -58,13 +101,22 @@ class InstallWorker(QThread):
         for index, pkg in enumerate(self.packages, start=1):
             self.status_signal.emit(f"Installiere Paket {index} von {total_pkgs}: {pkg}...")
 
-            bash_cmd = (
-                f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) ==='; "
-                f"yay -S {pkg}; "
-                f"echo ''; "
-                f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
-                f"sleep 2"
-            )
+            if self.helper == "flatpak":
+                bash_cmd = (
+                    f"echo '=== Installiere {pkg} (Flatpak) ==='; "
+                    f"flatpak install -y flathub {pkg}; "
+                    f"echo ''; "
+                    f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
+                    f"sleep 2"
+                )
+            else:
+                bash_cmd = (
+                    f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit {self.helper} ==='; "
+                    f"{self.helper} -S {pkg}; "
+                    f"echo ''; "
+                    f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
+                    f"sleep 2"
+                )
 
             # Befehlsaufbau je nach Terminal-Syntax
             cmd = [terminal] + exec_flags + ["bash", "-c", bash_cmd]

@@ -322,6 +322,18 @@ class Ui_MainWindow(object):
         layout.addWidget(self.pkg_group)
 
         btn_layout = QHBoxLayout()
+        self.combo_install_method = QComboBox()
+        self.combo_install_method.setFixedHeight(30)
+        self.combo_install_method.setStyleSheet("""
+            QComboBox { background-color: #2e3440; color: #d8dee9; font-size: 11px;
+                        border: 1px solid #3b4252; border-radius: 4px; padding: 0px 8px; }
+            QComboBox:hover { border-color: #5e81ac; }
+            QComboBox QAbstractItemView { background-color: #2e3440; color: #d8dee9;
+                        selection-background-color: #5e81ac; }
+        """)
+        self.combo_install_method.setVisible(False)
+        btn_layout.addWidget(self.combo_install_method)
+
         self.btn_install = QPushButton(tr("install_btn"))
         self.btn_install.setFixedHeight(30)
         self.btn_install.setStyleSheet("""
@@ -406,7 +418,7 @@ class Ui_MainWindow(object):
         layout.setContentsMargins(20, 20, 20, 20)
 
         version_layout = QHBoxLayout()
-        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.4-alpha")
+        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.5-alpha")
         self.lbl_app_ver.setStyleSheet("color: #81a1c1;")
         self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> Prüfe...")
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
@@ -992,7 +1004,20 @@ class Ui_MainWindow(object):
         cmd_widget.setVisible(False)
         card_layout.addWidget(cmd_widget)
 
-        # Zeile 4: Install-Button — kompakt
+        # Zeile 4: Methoden-Auswahl (AppImage / yay / paru) — nur sichtbar, wenn >1 Option
+        combo_method = QComboBox()
+        combo_method.setFixedHeight(24)
+        combo_method.setStyleSheet("""
+            QComboBox { background-color: #2e3440; color: #d8dee9; font-size: 10px;
+                        border: 1px solid #3b4252; border-radius: 3px; padding: 0px 6px; }
+            QComboBox:hover { border-color: #5e81ac; }
+            QComboBox QAbstractItemView { background-color: #2e3440; color: #d8dee9;
+                        selection-background-color: #5e81ac; }
+        """)
+        combo_method.setVisible(False)
+        card_layout.addWidget(combo_method)
+
+        # Zeile 5: Install-Button — kompakt
         btn_install = QPushButton(tr("tools_install_btn"))
         btn_install.setFixedHeight(26)
         btn_install.setStyleSheet("""
@@ -1004,15 +1029,17 @@ class Ui_MainWindow(object):
         card_layout.addWidget(btn_install)
 
         self.tool_cards[tool["key"]] = {
-            "pkg":         tool["pkg"],
-            "lbl_status":  lbl_status,
-            "lbl_version": lbl_version,
-            "lbl_update":  lbl_update,
-            "lbl_desc":    lbl_desc,
-            "btn_install": btn_install,
-            "btn_copy":    btn_copy,
-            "cmd_widget":  cmd_widget,
-            "start_cmd":   tool["start_cmd"],
+            "pkg":          tool["pkg"],
+            "tool":         tool,
+            "lbl_status":   lbl_status,
+            "lbl_version":  lbl_version,
+            "lbl_update":   lbl_update,
+            "lbl_desc":     lbl_desc,
+            "btn_install":  btn_install,
+            "btn_copy":     btn_copy,
+            "cmd_widget":   cmd_widget,
+            "combo_method": combo_method,
+            "start_cmd":    tool["start_cmd"],
         }
 
         return card

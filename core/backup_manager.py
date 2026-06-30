@@ -3,12 +3,15 @@ import os
 import shutil
 import subprocess
 from PySide6.QtWidgets import QMessageBox
+import vr_environment as venv
 
 HOME = os.path.expanduser("~")
 BACKUP_DIR = os.path.join(HOME, ".config/yakuda-connect/backup")
 BACKUP_CONFIG_DIR = os.path.join(BACKUP_DIR, "config")
 BACKUP_USR_DIR = os.path.join(BACKUP_DIR, "usr")
 BACKUP_OPT_DIR = os.path.join(BACKUP_DIR, "opt")
+# Separater Ordner für die Configs eines per Flatpak installierten Steam
+BACKUP_STEAMFP_DIR = os.path.join(BACKUP_DIR, "steamflatpak")
 
 SOURCES = {
     "config": [
@@ -40,6 +43,11 @@ def create_vr_backup():
         for src in SOURCES["config"]: safe_copy_tree(src, BACKUP_CONFIG_DIR)
         for src in SOURCES["usr"]: safe_copy_tree(src, BACKUP_USR_DIR)
         for src in SOURCES["opt"]: safe_copy_tree(src, BACKUP_OPT_DIR)
+        # Zusätzlich: Configs eines Flatpak-Steam (eigene Sandbox-Config)
+        if venv.steam_is_flatpak():
+            base = venv.STEAM_FLATPAK_BASE
+            for sub in (".config/openxr", ".config/openvr"):
+                safe_copy_tree(os.path.join(base, sub), BACKUP_STEAMFP_DIR)
         return True
     except Exception as e:
         print(f"[Backup Fehler] Sicherung fehlgeschlagen: {e}")
@@ -85,6 +93,17 @@ def restore_vr_environment(parent_window):
             if os.path.exists(src):
                 if os.path.exists(dest): shutil.rmtree(dest)
                 shutil.copytree(src, dest)
+
+        # 1b. Flatpak-Steam-Configs zurückspielen (falls gesichert)
+        if os.path.isdir(BACKUP_STEAMFP_DIR):
+            base = venv.STEAM_FLATPAK_BASE
+            for name in ("openxr", "openvr"):
+                src = os.path.join(BACKUP_STEAMFP_DIR, name)
+                dest = os.path.join(base, ".config", name)
+                if os.path.exists(src):
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    if os.path.exists(dest): shutil.rmtree(dest)
+                    shutil.copytree(src, dest)
 
         # 2. System-Ordner wiederherstellen via pkexec
         system_pairs = [
