@@ -41,38 +41,47 @@
 
 ## 📦 Installation & Setup
 
-Für Linux-Einsteiger und Power-User gibt es zwei einfache Wege, das Tool zu starten.
+Whether you are a Linux newcomer or a power user, there are two straightforward ways to get `yakuda-connect` up and running.
 
 ### Method 1: Express Installation (AppImage & Terminal)
 
-Wähle einfach eine der beiden folgenden Optionen, um am schnellsten ans Ziel zu kommen:
+Choose one of the two options below to get started as quickly as possible:
 
-#### Option A: Der 1-Klick-Terminal-Befehl (Schnellste Methode)
-Öffne dein Terminal und füge diesen Befehl ein. Er lädt das Skript, installiert das Tool und startet es direkt:
+#### Option A: One-Click Terminal Command (Fastest Method)
+Open your terminal and paste the following command. It will automatically download the setup script, install the tool, and launch it immediately:
 
+```bash
 bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh) && yakuda-connect
+```
 
-#### Option B: Manuelles AppImage (Keine Installation nötig)
-1. Gehe in den Bereich "Releases" on GitHub.
-2. Lade die neueste yakuda-connect-x86_64.AppImage herunter.
-3. Mach die Datei ausführbar:
-   - Per GUI: Rechtsklick auf die Datei -> Eigenschaften -> Berechtigungen -> "Ausführen von Datei als Programm erlauben" aktivieren.
-   - Per Terminal: chmod +x yakuda-connect-*.AppImage
-4. Doppelklick auf die Datei zum Starten!
+#### Option B: Manual AppImage (No Installation Required)
+1. Navigate to the **Releases** section on GitHub[cite: 2].
+2. Download the latest `yakuda-connect-x86_64.AppImage`[cite: 2].
+3. Make the file executable[cite: 2]:
+   - **Via GUI:** Right-click the file -> Properties -> Permissions -> Enable "Allow executing file as program"[cite: 2].
+   - **Via Terminal:** `chmod +x yakuda-connect-*.AppImage`[cite: 2].
+4. Double-click the file to launch the dashboard![cite: 2]
 
 ---
 
 ### Method 2: Manual Installation (From Source)
-Wenn du den Quellcode selbst klonen und ausführen möchtest, führe diese Befehle nacheinander aus:
 
-1. Repository klonen:
+If you prefer to clone the repository and run the application directly from the source code, execute these commands in your terminal sequence:
+
+1. Clone the repository[cite: 2]:
+```bash
 git clone https://github.com/yakuda-stack/yakuda-connect.git
+```
 
-2. In das Verzeichnis wechseln:
+2. Change to the project directory[cite: 2]:
+```bash
 cd yakuda-connect
+```
 
-3. Skript ausführen:
+3. Run the installation script[cite: 2]:
+```bash
 bash install.sh
+```
 
 ---
 
