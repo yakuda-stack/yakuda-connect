@@ -92,6 +92,18 @@ bash install.sh
 # Changelog - Yakuda Connect
 
 
+---
+
+### 🚀 v1.0.6-alpha
+
+#### 🇬🇧 English
+* **Added** | Updater in dashboard automatic update in yakuda connect
+
+#### 🇩🇪 Deutsch
+* **Neu** | aktualisiert die softwäre yakuda connect wenn update verfügbar muss du auf den grünene pfeil im dashboard klicken
+
+---
+
 ### 🚀 v1.0.5-alpha
 
 #### 🇬🇧 English
@@ -129,6 +141,9 @@ bash install.sh
 * **Verbessert** | Die VR-Priorität (CAP_SYS_NICE) wird bei Flatpak-/unveränderlichen (immutable) Installationen korrekt übersprungen, wo `setcap` nicht greifen kann.
 * **Behoben** | Der VRChat-Bilder-Symlink und die Start-Sperre setzen kein natives Arch-/Steam-Setup mehr voraus; sie funktionieren jetzt mit Flatpak-Steam und Nicht-Arch-Systemen.
 * **Entfernt** | Nix als eigenständige Installationsmethode (zu viel Wartung und Pfad-Komplexität) — NixOS wird jetzt wie Ubuntu/Fedora behandelt und nutzt Flatpak/AppImage (Flatpak, ungetestet auf Hardware).
+
+
+---
 
 ### 🚀 v1.0.4-alpha
 

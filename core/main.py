@@ -15,7 +15,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.ui_main import Ui_MainWindow
 
 # Interne Importe (liegen im selben Ordner 'core')
-from install_worker import InstallWorker, UpdateWorker
+from install_worker import (InstallWorker, UpdateWorker,
+                            AppUpdateCheckWorker, AppUpdateWorker)
 from appimage_installer import AppImageInstallWorker
 import appimage_installer as appimg
 import vr_environment as venv
@@ -161,7 +162,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.0.5-alpha"
+        self.APP_VERSION = "v1.0.6-alpha"
         self.server_process = None
         self.pairing_process = None
         self._overlay_worker = None
@@ -227,6 +228,16 @@ class VRApp(QMainWindow):
 # Erststart- / Willkommenstext für den Nutzer setzen
         self._set_welcome_text()
 
+        # --- Selbst-Update (yakuda-connect) ---
+        # Versions-Label aus der EINEN Quelle der Wahrheit (APP_VERSION) setzen
+        # und kurz nach dem Start still im Hintergrund nach einem Update schauen.
+        self._app_update_available = False
+        self._app_remote_version = ""
+        self._app_update_check_worker = None
+        self._app_update_worker = None
+        self._refresh_app_version_label()
+        QTimer.singleShot(1500, self.check_app_update)
+
     def _set_welcome_text(self):
         """Setzt den Willkommenstext je nach aktiver Sprache."""
         lang = get_language()
@@ -272,6 +283,78 @@ class VRApp(QMainWindow):
             </ul>"""
         self.ui.txt_free_info.setHtml(html)
 
+    # ------------------------------------------------------------------ #
+    #  Selbst-Update von yakuda-connect (kleiner Pfeil neben der Version)
+    # ------------------------------------------------------------------ #
+    def _refresh_app_version_label(self):
+        """Setzt das App-Versions-Label aus APP_VERSION und pflegt den Pfeil-Tooltip."""
+        self.ui.lbl_app_ver.setText(f"<b>{tr('app_version_label')}</b> {self.APP_VERSION}")
+        if getattr(self, "_app_update_available", False) and self._app_remote_version:
+            self.ui.btn_app_update.setToolTip(
+                tr("app_update_tooltip").format(version=self._app_remote_version))
+
+    def check_app_update(self):
+        """Startet den stillen Versions-Check im Hintergrund."""
+        if self._app_update_check_worker is not None and self._app_update_check_worker.isRunning():
+            return
+        self._app_update_check_worker = AppUpdateCheckWorker(self.APP_VERSION)
+        self._app_update_check_worker.result_signal.connect(self._on_app_update_checked)
+        self._app_update_check_worker.start()
+
+    def _on_app_update_checked(self, available, remote_version):
+        """Blendet den Update-Pfeil ein/aus — je nach Ergebnis des Checks."""
+        self._app_update_available = bool(available)
+        self._app_remote_version = remote_version or ""
+        if available:
+            self.ui.btn_app_update.setToolTip(
+                tr("app_update_tooltip").format(version=self._app_remote_version))
+            self.ui.btn_app_update.setVisible(True)
+        else:
+            self.ui.btn_app_update.setVisible(False)
+
+    def start_app_self_update(self):
+        """Klick auf den Pfeil: nachfragen, dann install.sh im Terminal ausführen."""
+        ver = self._app_remote_version or "?"
+        reply = QMessageBox.question(
+            self, tr("app_update_title"),
+            tr("app_update_confirm").format(version=ver),
+            QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+
+        self.ui.btn_app_update.setEnabled(False)
+        self._app_update_worker = AppUpdateWorker()
+        self._app_update_worker.finished_signal.connect(self._on_app_self_update_done)
+        self._app_update_worker.start()
+
+    def _on_app_self_update_done(self, ok):
+        self.ui.btn_app_update.setEnabled(True)
+        if ok:
+            r = QMessageBox.question(
+                self, tr("app_update_title"), tr("app_update_restart"),
+                QMessageBox.Yes | QMessageBox.No)
+            if r == QMessageBox.Yes:
+                self._restart_app()
+            else:
+                # Nutzer will später neu starten -> Pfeil ausblenden (schon aktualisiert)
+                self._app_update_available = False
+                self.ui.btn_app_update.setVisible(False)
+        else:
+            QMessageBox.warning(self, tr("app_update_title"), tr("app_update_failed"))
+
+    def _restart_app(self):
+        """Startet yakuda-connect neu, um den frisch installierten Code zu laden."""
+        try:
+            subprocess.Popen(["yakuda-connect"])
+        except Exception:
+            # Aus dem Quellcode gestartet (kein Wrapper) -> gleiches Skript neu starten
+            try:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+                return
+            except Exception:
+                pass
+        QApplication.quit()
+
     def init_logic_connections(self):
         """Verknüpft die UI-Komponenten aus ui_main.py mit den Logik-Funktionen."""
         # Navigation
@@ -299,6 +382,8 @@ class VRApp(QMainWindow):
         self.ui.btn_server_check.clicked.connect(self.manual_server_check)
         self.ui.btn_port_status.clicked.connect(self.open_port_9757_firewall)
         self.ui.combo_language.currentIndexChanged.connect(self.on_language_changed)
+        # Selbst-Update: kleiner Pfeil neben der App-Version
+        self.ui.btn_app_update.clicked.connect(self.start_app_self_update)
 
         # APK Installation
         self.ui.btn_apk_install.clicked.connect(self.start_apk_install)
@@ -894,6 +979,9 @@ class VRApp(QMainWindow):
 
         # 3) Info-Text (Willkommen / Welcome)
         self._set_welcome_text()
+
+        # App-Versions-Label + Update-Pfeil-Tooltip an die Sprache anpassen
+        self._refresh_app_version_label()
 
         # --- Ab hier nur noch DYNAMISCHE Texte, die vom aktuellen Zustand abhängen ---
 

@@ -120,6 +120,15 @@ TRANSLATIONS = {
         "install_check_done":     "System check complete.",
         "install_ready":          "Ready.",
         "install_updates_available": "Some installed components have pending updates.",
+
+        # App self-update (arrow next to the app version)
+        "app_version_label":      "App Version:",
+        "app_update_tooltip":     "Update available: {version} — click to update yakuda-connect",
+        "app_update_title":       "yakuda-connect Update",
+        "app_update_confirm":     "A new version ({version}) is available.\n\nUpdate yakuda-connect now? A terminal window will open and may ask for your password.",
+        "app_update_restart":     "Update complete. Restart yakuda-connect now to load the new version?",
+        "app_update_failed":      "The update could not be completed. Please check the terminal output, or run the installer manually.",
+
         "pkg_incomplete":         "⚠ Not fully installed",
         "tools_installing":       "Installing...",
         "tools_install_error":    "Installation error",
@@ -339,6 +348,15 @@ TRANSLATIONS = {
         "install_check_done":     "System-Check abgeschlossen.",
         "install_ready":          "Bereit.",
         "install_updates_available": "Einige installierte Komponenten haben ausstehende Updates.",
+
+        # Selbst-Update der App (Pfeil neben der App-Version)
+        "app_version_label":      "App-Version:",
+        "app_update_tooltip":     "Update verfügbar: {version} — klicken, um yakuda-connect zu aktualisieren",
+        "app_update_title":       "yakuda-connect Update",
+        "app_update_confirm":     "Eine neue Version ({version}) ist verfügbar.\n\nyakuda-connect jetzt aktualisieren? Es öffnet sich ein Terminal-Fenster, das ggf. nach deinem Passwort fragt.",
+        "app_update_restart":     "Update abgeschlossen. yakuda-connect jetzt neu starten, um die neue Version zu laden?",
+        "app_update_failed":      "Das Update konnte nicht abgeschlossen werden. Bitte prüfe die Terminal-Ausgabe oder führe den Installer manuell aus.",
+
         "pkg_incomplete":         "⚠ Nicht vollständig im System",
         "tools_installing":       "Wird installiert...",
         "tools_install_error":    "Fehler bei Installation",

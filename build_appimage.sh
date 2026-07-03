@@ -6,7 +6,7 @@
 set -e
 
 APP="yakuda-connect"
-VERSION="1.0.5"
+VERSION="1.0.6"
 ARCH="x86_64"
 BUILD_DIR="$(pwd)/AppDir"
 OUT="$(pwd)/${APP}-${VERSION}-${ARCH}.AppImage"

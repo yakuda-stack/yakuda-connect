@@ -418,7 +418,7 @@ class Ui_MainWindow(object):
         layout.setContentsMargins(20, 20, 20, 20)
 
         version_layout = QHBoxLayout()
-        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.5-alpha")
+        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.6-alpha")
         self.lbl_app_ver.setStyleSheet("color: #81a1c1;")
         self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> Prüfe...")
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
@@ -432,7 +432,26 @@ class Ui_MainWindow(object):
             QComboBox::drop-down { border: none; }
         """)
 
+        # Kleiner Update-Pfeil direkt neben der App-Version.
+        # Standardmäßig unsichtbar; main.py blendet ihn nur ein, wenn auf GitHub
+        # eine neuere yakuda-connect-Version gefunden wurde. Klick -> Selbst-Update.
+        self.btn_app_update = QPushButton("⬆")
+        self.btn_app_update.setCursor(Qt.PointingHandCursor)
+        self.btn_app_update.setFixedSize(26, 22)
+        self.btn_app_update.setVisible(False)
+        self.btn_app_update.setStyleSheet("""
+            QPushButton {
+                background-color: #a3be8c; color: #2e3440;
+                border: none; border-radius: 4px;
+                font-size: 12px; font-weight: bold; padding: 0px;
+            }
+            QPushButton:hover  { background-color: #b4cfa0; }
+            QPushButton:pressed { background-color: #8faa78; }
+            QPushButton:disabled { background-color: #4c566a; color: #7b88a1; }
+        """)
+
         version_layout.addWidget(self.lbl_app_ver)
+        version_layout.addWidget(self.btn_app_update)
         version_layout.addStretch()
         version_layout.addWidget(self.combo_language)
         version_layout.addSpacing(12)

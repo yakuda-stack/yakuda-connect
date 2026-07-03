@@ -1,6 +1,14 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.0.6-alpha
 
+#### 🇬🇧 English
+* **Added** | Updater in dashboard automatic update in yakuda connect
+
+#### 🇩🇪 Deutsch
+* **Neu** | aktualisiert die softwäre yakuda connect wenn update verfügbar muss du auf den grünene pfeil im dashboard klicken
+
+---
 
 ### 🚀 v1.0.5-alpha
 
