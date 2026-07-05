@@ -8,7 +8,12 @@ import json
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QMessageBox,
                                QHBoxLayout, QVBoxLayout, QComboBox, QLineEdit,
                                QPushButton, QFileDialog)
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
+
+# Community-Links (Settings -> "Community & Updates")
+DISCORD_URL = "https://discord.gg/X5TaN4A47h"
+PAYPAL_URL  = "https://paypal.me/riesensika"
 
 # Korrektur des Pfads für das UI, da main.py jetzt in core/ liegt
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -22,7 +27,8 @@ import appimage_installer as appimg
 import vr_environment as venv
 from config_manager import load_saved_settings, save_all_settings
 from streaming_tab import StreamingTab
-from backup_manager import create_vr_backup, restore_vr_environment
+from backup_manager import (create_vr_backup, restore_vr_environment,
+                            auto_backup_on_start)
 from overlay_manager import (DesignInstallWorker, set_slimevr_ui,
                              is_slimevr_active, is_design_installed,
                              reset_wayvr_to_default)
@@ -162,7 +168,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.0.6-alpha"
+        self.APP_VERSION = "v1.0.7-alpha"
         self.server_process = None
         self.pairing_process = None
         self._overlay_worker = None
@@ -237,6 +243,13 @@ class VRApp(QMainWindow):
         self._app_update_worker = None
         self._refresh_app_version_label()
         QTimer.singleShot(1500, self.check_app_update)
+        # Beim Start prüfen: gibt es laut Config schon ein VR-Backup?
+        # Falls nein, aber eine VR-Umgebung existiert (openxr/wivrn — nativ
+        # oder Flatpak-Pfade), wird EINMALIG automatisch ein Backup angelegt.
+        # Läuft im Hintergrund-Thread, damit die UI nicht blockiert
+        # (/opt/opencomposite & Co. können größer sein).
+        self._auto_backup_worker = None
+        QTimer.singleShot(2500, self._start_auto_backup_check)
 
     def _set_welcome_text(self):
         """Setzt den Willkommenstext je nach aktiver Sprache."""
@@ -289,6 +302,10 @@ class VRApp(QMainWindow):
     def _refresh_app_version_label(self):
         """Setzt das App-Versions-Label aus APP_VERSION und pflegt den Pfeil-Tooltip."""
         self.ui.lbl_app_ver.setText(f"<b>{tr('app_version_label')}</b> {self.APP_VERSION}")
+        # Auch die Community-Box in den Settings zeigt die aktuelle Version an.
+        if hasattr(self.ui, "lbl_community_version"):
+            self.ui.lbl_community_version.setText(
+                tr("community_version").format(version=self.APP_VERSION))
         if getattr(self, "_app_update_available", False) and self._app_remote_version:
             self.ui.btn_app_update.setToolTip(
                 tr("app_update_tooltip").format(version=self._app_remote_version))
@@ -355,6 +372,189 @@ class VRApp(QMainWindow):
                 pass
         QApplication.quit()
 
+    # ------------------------------------------------------------------ #
+    #  Community & Updates (Settings, ganz oben)
+    # ------------------------------------------------------------------ #
+    def manual_check_app_update(self):
+        """Klick auf 'Nach Updates suchen': Check starten und Ergebnis melden."""
+        if self._app_update_check_worker is not None and self._app_update_check_worker.isRunning():
+            return
+        self.ui.btn_community_check.setEnabled(False)
+        self.ui.lbl_community_version.setText(tr("community_checking"))
+        self._app_update_check_worker = AppUpdateCheckWorker(self.APP_VERSION)
+        self._app_update_check_worker.result_signal.connect(self._on_manual_update_checked)
+        self._app_update_check_worker.start()
+
+    def _on_manual_update_checked(self, available, remote_version):
+        """Ergebnis des manuellen Checks: Dialog anzeigen + Pfeil pflegen."""
+        self.ui.btn_community_check.setEnabled(True)
+        self._refresh_app_version_label()
+        # Pfeil im Dashboard mitpflegen (gleiche Logik wie der stille Check)
+        self._on_app_update_checked(available, remote_version)
+
+        if available:
+            # Direkt das bestehende Update-Verfahren anbieten (install.sh im Terminal)
+            self.start_app_self_update()
+        elif remote_version:
+            QMessageBox.information(
+                self, tr("app_update_title"),
+                tr("community_uptodate").format(version=self.APP_VERSION))
+        else:
+            QMessageBox.warning(
+                self, tr("app_update_title"), tr("community_check_failed"))
+
+    def open_discord_link(self):
+        QDesktopServices.openUrl(QUrl(DISCORD_URL))
+
+    def open_paypal_link(self):
+        QDesktopServices.openUrl(QUrl(PAYPAL_URL))
+
+    # ------------------------------------------------------------------ #
+    #  Automatisches Erst-Backup beim Start (siehe backup_manager.py)
+    # ------------------------------------------------------------------ #
+    def _start_auto_backup_check(self):
+        """Startet den stillen Auto-Backup-Check im Hintergrund-Thread."""
+        class _AutoBackupWorker(QThread):
+            done = QtSignal(bool)
+
+            def run(self):
+                try:
+                    created = auto_backup_on_start()
+                except Exception as e:
+                    print(f"[Backup] Auto-Backup-Check fehlgeschlagen: {e}")
+                    created = False
+                self.done.emit(bool(created))
+
+        self._auto_backup_worker = _AutoBackupWorker()
+        self._auto_backup_worker.done.connect(self._on_auto_backup_done)
+        self._auto_backup_worker.start()
+
+    def _on_auto_backup_done(self, created):
+        if created:
+            print("[Backup] Automatisches Erst-Backup der VR-Umgebung wurde angelegt.")
+
+    # ------------------------------------------------------------------ #
+    #  OpenXR-Runtime (Steam-Fix): automatischer Fix + manueller Bereich
+    # ------------------------------------------------------------------ #
+    def refresh_openxr_status(self):
+        """Zeigt an, ob die active_runtime.json ok / kaputt / nicht vorhanden ist."""
+        try:
+            state, _detail = oxr.current_status()
+        except Exception:
+            state = "missing"
+        if state == "ok":
+            self.ui.lbl_openxr_status.setText(tr("openxr_status_ok"))
+            self.ui.lbl_openxr_status.setStyleSheet(
+                "color: #a3be8c; font-size: 11px; font-weight: bold;")
+        elif state == "broken":
+            self.ui.lbl_openxr_status.setText(tr("openxr_status_broken"))
+            self.ui.lbl_openxr_status.setStyleSheet(
+                "color: #bf616a; font-size: 11px; font-weight: bold;")
+        else:
+            self.ui.lbl_openxr_status.setText(tr("openxr_status_missing"))
+            self.ui.lbl_openxr_status.setStyleSheet(
+                "color: #ebcb8b; font-size: 11px; font-weight: bold;")
+
+    def apply_openxr_fix_clicked(self):
+        """Schreibt die korrekte active_runtime.json (mit automatischem Backup).
+        Scheitert der normale Schreibzugriff (Rechteproblem), wird der Fix per
+        pkexec mit Root-Passwortabfrage wiederholt."""
+        ok, code, detail = oxr.apply_openxr_fix()
+
+        # Rechteproblem? -> Root-Fallback anbieten (pkexec-Passwortdialog)
+        if not ok and code == "write_failed":
+            reply = QMessageBox.question(
+                self, tr("openxr_group"), tr("openxr_fix_root_ask"),
+                QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                ok, code, detail = oxr.apply_openxr_fix_elevated()
+
+        if ok:
+            msg = tr("openxr_fix_done").format(path=venv.primary_active_runtime())
+            if detail:
+                msg += "\n\n" + tr("openxr_fix_backup").format(backup=detail)
+            QMessageBox.information(self, tr("openxr_group"), msg)
+        elif code == "libs_not_found":
+            QMessageBox.warning(self, tr("openxr_group"), tr("openxr_fix_no_libs"))
+        elif code == "not_elf":
+            QMessageBox.warning(self, tr("openxr_group"),
+                                tr("openxr_fix_not_elf").format(path=detail))
+        elif code == "cancelled":
+            QMessageBox.information(self, tr("openxr_group"), tr("openxr_fix_cancelled"))
+        else:
+            QMessageBox.critical(self, tr("openxr_group"),
+                                 f"{tr('openxr_fix_error')}\n{detail}")
+        self.refresh_openxr_status()
+        self.fill_openxr_fields()
+
+    def toggle_openxr_manual(self):
+        """Klappt den manuellen Fix-Bereich ein/aus."""
+        visible = not self.ui.openxr_manual_widget.isVisible()
+        self.ui.openxr_manual_widget.setVisible(visible)
+        self.ui.btn_openxr_manual_toggle.setText(
+            tr("openxr_manual_hide") if visible else tr("openxr_manual_show"))
+
+    # ------------------------------------------------------------------ #
+    #  Performance & Latenz: CAP_SYS_NICE für wivrn-server
+    # ------------------------------------------------------------------ #
+    def _perf_setcap_active(self):
+        """True, wenn die wivrn-server-Binary bereits cap_sys_nice trägt."""
+        binary = venv.wivrn_server_binary()
+        if not binary:
+            return False
+        getcap = shutil.which("getcap") or "/usr/sbin/getcap"
+        try:
+            out = subprocess.run([getcap, binary], capture_output=True,
+                                 text=True, timeout=5).stdout
+            return "cap_sys_nice" in (out or "")
+        except Exception:
+            return False
+
+    def refresh_perf_status(self):
+        """Aktualisiert Status-Label + Button der Performance-Box."""
+        binary = venv.wivrn_server_binary()
+        if not binary:
+            self.ui.lbl_perf_status.setText(tr("perf_status_nobin"))
+            self.ui.lbl_perf_status.setStyleSheet("color: #7b88a1; font-size: 11px;")
+            self.ui.btn_perf_setcap.setEnabled(False)
+            return
+        if not venv.supports_setcap():
+            self.ui.lbl_perf_status.setText(tr("perf_status_unsupported"))
+            self.ui.lbl_perf_status.setStyleSheet("color: #7b88a1; font-size: 11px;")
+            self.ui.btn_perf_setcap.setEnabled(False)
+            return
+        if self._perf_setcap_active():
+            self.ui.lbl_perf_status.setText(tr("perf_status_ok"))
+            self.ui.lbl_perf_status.setStyleSheet(
+                "color: #a3be8c; font-size: 11px; font-weight: bold;")
+            self.ui.btn_perf_setcap.setEnabled(False)
+        else:
+            self.ui.lbl_perf_status.setText(tr("perf_status_missing"))
+            self.ui.lbl_perf_status.setStyleSheet(
+                "color: #ebcb8b; font-size: 11px; font-weight: bold;")
+            self.ui.btn_perf_setcap.setEnabled(True)
+
+    def apply_perf_setcap(self):
+        """Setzt CAP_SYS_NICE auf die wivrn-server-Binary (pkexec-Passwortabfrage)."""
+        binary = venv.wivrn_server_binary()
+        if not binary:
+            self.refresh_perf_status()
+            return
+        setcap = shutil.which("setcap") or "/usr/sbin/setcap"
+        try:
+            result = subprocess.run(["pkexec", setcap, "cap_sys_nice+ep", binary],
+                                    capture_output=True, text=True, timeout=120)
+            if result.returncode == 0:
+                QMessageBox.information(self, tr("perf_group"), tr("perf_setcap_done"))
+            else:
+                err = (result.stderr or result.stdout or "").strip()
+                QMessageBox.warning(self, tr("perf_group"),
+                                    f"{tr('perf_setcap_err')}\n{err}")
+        except Exception as e:
+            QMessageBox.warning(self, tr("perf_group"),
+                                f"{tr('perf_setcap_err')}\n{e}")
+        self.refresh_perf_status()
+
     def init_logic_connections(self):
         """Verknüpft die UI-Komponenten aus ui_main.py mit den Logik-Funktionen."""
         # Navigation
@@ -374,8 +574,19 @@ class VRApp(QMainWindow):
         self.ui.chk_overlay_slimevr.toggled.connect(self.toggle_overlay_slimevr)
         self.ui.btn_openxr_copy_path.clicked.connect(self.copy_openxr_path)
         self.ui.btn_openxr_copy_content.clicked.connect(self.copy_openxr_content)
+        # OpenXR: automatischer Fix + Ein-/Ausklappen des manuellen Bereichs
+        self.ui.btn_openxr_fix.clicked.connect(self.apply_openxr_fix_clicked)
+        self.ui.btn_openxr_manual_toggle.clicked.connect(self.toggle_openxr_manual)
+        # Community & Updates (Settings, ganz oben)
+        self.ui.btn_community_check.clicked.connect(self.manual_check_app_update)
+        self.ui.btn_community_discord.clicked.connect(self.open_discord_link)
+        self.ui.btn_community_donate.clicked.connect(self.open_paypal_link)
+        # Performance & Latenz
+        self.ui.btn_perf_setcap.clicked.connect(self.apply_perf_setcap)
         self.refresh_overlay_state()
         self.fill_openxr_fields()
+        self.refresh_openxr_status()
+        self.refresh_perf_status()
 
         # Dashboard Steuerung — Schiebeschalter statt Start/Stop-Buttons
         self.ui.toggle_server.toggled.connect(self.on_server_toggled)
@@ -982,6 +1193,10 @@ class VRApp(QMainWindow):
 
         # App-Versions-Label + Update-Pfeil-Tooltip an die Sprache anpassen
         self._refresh_app_version_label()
+
+        # Status-Labels der Settings-Boxen (OpenXR / Performance) neu setzen
+        self.refresh_openxr_status()
+        self.refresh_perf_status()
 
         # --- Ab hier nur noch DYNAMISCHE Texte, die vom aktuellen Zustand abhängen ---
 

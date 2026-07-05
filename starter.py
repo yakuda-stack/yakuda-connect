@@ -18,8 +18,8 @@ if __name__ == "__main__":
     app.setApplicationDisplayName("yakuda-connect")
     app.setDesktopFileName("yakuda-connect")
 
-    # Icon setzen — relativ zum starter.py Verzeichnis
-    icon_path = os.path.join(os.path.dirname(__file__), "assets", "yakuda_icon.png")
+    # Icon setzen — SVG (skaliert auf jeder Auflösung sauber)
+    icon_path = os.path.join(os.path.dirname(__file__), "assets", "yakuda_icon.svg")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 

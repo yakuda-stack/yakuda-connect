@@ -2,7 +2,9 @@
 
 **A sleek and intuitive GUI for WiVRn — Linux VR streaming made easy.**
 
-[![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ZHa3rR2Z8k)
+[![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/X5TaN4A47h)
+[![Donate](https://img.shields.io/badge/Donate_via_PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/riesensika)
+[![Version](https://img.shields.io/badge/Version-v1.0.7--alpha-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard designed for Arch-based Linux systems. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -36,6 +38,33 @@
 ---
 
 > 🤖 **Transparency Note:** This project and its documentation are proudly developed and optimized with the support of AI coding assistants (**Claude by Anthropic** & **Gemini**).
+
+---
+
+## 💬 Community & Support
+
+yakuda-connect is a free hobby project — built by VR enthusiasts, for VR enthusiasts.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <h3>💬 Join the Discord</h3>
+      <p>Questions, bug reports, feature ideas or just showing off your VR setup — our community is happy to help.</p>
+      <a href="https://discord.gg/X5TaN4A47h">
+        <img src="https://img.shields.io/badge/discord.gg%2FX5TaN4A47h-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord"/>
+      </a>
+    </td>
+    <td align="center" width="50%">
+      <h3>❤️ Support the project</h3>
+      <p>If yakuda-connect saved you time (or a headache), you can buy the dev a coffee. Every donation keeps Linux VR development going!</p>
+      <a href="https://paypal.me/riesensika">
+        <img src="https://img.shields.io/badge/paypal.me%2Friesensika-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="Donate via PayPal"/>
+      </a>
+    </td>
+  </tr>
+</table>
+
+> 💡 **Tip:** Both buttons are also built right into the app — Settings → **Community & Updates**, where you can also check for new versions with one click.
 
 ---
 
@@ -91,6 +120,30 @@ bash install.sh
 
 # Changelog - Yakuda Connect
 
+
+---
+
+### 🚀 v1.0.7-alpha
+
+#### 🇬🇧 English
+* **Added** | New app icon (SVG): a VR headset with streaming waves in the app's Nord color scheme — scales crisply at every size and is now used everywhere (window, menu entry, AppImage).
+* **Added** | "Community & Updates" section at the top of Settings: check-for-updates button (with "you are up to date" feedback), Discord button and PayPal donate button, plus the currently installed version.
+* **Added** | One-click OpenXR SteamVR fix: a "Fix now (automatic)" button with a live status indicator (OK / broken / missing). The manual copy-paste instructions are still there — collapsed behind a "Manual fix" toggle.
+* **Added** | Root fallback for the OpenXR fix: if writing fails due to permissions, the app asks once and retries via pkexec (graphical password prompt). The old file is backed up with a timestamp and the folder is handed back to your user, so future fixes work without root again.
+* **Added** | "Performance & Latency" section in Settings: one-click real-time priority for the WiVRn server (CAP_SYS_NICE) with live status, plus a compact list of latency tips. Automatically disabled on Flatpak/Nix where setcap can't work.
+* **Added** | Automatic first backup: on startup the app checks the config — if no backup was ever made but a VR environment already exists (openxr/openvr/wivrn folders, native or Flatpak paths), a backup is created once automatically in the background. The backup state is remembered in the config.
+* **Fixed** | Saving dashboard settings no longer wipes other config keys (language, remembered install method, backup flag).
+* **Changed** | All icon references switched from `yakuda_icon.png` to `yakuda_icon.svg` (starter, window icon, install.sh, AppImage build).
+
+#### 🇩🇪 Deutsch
+* **Neu** | Neues App-Icon (SVG): VR-Headset mit Streaming-Wellen im Nord-Farbschema der App — skaliert gestochen scharf in jeder Größe und wird jetzt überall benutzt (Fenster, Menüeintrag, AppImage).
+* **Neu** | „Community & Updates“-Bereich ganz oben in den Settings: Update-Prüfen-Knopf (mit „Du bist aktuell“-Rückmeldung), Discord-Button und PayPal-Spenden-Button, dazu die aktuell installierte Version.
+* **Neu** | 1-Klick OpenXR-SteamVR-Fix: „Jetzt fixen (automatisch)“-Knopf mit Live-Statusanzeige (OK / kaputt / fehlt). Die manuelle Kopier-Anleitung gibt es weiterhin — eingeklappt hinter einem „Manueller Fix“-Umschalter.
+* **Neu** | Root-Fallback für den OpenXR-Fix: Scheitert das Schreiben an fehlenden Rechten, fragt die App einmal nach und wiederholt den Fix per pkexec (grafische Passwortabfrage). Die alte Datei wird mit Zeitstempel gesichert und der Ordner danach wieder deinem Benutzer übergeben — künftige Fixes laufen dann wieder ohne Root.
+* **Neu** | „Performance & Latenz“-Bereich in den Settings: Echtzeit-Priorität für den WiVRn-Server (CAP_SYS_NICE) per Klick mit Live-Status, dazu kompakte Latenz-Tipps. Bei Flatpak/Nix, wo setcap nicht greift, automatisch deaktiviert.
+* **Neu** | Automatisches Erst-Backup: Beim Start prüft die App die Config — wurde noch nie ein Backup gemacht, existiert aber bereits eine VR-Umgebung (openxr/openvr/wivrn-Ordner, nativ oder Flatpak-Pfade), wird einmalig automatisch im Hintergrund ein Backup angelegt. Der Backup-Status wird in der Config gemerkt.
+* **Behoben** | Beim Speichern der Dashboard-Einstellungen gehen andere Config-Werte nicht mehr verloren (Sprache, gemerkte Installationsmethode, Backup-Flag).
+* **Geändert** | Alle Icon-Verweise von `yakuda_icon.png` auf `yakuda_icon.svg` umgestellt (Starter, Fenster-Icon, install.sh, AppImage-Build).
 
 ---
 

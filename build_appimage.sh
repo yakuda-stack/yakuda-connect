@@ -6,7 +6,7 @@
 set -e
 
 APP="yakuda-connect"
-VERSION="1.0.6"
+VERSION="1.0.7"
 ARCH="x86_64"
 BUILD_DIR="$(pwd)/AppDir"
 OUT="$(pwd)/${APP}-${VERSION}-${ARCH}.AppImage"
@@ -52,8 +52,9 @@ chmod +x "$BUILD_DIR/usr/bin/yakuda-connect"
 
 # 4. Icon und Desktop-Datei
 echo "[3/5] Setze Icon und Desktop-Eintrag..."
-cp assets/yakuda_icon.png "$BUILD_DIR/usr/share/icons/hicolor/256x256/apps/yakuda-connect.png"
-cp assets/yakuda_icon.png "$BUILD_DIR/yakuda-connect.png"
+mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/scalable/apps"
+cp assets/yakuda_icon.svg "$BUILD_DIR/usr/share/icons/hicolor/scalable/apps/yakuda-connect.svg"
+cp assets/yakuda_icon.svg "$BUILD_DIR/yakuda-connect.svg"
 
 cat > "$BUILD_DIR/usr/share/applications/yakuda-connect.desktop" << EOF
 [Desktop Entry]

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import os
+import json
 import shutil
+import datetime
 import subprocess
 from PySide6.QtWidgets import QMessageBox
 import vr_environment as venv
@@ -12,6 +14,75 @@ BACKUP_USR_DIR = os.path.join(BACKUP_DIR, "usr")
 BACKUP_OPT_DIR = os.path.join(BACKUP_DIR, "opt")
 # Separater Ordner für die Configs eines per Flatpak installierten Steam
 BACKUP_STEAMFP_DIR = os.path.join(BACKUP_DIR, "steamflatpak")
+
+# App-Config: hier wird gemerkt, OB (und wann) ein Backup erstellt wurde.
+APP_CONFIG_FILE = os.path.join(HOME, ".config/yakuda-connect/config/config.json")
+
+
+# --------------------------------------------------------------------------- #
+#  Backup-Flag in der App-Config ("es gibt ein Backup")
+# --------------------------------------------------------------------------- #
+def _load_app_config():
+    try:
+        with open(APP_CONFIG_FILE, "r") as f:
+            content = f.read().strip()
+            return json.loads(content) if content else {}
+    except Exception:
+        return {}
+
+
+def _save_app_config(data):
+    try:
+        os.makedirs(os.path.dirname(APP_CONFIG_FILE), exist_ok=True)
+        with open(APP_CONFIG_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"[Backup] Konnte Backup-Flag nicht speichern: {e}")
+
+
+def mark_backup_created():
+    """Schreibt in die Config, dass ein VR-Backup existiert (mit Zeitstempel)."""
+    data = _load_app_config()
+    data["vr_backup_created"] = datetime.datetime.now().isoformat(timespec="seconds")
+    _save_app_config(data)
+
+
+def has_backup_flag():
+    """True, wenn laut Config bereits ein Backup erstellt wurde."""
+    return bool(_load_app_config().get("vr_backup_created"))
+
+
+def auto_backup_on_start():
+    """
+    Wird beim Programmstart aufgerufen:
+      * Backup laut Config vorhanden  -> nichts tun.
+      * Kein Backup, aber es existiert bereits eine VR-Umgebung
+        (openxr-/wivrn-Ordner — nativ ODER Flatpak-Pfade) -> einmalig
+        automatisch ein Backup anlegen und das Flag setzen.
+      * Weder Backup noch VR-Umgebung -> nichts tun (frisches System).
+    Rückgabe: True, wenn jetzt ein Auto-Backup erstellt wurde.
+    """
+    if has_backup_flag():
+        return False
+
+    # Altbestand: Backup-Ordner existiert schon (ältere Version ohne Flag)
+    # -> nur das Flag nachtragen, nichts überschreiben.
+    if os.path.isdir(BACKUP_DIR) and os.listdir(BACKUP_DIR):
+        mark_backup_created()
+        return False
+
+    # Existiert überhaupt schon eine VR-Umgebung? (nativ + Flatpak-Pfade)
+    candidates = []
+    candidates += venv.openxr_config_dirs()          # ~/.config/openxr/1 (+ Steam-Flatpak)
+    candidates += venv.openvr_config_dirs()          # ~/.config/openvr (+ Steam-Flatpak)
+    candidates.append(venv.wivrn_config_dir())       # nativ ODER WiVRn-Flatpak-Sandbox
+    candidates.append(os.path.join(HOME, ".config/openxr"))
+    if not any(os.path.isdir(p) for p in candidates):
+        return False
+
+    print("[Backup] Kein Backup vorhanden, VR-Umgebung erkannt — erstelle automatisches Erst-Backup...")
+    return create_vr_backup()
+
 
 SOURCES = {
     "config": [
@@ -48,6 +119,8 @@ def create_vr_backup():
             base = venv.STEAM_FLATPAK_BASE
             for sub in (".config/openxr", ".config/openvr"):
                 safe_copy_tree(os.path.join(base, sub), BACKUP_STEAMFP_DIR)
+        # In der Config merken: es gibt jetzt ein Backup.
+        mark_backup_created()
         return True
     except Exception as e:
         print(f"[Backup Fehler] Sicherung fehlgeschlagen: {e}")

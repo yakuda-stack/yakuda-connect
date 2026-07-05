@@ -154,7 +154,7 @@ APP_INSTALL_SH_URL = "https://raw.githubusercontent.com/yakuda-stack/yakuda-conn
 
 
 def _version_tuple(v):
-    """'v1.0.6-alpha' -> (1, 0, 6). Nicht-Zahlen werden ignoriert."""
+    """'v1.0.7-alpha' -> (1, 0, 7). Nicht-Zahlen werden ignoriert."""
     import re
     nums = re.findall(r"\d+", v or "")
     return tuple(int(n) for n in nums) if nums else ()

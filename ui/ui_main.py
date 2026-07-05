@@ -81,7 +81,7 @@ class Ui_MainWindow(object):
         # Fenster-Icon setzen (ersetzt das "W" in der Titelleiste)
         import os
         from PySide6.QtGui import QIcon
-        icon_path = os.path.join(os.path.dirname(__file__), "..", "assets", "yakuda_icon.png")
+        icon_path = os.path.join(os.path.dirname(__file__), "..", "assets", "yakuda_icon.svg")
         if os.path.exists(icon_path):
             main_window.setWindowIcon(QIcon(icon_path))
         main_window.resize(1050, 850)
@@ -298,6 +298,23 @@ class Ui_MainWindow(object):
         self.lbl_openxr_content_title.setText(tr("openxr_content_title"))
         self.btn_openxr_copy_path.setText(tr("openxr_copy_btn"))
         self.btn_openxr_copy_content.setText(tr("openxr_copy_btn"))
+        self.btn_openxr_fix.setText(tr("openxr_fix_btn"))
+        self.lbl_openxr_manual_hint.setText(tr("openxr_manual_hint"))
+        self.btn_openxr_manual_toggle.setText(
+            tr("openxr_manual_hide") if self.openxr_manual_widget.isVisible()
+            else tr("openxr_manual_show"))
+
+        # --- Community & Updates ---
+        self.community_group.setTitle(tr("community_group"))
+        self.btn_community_check.setText(tr("community_check_btn"))
+        self.btn_community_discord.setText(tr("community_discord_btn"))
+        self.btn_community_donate.setText(tr("community_donate_btn"))
+
+        # --- Performance & Latenz ---
+        self.perf_group.setTitle(tr("perf_group"))
+        self.lbl_perf_desc.setText(tr("perf_desc"))
+        self.btn_perf_setcap.setText(tr("perf_setcap_btn"))
+        self.lbl_perf_tips.setText(tr("perf_tips"))
 
         # --- Tools-Tab ---
         self.lbl_tools_title.setText(tr("tools_title"))
@@ -418,7 +435,7 @@ class Ui_MainWindow(object):
         layout.setContentsMargins(20, 20, 20, 20)
 
         version_layout = QHBoxLayout()
-        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.6-alpha")
+        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.7-alpha")
         self.lbl_app_ver.setStyleSheet("color: #81a1c1;")
         self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> Prüfe...")
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
@@ -633,6 +650,53 @@ class Ui_MainWindow(object):
         self.lbl_settings_title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 5px;")
         layout.addWidget(self.lbl_settings_title)
 
+        # --- COMMUNITY & UPDATES (ganz oben) ---
+        # Update-Prüfung per Klick, Discord-Server und Spendenlink — Layout wie
+        # im Referenz-Screenshot: 3 Buttons nebeneinander, Version darunter.
+        self.community_group = QGroupBox(tr("community_group"))
+        community_layout = QVBoxLayout(self.community_group)
+        community_layout.setSpacing(8)
+
+        community_btn_row = QHBoxLayout()
+        community_btn_row.setSpacing(10)
+
+        self.btn_community_check = QPushButton(tr("community_check_btn"))
+        self.btn_community_check.setCursor(Qt.PointingHandCursor)
+        self.btn_community_check.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """)
+        community_btn_row.addWidget(self.btn_community_check)
+
+        self.btn_community_discord = QPushButton(tr("community_discord_btn"))
+        self.btn_community_discord.setCursor(Qt.PointingHandCursor)
+        self.btn_community_discord.setStyleSheet("""
+            QPushButton { background-color: #2e3440; color: #eceff4; border: 1px solid #4c566a;
+                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
+            QPushButton:hover { background-color: #3b4252; border-color: #5e81ac; }
+        """)
+        community_btn_row.addWidget(self.btn_community_discord)
+
+        self.btn_community_donate = QPushButton(tr("community_donate_btn"))
+        self.btn_community_donate.setCursor(Qt.PointingHandCursor)
+        self.btn_community_donate.setStyleSheet("""
+            QPushButton { background-color: #2e3440; color: #eceff4; border: 1px solid #4c566a;
+                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
+            QPushButton:hover { background-color: #3b4252; border-color: #bf616a; }
+        """)
+        community_btn_row.addWidget(self.btn_community_donate)
+        community_btn_row.addStretch()
+        community_layout.addLayout(community_btn_row)
+
+        # "Current version: vX.Y.Z" — wird von main.py aus APP_VERSION gesetzt.
+        self.lbl_community_version = QLabel("")
+        self.lbl_community_version.setStyleSheet("color: #7b88a1; font-size: 11px;")
+        community_layout.addWidget(self.lbl_community_version)
+
+        layout.addWidget(self.community_group)
+
         # --- GENERAL (zwei Boxen nebeneinander) ---
         self.general_group = QGroupBox(tr("settings_general"))
         general_layout = QVBoxLayout(self.general_group)
@@ -810,6 +874,44 @@ class Ui_MainWindow(object):
         # Backup-Box zwischen WayVR-Overlay und OpenXR-Runtime einordnen
         layout.addWidget(self.backup_group)
 
+        # --- PERFORMANCE & LATENZ ---
+        # Echtzeit-Priorität (CAP_SYS_NICE) für wivrn-server + allgemeine Tipps.
+        self.perf_group = QGroupBox(tr("perf_group"))
+        perf_layout = QVBoxLayout(self.perf_group)
+        perf_layout.setSpacing(8)
+
+        self.lbl_perf_desc = QLabel(tr("perf_desc"))
+        self.lbl_perf_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        self.lbl_perf_desc.setWordWrap(True)
+        perf_layout.addWidget(self.lbl_perf_desc)
+
+        perf_row = QHBoxLayout()
+        self.btn_perf_setcap = QPushButton(tr("perf_setcap_btn"))
+        self.btn_perf_setcap.setCursor(Qt.PointingHandCursor)
+        self.btn_perf_setcap.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 8px 14px; border-radius: 4px; font-size: 12px; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """)
+        perf_row.addWidget(self.btn_perf_setcap)
+
+        self.lbl_perf_status = QLabel("")
+        self.lbl_perf_status.setStyleSheet("color: #7b88a1; font-size: 11px;")
+        self.lbl_perf_status.setWordWrap(True)
+        perf_row.addWidget(self.lbl_perf_status, 1)
+        perf_layout.addLayout(perf_row)
+
+        self.lbl_perf_tips = QLabel(tr("perf_tips"))
+        self.lbl_perf_tips.setStyleSheet(
+            "color: #d8dee9; font-size: 11px; background-color: #2e3440; "
+            "border-radius: 4px; padding: 8px;")
+        self.lbl_perf_tips.setWordWrap(True)
+        self.lbl_perf_tips.setTextFormat(Qt.RichText)
+        perf_layout.addWidget(self.lbl_perf_tips)
+
+        layout.addWidget(self.perf_group)
+
         # --- OPENXR RUNTIME (Steam-Fix) ---
         self.openxr_group = QGroupBox(tr("openxr_group"))
         openxr_layout = QVBoxLayout(self.openxr_group)
@@ -820,16 +922,58 @@ class Ui_MainWindow(object):
         self.lbl_openxr_desc.setWordWrap(True)
         openxr_layout.addWidget(self.lbl_openxr_desc)
 
+        # Status-Zeile (ok / broken / missing) — wird von main.py gesetzt.
+        self.lbl_openxr_status = QLabel("")
+        self.lbl_openxr_status.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold;")
+        self.lbl_openxr_status.setWordWrap(True)
+        openxr_layout.addWidget(self.lbl_openxr_status)
+
+        # Buttons: automatischer Fix + Umschalter für den manuellen Bereich
+        openxr_btn_row = QHBoxLayout()
+        openxr_btn_row.setSpacing(10)
+
+        self.btn_openxr_fix = QPushButton(tr("openxr_fix_btn"))
+        self.btn_openxr_fix.setCursor(Qt.PointingHandCursor)
+        self.btn_openxr_fix.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 8px 14px; border-radius: 4px; font-size: 12px; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """)
+        openxr_btn_row.addWidget(self.btn_openxr_fix)
+
+        self.btn_openxr_manual_toggle = QPushButton(tr("openxr_manual_show"))
+        self.btn_openxr_manual_toggle.setCursor(Qt.PointingHandCursor)
+        self.btn_openxr_manual_toggle.setStyleSheet("""
+            QPushButton { background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a;
+                          font-weight: bold; padding: 8px 14px; border-radius: 4px; font-size: 12px; }
+            QPushButton:hover { background-color: #3b4252; border-color: #5e81ac; }
+        """)
+        openxr_btn_row.addWidget(self.btn_openxr_manual_toggle)
+        openxr_btn_row.addStretch()
+        openxr_layout.addLayout(openxr_btn_row)
+
+        # ---------- Ausklappbarer manueller Bereich ----------
         from PySide6.QtWidgets import QPlainTextEdit
         _copy_css = ("QPushButton { background-color: #5e81ac; color: white; border: none; "
                      "font-weight: bold; padding: 6px 10px; border-radius: 4px; font-size: 12px; }"
                      "QPushButton:hover { background-color: #81a1c1; }")
 
+        self.openxr_manual_widget = QWidget()
+        manual_layout = QVBoxLayout(self.openxr_manual_widget)
+        manual_layout.setContentsMargins(0, 4, 0, 0)
+        manual_layout.setSpacing(8)
+
+        self.lbl_openxr_manual_hint = QLabel(tr("openxr_manual_hint"))
+        self.lbl_openxr_manual_hint.setStyleSheet("color: #ebcb8b; font-size: 11px; font-style: italic;")
+        self.lbl_openxr_manual_hint.setWordWrap(True)
+        manual_layout.addWidget(self.lbl_openxr_manual_hint)
+
         # Pfad der Datei (kopierbar)
         self.lbl_openxr_path_title = QLabel(tr("openxr_path_title"))
         self.lbl_openxr_path_title.setStyleSheet(
             "color: #eceff4; font-size: 11px; font-weight: bold; padding-top: 4px;")
-        openxr_layout.addWidget(self.lbl_openxr_path_title)
+        manual_layout.addWidget(self.lbl_openxr_path_title)
 
         openxr_path_row = QHBoxLayout()
         self.txt_openxr_path = QLineEdit()
@@ -838,23 +982,27 @@ class Ui_MainWindow(object):
         self.btn_openxr_copy_path = QPushButton(tr("openxr_copy_btn"))
         self.btn_openxr_copy_path.setStyleSheet(_copy_css)
         openxr_path_row.addWidget(self.btn_openxr_copy_path)
-        openxr_layout.addLayout(openxr_path_row)
+        manual_layout.addLayout(openxr_path_row)
 
         # Inhalt für die Datei (kopierbar)
         self.lbl_openxr_content_title = QLabel(tr("openxr_content_title"))
         self.lbl_openxr_content_title.setStyleSheet(
             "color: #eceff4; font-size: 11px; font-weight: bold; padding-top: 6px;")
-        openxr_layout.addWidget(self.lbl_openxr_content_title)
+        manual_layout.addWidget(self.lbl_openxr_content_title)
 
         self.txt_openxr_content = QPlainTextEdit()
         self.txt_openxr_content.setReadOnly(True)
         self.txt_openxr_content.setFixedHeight(150)
         self.txt_openxr_content.setStyleSheet("font-family: monospace; font-size: 11px;")
-        openxr_layout.addWidget(self.txt_openxr_content)
+        manual_layout.addWidget(self.txt_openxr_content)
 
         self.btn_openxr_copy_content = QPushButton(tr("openxr_copy_btn"))
         self.btn_openxr_copy_content.setStyleSheet(_copy_css)
-        openxr_layout.addWidget(self.btn_openxr_copy_content)
+        manual_layout.addWidget(self.btn_openxr_copy_content)
+
+        # Standardmäßig eingeklappt — main.py schaltet per Toggle-Button um.
+        self.openxr_manual_widget.setVisible(False)
+        openxr_layout.addWidget(self.openxr_manual_widget)
 
         layout.addWidget(self.openxr_group)
 

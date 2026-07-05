@@ -64,6 +64,12 @@ def save_all_settings(hand, fbt, steam, refresh, count, apps_data, streaming_dat
         "first_time_vr_setup": first_start_val
     }
 
+    # Sonstige Keys aus der bestehenden Config NICHT verlieren
+    # (z. B. Backup-Flag, Sprache, gemerkte Installationsmethode).
+    for extra_key in ("vr_backup_created", "language", "runtime_install_method"):
+        if extra_key in current_data:
+            new_settings[extra_key] = current_data[extra_key]
+
     if streaming_data:
         new_settings.update(streaming_data)
     else:

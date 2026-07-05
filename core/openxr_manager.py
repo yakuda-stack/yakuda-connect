@@ -205,3 +205,77 @@ def apply_openxr_fix():
         return False, "write_failed", ""
 
     return True, "ok", backup
+
+
+# --------------------------------------------------------------------------- #
+#  Fallback: Fix mit Root-Rechten (pkexec)
+# --------------------------------------------------------------------------- #
+def apply_openxr_fix_elevated():
+    """
+    Fallback, wenn der normale Schreibzugriff scheitert (z. B. weil die
+    active_runtime.json oder ihr Ordner root gehört): schreibt die Datei
+    über pkexec (grafische Passwortabfrage) und gibt den Ordner danach
+    wieder dem Benutzer, damit künftige Fixes OHNE Root funktionieren.
+    Rückgabe wie apply_openxr_fix: (erfolg, code, detail).
+    """
+    import tempfile
+    import subprocess
+
+    openxr_so, monado_so = find_wivrn_libs()
+    if not openxr_so or not os.path.exists(openxr_so):
+        return False, "libs_not_found", ""
+    if not _is_elf(openxr_so):
+        return False, "not_elf", openxr_so
+
+    runtime = {
+        "file_format_version": "1.0.0",
+        "runtime": {
+            "name": "Monado",
+            "library_path": openxr_so,
+        },
+    }
+    if monado_so and os.path.exists(monado_so):
+        runtime["runtime"]["MND_libmonado_path"] = monado_so
+
+    # Fertige JSON in eine Temp-Datei schreiben (die kopiert Root dann nur noch).
+    try:
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(runtime, tmp, indent=4)
+        tmp.close()
+    except Exception as e:
+        return False, "write_failed", str(e)
+
+    uid, gid = os.getuid(), os.getgid()
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    parts = []
+    for d in venv.openxr_config_dirs():
+        target = os.path.join(d, "active_runtime.json")
+        parts.append(f"mkdir -p '{d}'")
+        # Vorhandene Datei mit Zeitstempel sichern (nichts geht verloren)
+        parts.append(f"if [ -f '{target}' ]; then cp '{target}' '{target}.bak.{stamp}'; fi")
+        parts.append(f"cp '{tmp.name}' '{target}'")
+        # Ordner + Datei zurück an den Benutzer, damit es künftig ohne Root geht
+        parts.append(f"chown -R {uid}:{gid} '{d}'")
+    script = " && ".join(parts)
+
+    try:
+        result = subprocess.run(["pkexec", "bash", "-c", script],
+                                capture_output=True, text=True, timeout=180)
+    except Exception as e:
+        return False, "write_failed", str(e)
+    finally:
+        try:
+            os.remove(tmp.name)
+        except Exception:
+            pass
+
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()
+        # returncode 126/127 = Passwortdialog abgebrochen
+        if result.returncode in (126, 127):
+            return False, "cancelled", err
+        return False, "write_failed", err
+
+    backup = ACTIVE_RUNTIME + f".bak.{stamp}" if os.path.exists(ACTIVE_RUNTIME + f".bak.{stamp}") else ""
+    return True, "ok", backup

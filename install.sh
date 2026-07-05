@@ -71,12 +71,19 @@ sudo chmod 755 "$BIN_LINK"
 
 # --- Desktop-Eintrag + Icon ---
 echo "[3/4] Aktualisiere Menue-Eintrag & Icon..."
-if [ -f "$INSTALL_DIR/assets/yakuda_icon.png" ]; then
+SVG_ICON_DIR="/usr/share/icons/hicolor/scalable/apps"
+if [ -f "$INSTALL_DIR/assets/yakuda_icon.svg" ]; then
+    sudo install -Dm644 "$INSTALL_DIR/assets/yakuda_icon.svg" "$SVG_ICON_DIR/yakuda-connect.svg"
+    # Altes PNG-Icon aus frueheren Versionen entfernen (sonst gewinnt es je nach Theme)
+    sudo rm -f "$ICON_DIR/yakuda-connect.png"
+    ICON="yakuda-connect"
+elif [ -f "$INSTALL_DIR/assets/yakuda_icon.png" ]; then
     sudo install -Dm644 "$INSTALL_DIR/assets/yakuda_icon.png" "$ICON_DIR/yakuda-connect.png"
     ICON="yakuda-connect"
 else
     ICON="applications-games"
 fi
+sudo gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
 sudo tee "$DESKTOP_FILE" >/dev/null <<DESK
 [Desktop Entry]
 Name=yakuda-connect

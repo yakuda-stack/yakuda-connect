@@ -129,6 +129,34 @@ TRANSLATIONS = {
         "app_update_restart":     "Update complete. Restart yakuda-connect now to load the new version?",
         "app_update_failed":      "The update could not be completed. Please check the terminal output, or run the installer manually.",
 
+        # Community & Updates (Settings, top)
+        "community_group":        "Community & Updates",
+        "community_check_btn":    "🔄 Check for updates",
+        "community_discord_btn":  "💬 Discord",
+        "community_donate_btn":   "❤️ Donate (PayPal)",
+        "community_version":      "Current version: {version}",
+        "community_checking":     "Checking for updates ...",
+        "community_uptodate":     "You are already on the latest version ({version}).",
+        "community_check_failed": "Could not check for updates. No connection to GitHub?",
+
+        # Performance & Latency (Settings)
+        "perf_group":             "Performance & Latency",
+        "perf_desc":              ("Grants the WiVRn server real-time priority (CAP_SYS_NICE). This lets the "
+                                   "compositor run at a stable rate and noticeably reduces stutter and latency spikes."),
+        "perf_setcap_btn":        "⚡ Enable real-time priority",
+        "perf_status_ok":         "Status: active — wivrn-server runs with real-time priority.",
+        "perf_status_missing":    "Status: not active — recommended for lower latency.",
+        "perf_status_unsupported":"Not available for Flatpak/Nix installations (sandbox / read-only binary).",
+        "perf_status_nobin":      "wivrn-server binary not found — is WiVRn installed?",
+        "perf_setcap_done":       "Real-time priority (CAP_SYS_NICE) was enabled.\nPlease restart the WiVRn server to apply it.",
+        "perf_setcap_err":        "Could not set CAP_SYS_NICE:",
+        "perf_tips":              ("<b>More latency tips:</b><br>"
+                                   "• Use a dedicated 5&nbsp;GHz / 6&nbsp;GHz WiFi (headset as the only client, PC on LAN cable)<br>"
+                                   "• Streaming tab: prefer the hardware encoder (vaapi/nvenc) instead of x264<br>"
+                                   "• H.265/AV1 at 80–120 Mbps is usually smoother than H.264 at very high bitrates<br>"
+                                   "• Foveated encoding reduces encode time — 50% is a good start<br>"
+                                   "• Set your GPU power profile to performance while playing"),
+
         "pkg_incomplete":         "⚠ Not fully installed",
         "tools_installing":       "Installing...",
         "tools_install_error":    "Installation error",
@@ -173,10 +201,16 @@ TRANSLATIONS = {
         "settings_controls":     "Controls",
         "openxr_group":          "OpenXR Runtime (Steam Fix)",
         "openxr_desc":           ("Fixes the Steam/pressure-vessel \"invalid Elf handle\" error by writing a correct "
-                                  "OpenXR runtime file. Because writing this file can hit permission issues, you do it "
-                                  "yourself: copy the path below, open that file in a text editor, replace its whole "
-                                  "content with the text below and save. Tip: also add this Steam launch option:\n"
+                                  "OpenXR runtime file (absolute paths to the WiVRn libraries). "
+                                  "Click the button — your previous file is backed up automatically. "
+                                  "Tip: also add this Steam launch option:\n"
                                   "XR_RUNTIME_JSON=$HOME/.config/openxr/1/active_runtime.json PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%"),
+        "openxr_fix_btn":        "🔧 Fix now (automatic)",
+        "openxr_manual_show":    "▸ Manual fix (show)",
+        "openxr_manual_hide":    "▾ Manual fix (hide)",
+        "openxr_manual_hint":    "If the automatic fix fails (permissions), do it manually: open the file below and replace its whole content.",
+        "openxr_fix_root_ask":   "Writing the file failed (permission problem — the file or folder probably belongs to root).\n\nRetry with administrator rights? A password prompt will appear, and afterwards the folder is handed back to your user so future fixes work without root.",
+        "openxr_fix_cancelled":  "The fix was cancelled (no administrator password entered).",
         "openxr_path_title":     "File path (open this file):",
         "openxr_content_title":  "Paste this into the file:",
         "openxr_copy_btn":       "Copy",
@@ -357,6 +391,34 @@ TRANSLATIONS = {
         "app_update_restart":     "Update abgeschlossen. yakuda-connect jetzt neu starten, um die neue Version zu laden?",
         "app_update_failed":      "Das Update konnte nicht abgeschlossen werden. Bitte prüfe die Terminal-Ausgabe oder führe den Installer manuell aus.",
 
+        # Community & Updates (Settings, ganz oben)
+        "community_group":        "Community & Updates",
+        "community_check_btn":    "🔄 Nach Updates suchen",
+        "community_discord_btn":  "💬 Discord",
+        "community_donate_btn":   "❤️ Spenden (PayPal)",
+        "community_version":      "Aktuelle Version: {version}",
+        "community_checking":     "Suche nach Updates ...",
+        "community_uptodate":     "Du bist bereits auf der neuesten Version ({version}).",
+        "community_check_failed": "Update-Prüfung fehlgeschlagen. Keine Verbindung zu GitHub?",
+
+        # Performance & Latenz (Settings)
+        "perf_group":             "Performance & Latenz",
+        "perf_desc":              ("Gibt dem WiVRn-Server Echtzeit-Priorität (CAP_SYS_NICE). Der Compositor läuft "
+                                   "dadurch stabiler und Ruckler/Latenz-Spitzen werden spürbar reduziert."),
+        "perf_setcap_btn":        "⚡ Echtzeit-Priorität aktivieren",
+        "perf_status_ok":         "Status: aktiv — wivrn-server läuft mit Echtzeit-Priorität.",
+        "perf_status_missing":    "Status: nicht aktiv — für niedrigere Latenz empfohlen.",
+        "perf_status_unsupported":"Bei Flatpak-/Nix-Installationen nicht verfügbar (Sandbox / read-only Binary).",
+        "perf_status_nobin":      "wivrn-server Binary nicht gefunden — ist WiVRn installiert?",
+        "perf_setcap_done":       "Echtzeit-Priorität (CAP_SYS_NICE) wurde aktiviert.\nBitte den WiVRn-Server neu starten, damit es wirkt.",
+        "perf_setcap_err":        "CAP_SYS_NICE konnte nicht gesetzt werden:",
+        "perf_tips":              ("<b>Weitere Latenz-Tipps:</b><br>"
+                                   "• Eigenes 5&nbsp;GHz / 6&nbsp;GHz WLAN nutzen (Headset als einziger Client, PC per LAN-Kabel)<br>"
+                                   "• Streaming-Tab: Hardware-Encoder (vaapi/nvenc) statt x264 bevorzugen<br>"
+                                   "• H.265/AV1 mit 80–120 Mbit/s läuft meist runder als H.264 mit sehr hoher Bitrate<br>"
+                                   "• Foveated Encoding senkt die Encode-Zeit — 50% ist ein guter Start<br>"
+                                   "• GPU-Powerprofil beim Spielen auf Performance stellen"),
+
         "pkg_incomplete":         "⚠ Nicht vollständig im System",
         "tools_installing":       "Wird installiert...",
         "tools_install_error":    "Fehler bei Installation",
@@ -401,10 +463,16 @@ TRANSLATIONS = {
         "settings_controls":     "Steuerung",
         "openxr_group":          "OpenXR-Runtime (Steam-Fix)",
         "openxr_desc":           ("Behebt den Steam-/pressure-vessel-Fehler \"invalid Elf handle\", indem eine korrekte "
-                                  "OpenXR-Runtime-Datei. Da das Schreiben dieser Datei Rechte-Probleme machen kann, machst "
-                                  "du es selbst: den Pfad unten kopieren, die Datei im Texteditor oeffnen, ihren Inhalt "
-                                  "durch den Text unten ersetzen und speichern. Tipp: zusaetzlich diese Steam-Startoption:\n"
+                                  "OpenXR-Runtime-Datei mit absoluten Pfaden zu den WiVRn-Bibliotheken geschrieben wird. "
+                                  "Einfach auf den Button klicken — deine bisherige Datei wird automatisch gesichert. "
+                                  "Tipp: zusaetzlich diese Steam-Startoption:\n"
                                   "XR_RUNTIME_JSON=$HOME/.config/openxr/1/active_runtime.json PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command%"),
+        "openxr_fix_btn":        "🔧 Jetzt fixen (automatisch)",
+        "openxr_manual_show":    "▸ Manueller Fix (anzeigen)",
+        "openxr_manual_hide":    "▾ Manueller Fix (ausblenden)",
+        "openxr_manual_hint":    "Falls der automatische Fix scheitert (Rechte), geht es manuell: die Datei unten oeffnen und ihren kompletten Inhalt ersetzen.",
+        "openxr_fix_root_ask":   "Das Schreiben der Datei ist fehlgeschlagen (Rechteproblem — die Datei oder der Ordner gehoert vermutlich root).\n\nMit Administrator-Rechten erneut versuchen? Es erscheint eine Passwortabfrage, danach wird der Ordner wieder deinem Benutzer uebergeben, damit kuenftige Fixes ohne Root funktionieren.",
+        "openxr_fix_cancelled":  "Der Fix wurde abgebrochen (kein Administrator-Passwort eingegeben).",
         "openxr_path_title":     "Dateipfad (diese Datei oeffnen):",
         "openxr_content_title":  "Das in die Datei eintragen:",
         "openxr_copy_btn":       "Kopieren",
