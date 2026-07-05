@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/X5TaN4A47h)
 [![Donate](https://img.shields.io/badge/Donate_via_PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/riesensika)
-[![Version](https://img.shields.io/badge/Version-v1.0.7--alpha-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.0.8--alpha-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard designed for Arch-based Linux systems. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -123,6 +123,18 @@ bash install.sh
 
 ---
 
+### 🚀 v1.0.8-alpha
+
+#### 🇬🇧 English
+* **Changed** | The version number now lives in exactly one place — `APP_VERSION` in `core/main.py`. The dashboard label, the "Current version" line in Settings and the update check all read from it, so a release only needs that single edit.
+* **Changed** | UI polish: the performance/latency tips sit tidily under the "VR Priority" option in the Streaming tab (no separate Settings box anymore).
+
+#### 🇩🇪 Deutsch
+* **Geändert** | Die Versionsnummer steht jetzt an genau einer Stelle — `APP_VERSION` in `core/main.py`. Das Dashboard-Label, die „Aktuelle Version“-Zeile in den Settings und die Update-Prüfung lesen alle daraus, ein Release braucht also nur noch diese eine Änderung.
+* **Geändert** | UI-Feinschliff: Die Performance-/Latenz-Tipps sitzen aufgeräumt unter der „VR-Priorität“ im Streaming-Tab (keine separate Settings-Box mehr).
+
+---
+
 ### 🚀 v1.0.7-alpha
 
 #### 🇬🇧 English
@@ -130,7 +142,7 @@ bash install.sh
 * **Added** | "Community & Updates" section at the top of Settings: check-for-updates button (with "you are up to date" feedback), Discord button and PayPal donate button, plus the currently installed version.
 * **Added** | One-click OpenXR SteamVR fix: a "Fix now (automatic)" button with a live status indicator (OK / broken / missing). The manual copy-paste instructions are still there — collapsed behind a "Manual fix" toggle.
 * **Added** | Root fallback for the OpenXR fix: if writing fails due to permissions, the app asks once and retries via pkexec (graphical password prompt). The old file is backed up with a timestamp and the folder is handed back to your user, so future fixes work without root again.
-* **Added** | "Performance & Latency" section in Settings: one-click real-time priority for the WiVRn server (CAP_SYS_NICE) with live status, plus a compact list of latency tips. Automatically disabled on Flatpak/Nix where setcap can't work.
+* **Added** | Latency tips in the Streaming tab: a compact checklist (5 GHz WiFi, hardware encoder, H.265/AV1, foveated encoding, GPU power profile) right below the existing "VR Priority" (CAP_SYS_NICE) option — everything performance-related now lives in one place.
 * **Added** | Automatic first backup: on startup the app checks the config — if no backup was ever made but a VR environment already exists (openxr/openvr/wivrn folders, native or Flatpak paths), a backup is created once automatically in the background. The backup state is remembered in the config.
 * **Fixed** | Saving dashboard settings no longer wipes other config keys (language, remembered install method, backup flag).
 * **Changed** | All icon references switched from `yakuda_icon.png` to `yakuda_icon.svg` (starter, window icon, install.sh, AppImage build).
@@ -140,7 +152,7 @@ bash install.sh
 * **Neu** | „Community & Updates“-Bereich ganz oben in den Settings: Update-Prüfen-Knopf (mit „Du bist aktuell“-Rückmeldung), Discord-Button und PayPal-Spenden-Button, dazu die aktuell installierte Version.
 * **Neu** | 1-Klick OpenXR-SteamVR-Fix: „Jetzt fixen (automatisch)“-Knopf mit Live-Statusanzeige (OK / kaputt / fehlt). Die manuelle Kopier-Anleitung gibt es weiterhin — eingeklappt hinter einem „Manueller Fix“-Umschalter.
 * **Neu** | Root-Fallback für den OpenXR-Fix: Scheitert das Schreiben an fehlenden Rechten, fragt die App einmal nach und wiederholt den Fix per pkexec (grafische Passwortabfrage). Die alte Datei wird mit Zeitstempel gesichert und der Ordner danach wieder deinem Benutzer übergeben — künftige Fixes laufen dann wieder ohne Root.
-* **Neu** | „Performance & Latenz“-Bereich in den Settings: Echtzeit-Priorität für den WiVRn-Server (CAP_SYS_NICE) per Klick mit Live-Status, dazu kompakte Latenz-Tipps. Bei Flatpak/Nix, wo setcap nicht greift, automatisch deaktiviert.
+* **Neu** | Latenz-Tipps im Streaming-Tab: kompakte Checkliste (5-GHz-WLAN, Hardware-Encoder, H.265/AV1, Foveated Encoding, GPU-Powerprofil) direkt unter der bestehenden „VR-Priorität“ (CAP_SYS_NICE) — alles rund um Performance ist jetzt an einem Ort.
 * **Neu** | Automatisches Erst-Backup: Beim Start prüft die App die Config — wurde noch nie ein Backup gemacht, existiert aber bereits eine VR-Umgebung (openxr/openvr/wivrn-Ordner, nativ oder Flatpak-Pfade), wird einmalig automatisch im Hintergrund ein Backup angelegt. Der Backup-Status wird in der Config gemerkt.
 * **Behoben** | Beim Speichern der Dashboard-Einstellungen gehen andere Config-Werte nicht mehr verloren (Sprache, gemerkte Installationsmethode, Backup-Flag).
 * **Geändert** | Alle Icon-Verweise von `yakuda_icon.png` auf `yakuda_icon.svg` umgestellt (Starter, Fenster-Icon, install.sh, AppImage-Build).

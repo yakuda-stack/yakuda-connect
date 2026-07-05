@@ -6,7 +6,12 @@
 set -e
 
 APP="yakuda-connect"
-VERSION="1.0.7"
+# Version aus der EINEN Quelle der Wahrheit lesen: APP_VERSION in core/main.py.
+# So muss die Nummer nur dort gepflegt werden. Führendes 'v' und Suffixe
+# (z. B. -alpha) werden für den AppImage-Dateinamen entfernt.
+VERSION="$(grep -oP 'APP_VERSION\s*=\s*["'"'"']\Kv?[0-9]+\.[0-9]+\.[0-9]+[^"'"'"']*' core/main.py | head -1)"
+VERSION="${VERSION#v}"
+[ -z "$VERSION" ] && VERSION="0.0.0"
 ARCH="x86_64"
 BUILD_DIR="$(pwd)/AppDir"
 OUT="$(pwd)/${APP}-${VERSION}-${ARCH}.AppImage"

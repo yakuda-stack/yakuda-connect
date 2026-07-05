@@ -168,7 +168,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.0.7-alpha"
+        self.APP_VERSION = "v1.0.8-alpha"
         self.server_process = None
         self.pairing_process = None
         self._overlay_worker = None
@@ -494,67 +494,6 @@ class VRApp(QMainWindow):
         self.ui.btn_openxr_manual_toggle.setText(
             tr("openxr_manual_hide") if visible else tr("openxr_manual_show"))
 
-    # ------------------------------------------------------------------ #
-    #  Performance & Latenz: CAP_SYS_NICE für wivrn-server
-    # ------------------------------------------------------------------ #
-    def _perf_setcap_active(self):
-        """True, wenn die wivrn-server-Binary bereits cap_sys_nice trägt."""
-        binary = venv.wivrn_server_binary()
-        if not binary:
-            return False
-        getcap = shutil.which("getcap") or "/usr/sbin/getcap"
-        try:
-            out = subprocess.run([getcap, binary], capture_output=True,
-                                 text=True, timeout=5).stdout
-            return "cap_sys_nice" in (out or "")
-        except Exception:
-            return False
-
-    def refresh_perf_status(self):
-        """Aktualisiert Status-Label + Button der Performance-Box."""
-        binary = venv.wivrn_server_binary()
-        if not binary:
-            self.ui.lbl_perf_status.setText(tr("perf_status_nobin"))
-            self.ui.lbl_perf_status.setStyleSheet("color: #7b88a1; font-size: 11px;")
-            self.ui.btn_perf_setcap.setEnabled(False)
-            return
-        if not venv.supports_setcap():
-            self.ui.lbl_perf_status.setText(tr("perf_status_unsupported"))
-            self.ui.lbl_perf_status.setStyleSheet("color: #7b88a1; font-size: 11px;")
-            self.ui.btn_perf_setcap.setEnabled(False)
-            return
-        if self._perf_setcap_active():
-            self.ui.lbl_perf_status.setText(tr("perf_status_ok"))
-            self.ui.lbl_perf_status.setStyleSheet(
-                "color: #a3be8c; font-size: 11px; font-weight: bold;")
-            self.ui.btn_perf_setcap.setEnabled(False)
-        else:
-            self.ui.lbl_perf_status.setText(tr("perf_status_missing"))
-            self.ui.lbl_perf_status.setStyleSheet(
-                "color: #ebcb8b; font-size: 11px; font-weight: bold;")
-            self.ui.btn_perf_setcap.setEnabled(True)
-
-    def apply_perf_setcap(self):
-        """Setzt CAP_SYS_NICE auf die wivrn-server-Binary (pkexec-Passwortabfrage)."""
-        binary = venv.wivrn_server_binary()
-        if not binary:
-            self.refresh_perf_status()
-            return
-        setcap = shutil.which("setcap") or "/usr/sbin/setcap"
-        try:
-            result = subprocess.run(["pkexec", setcap, "cap_sys_nice+ep", binary],
-                                    capture_output=True, text=True, timeout=120)
-            if result.returncode == 0:
-                QMessageBox.information(self, tr("perf_group"), tr("perf_setcap_done"))
-            else:
-                err = (result.stderr or result.stdout or "").strip()
-                QMessageBox.warning(self, tr("perf_group"),
-                                    f"{tr('perf_setcap_err')}\n{err}")
-        except Exception as e:
-            QMessageBox.warning(self, tr("perf_group"),
-                                f"{tr('perf_setcap_err')}\n{e}")
-        self.refresh_perf_status()
-
     def init_logic_connections(self):
         """Verknüpft die UI-Komponenten aus ui_main.py mit den Logik-Funktionen."""
         # Navigation
@@ -581,12 +520,9 @@ class VRApp(QMainWindow):
         self.ui.btn_community_check.clicked.connect(self.manual_check_app_update)
         self.ui.btn_community_discord.clicked.connect(self.open_discord_link)
         self.ui.btn_community_donate.clicked.connect(self.open_paypal_link)
-        # Performance & Latenz
-        self.ui.btn_perf_setcap.clicked.connect(self.apply_perf_setcap)
         self.refresh_overlay_state()
         self.fill_openxr_fields()
         self.refresh_openxr_status()
-        self.refresh_perf_status()
 
         # Dashboard Steuerung — Schiebeschalter statt Start/Stop-Buttons
         self.ui.toggle_server.toggled.connect(self.on_server_toggled)
@@ -1194,9 +1130,8 @@ class VRApp(QMainWindow):
         # App-Versions-Label + Update-Pfeil-Tooltip an die Sprache anpassen
         self._refresh_app_version_label()
 
-        # Status-Labels der Settings-Boxen (OpenXR / Performance) neu setzen
+        # Status-Label der OpenXR-Box neu setzen
         self.refresh_openxr_status()
-        self.refresh_perf_status()
 
         # --- Ab hier nur noch DYNAMISCHE Texte, die vom aktuellen Zustand abhängen ---
 

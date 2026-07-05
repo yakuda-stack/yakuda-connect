@@ -139,17 +139,7 @@ TRANSLATIONS = {
         "community_uptodate":     "You are already on the latest version ({version}).",
         "community_check_failed": "Could not check for updates. No connection to GitHub?",
 
-        # Performance & Latency (Settings)
-        "perf_group":             "Performance & Latency",
-        "perf_desc":              ("Grants the WiVRn server real-time priority (CAP_SYS_NICE). This lets the "
-                                   "compositor run at a stable rate and noticeably reduces stutter and latency spikes."),
-        "perf_setcap_btn":        "⚡ Enable real-time priority",
-        "perf_status_ok":         "Status: active — wivrn-server runs with real-time priority.",
-        "perf_status_missing":    "Status: not active — recommended for lower latency.",
-        "perf_status_unsupported":"Not available for Flatpak/Nix installations (sandbox / read-only binary).",
-        "perf_status_nobin":      "wivrn-server binary not found — is WiVRn installed?",
-        "perf_setcap_done":       "Real-time priority (CAP_SYS_NICE) was enabled.\nPlease restart the WiVRn server to apply it.",
-        "perf_setcap_err":        "Could not set CAP_SYS_NICE:",
+        # Performance-Tipps (Streaming-Tab, unter VR-Priorität)
         "perf_tips":              ("<b>More latency tips:</b><br>"
                                    "• Use a dedicated 5&nbsp;GHz / 6&nbsp;GHz WiFi (headset as the only client, PC on LAN cable)<br>"
                                    "• Streaming tab: prefer the hardware encoder (vaapi/nvenc) instead of x264<br>"
@@ -401,17 +391,7 @@ TRANSLATIONS = {
         "community_uptodate":     "Du bist bereits auf der neuesten Version ({version}).",
         "community_check_failed": "Update-Prüfung fehlgeschlagen. Keine Verbindung zu GitHub?",
 
-        # Performance & Latenz (Settings)
-        "perf_group":             "Performance & Latenz",
-        "perf_desc":              ("Gibt dem WiVRn-Server Echtzeit-Priorität (CAP_SYS_NICE). Der Compositor läuft "
-                                   "dadurch stabiler und Ruckler/Latenz-Spitzen werden spürbar reduziert."),
-        "perf_setcap_btn":        "⚡ Echtzeit-Priorität aktivieren",
-        "perf_status_ok":         "Status: aktiv — wivrn-server läuft mit Echtzeit-Priorität.",
-        "perf_status_missing":    "Status: nicht aktiv — für niedrigere Latenz empfohlen.",
-        "perf_status_unsupported":"Bei Flatpak-/Nix-Installationen nicht verfügbar (Sandbox / read-only Binary).",
-        "perf_status_nobin":      "wivrn-server Binary nicht gefunden — ist WiVRn installiert?",
-        "perf_setcap_done":       "Echtzeit-Priorität (CAP_SYS_NICE) wurde aktiviert.\nBitte den WiVRn-Server neu starten, damit es wirkt.",
-        "perf_setcap_err":        "CAP_SYS_NICE konnte nicht gesetzt werden:",
+        # Performance-Tipps (Streaming-Tab, unter VR-Priorität)
         "perf_tips":              ("<b>Weitere Latenz-Tipps:</b><br>"
                                    "• Eigenes 5&nbsp;GHz / 6&nbsp;GHz WLAN nutzen (Headset als einziger Client, PC per LAN-Kabel)<br>"
                                    "• Streaming-Tab: Hardware-Encoder (vaapi/nvenc) statt x264 bevorzugen<br>"

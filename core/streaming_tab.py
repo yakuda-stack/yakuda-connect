@@ -194,6 +194,15 @@ class StreamingTab(QWidget):
         prio_row.addWidget(self.btn_vr_priority)
         prio_layout.addLayout(prio_row)
 
+        # Kompakte Latenz-Tipps direkt unter der VR-Priorität
+        self.lbl_perf_tips = QLabel(tr("perf_tips"))
+        self.lbl_perf_tips.setStyleSheet(
+            "color: #d8dee9; font-size: 11px; background-color: #2e3440; "
+            "border-radius: 4px; padding: 8px;")
+        self.lbl_perf_tips.setWordWrap(True)
+        self.lbl_perf_tips.setTextFormat(Qt.RichText)
+        prio_layout.addWidget(self.lbl_perf_tips)
+
         layout.addWidget(self.prio_group)
         # --- GRUPPE 4: OPENXR RUNTIME ---
         self.openxr_group = QGroupBox(tr("streaming_openxr"))
@@ -300,6 +309,7 @@ class StreamingTab(QWidget):
         self.prio_group.setTitle(tr("streaming_prio"))
         self.lbl_prio_desc.setText(tr("streaming_prio_desc"))
         self.btn_vr_priority.setText(tr("streaming_prio_btn"))
+        self.lbl_perf_tips.setText(tr("perf_tips"))
         # Aktiven Runtime-Status neu prüfen/setzen (Text ist sprachabhängig)
         self.check_active_openxr_runtime()
         self.check_vr_priority()

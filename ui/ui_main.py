@@ -310,12 +310,6 @@ class Ui_MainWindow(object):
         self.btn_community_discord.setText(tr("community_discord_btn"))
         self.btn_community_donate.setText(tr("community_donate_btn"))
 
-        # --- Performance & Latenz ---
-        self.perf_group.setTitle(tr("perf_group"))
-        self.lbl_perf_desc.setText(tr("perf_desc"))
-        self.btn_perf_setcap.setText(tr("perf_setcap_btn"))
-        self.lbl_perf_tips.setText(tr("perf_tips"))
-
         # --- Tools-Tab ---
         self.lbl_tools_title.setText(tr("tools_title"))
         self.lbl_tools_subtitle.setText(tr("tools_subtitle"))
@@ -435,7 +429,10 @@ class Ui_MainWindow(object):
         layout.setContentsMargins(20, 20, 20, 20)
 
         version_layout = QHBoxLayout()
-        self.lbl_app_ver = QLabel("<b>App Version:</b> v1.0.7-alpha")
+        # Kein fester Versionstext hier! Die Versionsnummer kommt aus
+        # main.py (self.APP_VERSION) via _refresh_app_version_label().
+        # Nur ein Platzhalter, bis main.py ihn direkt nach dem Setup setzt.
+        self.lbl_app_ver = QLabel("<b>App Version:</b> …")
         self.lbl_app_ver.setStyleSheet("color: #81a1c1;")
         self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> Prüfe...")
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
@@ -874,45 +871,9 @@ class Ui_MainWindow(object):
         # Backup-Box zwischen WayVR-Overlay und OpenXR-Runtime einordnen
         layout.addWidget(self.backup_group)
 
-        # --- PERFORMANCE & LATENZ ---
-        # Echtzeit-Priorität (CAP_SYS_NICE) für wivrn-server + allgemeine Tipps.
-        self.perf_group = QGroupBox(tr("perf_group"))
-        perf_layout = QVBoxLayout(self.perf_group)
-        perf_layout.setSpacing(8)
-
-        self.lbl_perf_desc = QLabel(tr("perf_desc"))
-        self.lbl_perf_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
-        self.lbl_perf_desc.setWordWrap(True)
-        perf_layout.addWidget(self.lbl_perf_desc)
-
-        perf_row = QHBoxLayout()
-        self.btn_perf_setcap = QPushButton(tr("perf_setcap_btn"))
-        self.btn_perf_setcap.setCursor(Qt.PointingHandCursor)
-        self.btn_perf_setcap.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 8px 14px; border-radius: 4px; font-size: 12px; }
-            QPushButton:hover { background-color: #81a1c1; }
-            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-        """)
-        perf_row.addWidget(self.btn_perf_setcap)
-
-        self.lbl_perf_status = QLabel("")
-        self.lbl_perf_status.setStyleSheet("color: #7b88a1; font-size: 11px;")
-        self.lbl_perf_status.setWordWrap(True)
-        perf_row.addWidget(self.lbl_perf_status, 1)
-        perf_layout.addLayout(perf_row)
-
-        self.lbl_perf_tips = QLabel(tr("perf_tips"))
-        self.lbl_perf_tips.setStyleSheet(
-            "color: #d8dee9; font-size: 11px; background-color: #2e3440; "
-            "border-radius: 4px; padding: 8px;")
-        self.lbl_perf_tips.setWordWrap(True)
-        self.lbl_perf_tips.setTextFormat(Qt.RichText)
-        perf_layout.addWidget(self.lbl_perf_tips)
-
-        layout.addWidget(self.perf_group)
-
         # --- OPENXR RUNTIME (Steam-Fix) ---
+        # Hinweis: Die Performance-/Latenz-Optionen (CAP_SYS_NICE) leben im
+        # Streaming-Tab ("VR-Priorität") — hier NICHT doppelt einbauen!
         self.openxr_group = QGroupBox(tr("openxr_group"))
         openxr_layout = QVBoxLayout(self.openxr_group)
         openxr_layout.setSpacing(8)
