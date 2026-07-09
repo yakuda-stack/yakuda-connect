@@ -172,6 +172,7 @@ class Ui_MainWindow(object):
             "Dashboard",
             "Streaming",
             "Tools",
+            "Games",
             "Settings",
         ])
 
@@ -211,18 +212,21 @@ class Ui_MainWindow(object):
         self.tab_dashboard = QWidget()
         self.tab_streaming = QWidget()
         self.tab_tools = QWidget()
+        self.tab_games = QWidget()
         self.tab_settings = QWidget()
 
         self.pages.addWidget(self.tab_installation)    # Index 0
         self.pages.addWidget(self.tab_dashboard)       # Index 1
         self.pages.addWidget(self.tab_streaming)       # Index 2
         self.pages.addWidget(self.tab_tools)           # Index 3
-        self.pages.addWidget(self.tab_settings)        # Index 4
+        self.pages.addWidget(self.tab_games)           # Index 4
+        self.pages.addWidget(self.tab_settings)        # Index 5
 
         # Initialisiere die einzelnen Bereiche
         self.setup_installation_tab()
         self.setup_dashboard_tab()
         self.setup_tools_tab()
+        self.setup_games_tab()
         self.setup_settings_tab()
         # self.setup_streaming_tab() # DEAKTIVIERT: main.py bettet StreamingTab dynamisch ein und erzeugt das Layout selbst!
 
@@ -238,7 +242,8 @@ class Ui_MainWindow(object):
         """
         # Sidebar
         for i, key in enumerate(["nav_installation", "nav_dashboard",
-                                 "nav_streaming", "nav_tools", "nav_settings"]):
+                                 "nav_streaming", "nav_tools", "nav_games",
+                                 "nav_settings"]):
             item = self.sidebar.item(i)
             if item:
                 item.setText(tr(key))
@@ -276,10 +281,18 @@ class Ui_MainWindow(object):
 
         # --- Settings-Tab ---
         self.lbl_settings_title.setText(tr("settings_title"))
-        self.general_group.setTitle(tr("settings_general"))
-        self.lbl_vrchat_title.setText(tr("settings_vrchat_title"))
-        self.lbl_vrchat_desc.setText(tr("settings_vrchat_desc_short"))
-        self.btn_vrchat_symlink.setText(tr("settings_vrchat_btn"))
+        # --- Games-Tab ---
+        self.lbl_games_title.setText(tr("games_title"))
+        self.lbl_games_subtitle.setText(tr("games_subtitle"))
+        self.lbl_games_hint.setText(tr("games_click_hint"))
+        self.lbl_games_tested_header.setText(tr("games_section_tested"))
+        self.lbl_games_untested_header.setText(tr("games_section_untested"))
+        self.btn_games_scan.setText(tr("games_scan_btn"))
+        self.btn_games_info.setToolTip(tr("games_info_tooltip"))
+        # General-Gruppe entfernt: APK-Installer lebt jetzt im Installation-Tab
+        # (Widgets unten weiter übersetzt), der VRChat Picture Folder Fix als
+        # dynamischer Button im ausgeklappten VRChat-Bereich des Games-Tabs
+        # (Texte setzt main.py beim Bauen der Detail-Sektion).
         self.lbl_apk_title.setText(tr("dashboard_apk_title"))
         self.apk_info_lbl.setText(tr("dashboard_apk_info"))
         self.btn_apk_install.setText(tr("dashboard_apk_btn"))
@@ -293,6 +306,8 @@ class Ui_MainWindow(object):
         self.chk_overlay_slimevr.setText(tr("overlay_slimevr_btn"))
         self.lbl_overlay_credits.setText(tr("overlay_credits"))
         self.openxr_group.setTitle(tr("openxr_group"))
+        if hasattr(self, "oscquery_widget"):
+            self.oscquery_widget.retranslate()
         self.lbl_openxr_desc.setText(tr("openxr_desc"))
         self.lbl_openxr_path_title.setText(tr("openxr_path_title"))
         self.lbl_openxr_content_title.setText(tr("openxr_content_title"))
@@ -309,6 +324,20 @@ class Ui_MainWindow(object):
         self.btn_community_check.setText(tr("community_check_btn"))
         self.btn_community_discord.setText(tr("community_discord_btn"))
         self.btn_community_donate.setText(tr("community_donate_btn"))
+
+        # --- Custom Kill Commands ---
+        self.killcmd_group.setTitle(tr("killcmd_group"))
+        self.lbl_killcmd_desc.setText(tr("killcmd_desc"))
+        self.lbl_killcmd_warn.setText(tr("killcmd_warn"))
+        self._killcmd_head_label.setText(tr("killcmd_col_label"))
+        self._killcmd_head_cmd.setText(tr("killcmd_col_command"))
+        self.btn_killcmd_add.setText(tr("killcmd_add_btn"))
+        self.btn_killcmd_save.setText(tr("killcmd_save_btn"))
+        # Platzhalter der bestehenden Zeilen mitübersetzen
+        for row in getattr(self, "killcmd_rows", []):
+            row["input_label"].setPlaceholderText(tr("killcmd_placeholder_lbl"))
+            row["input_cmd"].setPlaceholderText(tr("killcmd_placeholder_cmd"))
+            row["btn_del"].setToolTip(tr("killcmd_del_tooltip"))
 
         # --- Tools-Tab ---
         self.lbl_tools_title.setText(tr("tools_title"))
@@ -405,6 +434,59 @@ class Ui_MainWindow(object):
 
         layout.addWidget(self.info_group)
         # ------------------------------------------------------------
+
+        # --- WiVRn-APK auf dem Headset installieren (Umzug aus Settings) ---
+        # Widget-Namen bleiben identisch (btn_apk_install, lbl_apk_status, ...),
+        # damit die APK-Logik in main.py unverändert weiterläuft.
+        apk_card = QFrame()
+        apk_card.setObjectName("settingsCard")
+        apk_card.setStyleSheet("""
+            QFrame#settingsCard {
+                background-color: #21252b;
+                border: 1px solid #2e3440;
+                border-radius: 6px;
+            }
+        """)
+        apk_box = QVBoxLayout(apk_card)
+        apk_box.setContentsMargins(12, 12, 12, 12)
+        apk_box.setSpacing(8)
+
+        self.lbl_apk_title = QLabel(tr("dashboard_apk_title"))
+        self.lbl_apk_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
+        self.lbl_apk_title.setWordWrap(True)
+        apk_box.addWidget(self.lbl_apk_title)
+
+        self.apk_info_lbl = QLabel(tr("dashboard_apk_info"))
+        self.apk_info_lbl.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        self.apk_info_lbl.setWordWrap(True)
+        apk_box.addWidget(self.apk_info_lbl)
+
+        apk_btn_row = QHBoxLayout()
+        self.btn_apk_install = QPushButton(tr("dashboard_apk_btn"))
+        self.btn_apk_install.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
+                          padding: 7px 14px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
+        """)
+        self.btn_apk_cancel = QPushButton(tr("dashboard_apk_cancel"))
+        self.btn_apk_cancel.setVisible(False)
+        self.btn_apk_cancel.setStyleSheet("""
+            QPushButton { background-color: #bf616a; color: white; font-weight: bold;
+                          padding: 7px 14px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #d08770; }
+        """)
+        apk_btn_row.addWidget(self.btn_apk_install)
+        apk_btn_row.addWidget(self.btn_apk_cancel)
+        apk_btn_row.addStretch()
+        apk_box.addLayout(apk_btn_row)
+
+        self.lbl_apk_status = QLabel("")
+        self.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
+        self.lbl_apk_status.setWordWrap(True)
+        apk_box.addWidget(self.lbl_apk_status)
+
+        layout.addWidget(apk_card)
 
         layout.addStretch()
         # ------------------------------------------------------------
@@ -627,6 +709,122 @@ class Ui_MainWindow(object):
         # aber leer gelassen oder nicht in setupUi ausgeführt, damit main.py das Layout setzen kann.
         pass
 
+    def setup_games_tab(self):
+        """
+        Games-Tab: oben "Spiele scannen"-Button + kleines (i) für die
+        Anleitung (Proton-Version/Startparameter in Steam ändern), darunter
+        ALLE erkannten VR-Spiele als kompakte Kacheln in zwei Sektionen:
+        "Getestete VR-Spiele" (kuratierte Profile) und "Ungetestete
+        VR-Spiele" (automatische Proton-Empfehlung). Klick auf eine Kachel
+        klappt das Detail-Panel INLINE direkt unter der Kachel-Reihe auf
+        (klebt am Spiel, keine Listenverschiebung ans Seitenende). Kacheln
+        und Panels baut main.py dynamisch in games_grid_tested /
+        games_grid_untested.
+        """
+        from PySide6.QtWidgets import QScrollArea
+
+        outer = QVBoxLayout(self.tab_games)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea(self.tab_games)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        outer.addWidget(scroll)
+
+        container = QWidget()
+        scroll.setWidget(container)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        # --- Kopfzeile: Titel + Scan-Button + Info (i) ---
+        head_row = QHBoxLayout()
+        head_row.setSpacing(10)
+
+        self.lbl_games_title = QLabel(tr("games_title"))
+        self.lbl_games_title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        head_row.addWidget(self.lbl_games_title)
+        head_row.addStretch()
+
+        self.btn_games_scan = QPushButton(tr("games_scan_btn"))
+        self.btn_games_scan.setCursor(Qt.PointingHandCursor)
+        self.btn_games_scan.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """)
+        head_row.addWidget(self.btn_games_scan)
+
+        # Kleines rundes (i): erklärt, WO man in Steam Proton-Version und
+        # Startparameter einträgt — Handler in main.py (show_games_info).
+        self.btn_games_info = QPushButton("i")
+        self.btn_games_info.setCursor(Qt.PointingHandCursor)
+        self.btn_games_info.setFixedSize(28, 28)
+        self.btn_games_info.setToolTip(tr("games_info_tooltip"))
+        self.btn_games_info.setStyleSheet("""
+            QPushButton { background-color: #2e3440; color: #88c0d0; border: 1px solid #4c566a;
+                          font-weight: bold; font-size: 15px; padding: 0px; margin: 0px;
+                          border-radius: 14px; }
+            QPushButton:hover { background-color: #3b4252; border-color: #88c0d0; color: #eceff4; }
+        """)
+        head_row.addWidget(self.btn_games_info)
+        layout.addLayout(head_row)
+
+        # --- Untertitel + Statuszeile ("Scanne ...", "N Spiele gefunden") ---
+        self.lbl_games_subtitle = QLabel(tr("games_subtitle"))
+        self.lbl_games_subtitle.setStyleSheet("color: #d8dee9; font-size: 12px;")
+        self.lbl_games_subtitle.setWordWrap(True)
+        layout.addWidget(self.lbl_games_subtitle)
+
+        self.lbl_games_hint = QLabel(tr("games_click_hint"))
+        self.lbl_games_hint.setStyleSheet("color: #7b88a1; font-size: 11px; font-style: italic;")
+        self.lbl_games_hint.setWordWrap(True)
+        layout.addWidget(self.lbl_games_hint)
+
+        self.lbl_games_status = QLabel("")
+        self.lbl_games_status.setStyleSheet("color: #88c0d0; font-size: 12px; font-weight: bold;")
+        self.lbl_games_status.setWordWrap(True)
+        layout.addWidget(self.lbl_games_status)
+
+        # --- Zwei Kachel-Sektionen untereinander:
+        #     1) Getestete VR-Spiele (kuratierte Profile in core/games.py)
+        #     2) Ungetestete VR-Spiele (automatische Proton-Empfehlung)
+        #     Jedes Spiel ist ein kompaktes Viereck (Cover + Name); Klick
+        #     klappt darunter die Detail-Sektion auf (Akkordeon). Kacheln
+        #     und Details baut main.py dynamisch. Die Überschriften blendet
+        #     main.py aus, wenn eine Sektion leer ist. ---
+        from PySide6.QtWidgets import QGridLayout
+
+        self.lbl_games_tested_header = QLabel(tr("games_section_tested"))
+        self.lbl_games_tested_header.setStyleSheet(
+            "color: #a3be8c; font-size: 13px; font-weight: bold; margin-top: 4px;")
+        self.lbl_games_tested_header.setVisible(False)
+        layout.addWidget(self.lbl_games_tested_header)
+
+        self.games_grid_tested = QGridLayout()
+        self.games_grid_tested.setSpacing(12)
+        self.games_grid_tested.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        layout.addLayout(self.games_grid_tested)
+
+        self.lbl_games_untested_header = QLabel(tr("games_section_untested"))
+        self.lbl_games_untested_header.setStyleSheet(
+            "color: #ebcb8b; font-size: 13px; font-weight: bold; margin-top: 10px;")
+        self.lbl_games_untested_header.setVisible(False)
+        layout.addWidget(self.lbl_games_untested_header)
+
+        self.games_grid_untested = QGridLayout()
+        self.games_grid_untested.setSpacing(12)
+        self.games_grid_untested.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        layout.addLayout(self.games_grid_untested)
+
+        # HINWEIS: Das Detail-Panel ist KEIN globales Element mehr — main.py
+        # setzt es inline direkt unter die Reihe der angeklickten Kachel
+        # (in games_grid_tested / games_grid_untested: Kacheln auf geraden
+        # Grid-Zeilen, Panels auf den ungeraden dazwischen).
+
+        layout.addStretch()
+
     def setup_settings_tab(self):
         from PySide6.QtWidgets import QScrollArea
 
@@ -694,107 +892,6 @@ class Ui_MainWindow(object):
 
         layout.addWidget(self.community_group)
 
-        # --- GENERAL (zwei Boxen nebeneinander) ---
-        self.general_group = QGroupBox(tr("settings_general"))
-        general_layout = QVBoxLayout(self.general_group)
-        general_layout.setSpacing(10)
-
-        # Horizontale Reihe: links APK-Box, rechts VRChat-Box
-        general_row = QHBoxLayout()
-        general_row.setSpacing(16)
-
-        # Gemeinsamer Card-Stil (passt zum restlichen Design)
-        _card_css = """
-            QFrame#settingsCard {
-                background-color: #21252b;
-                border: 1px solid #2e3440;
-                border-radius: 6px;
-            }
-        """
-
-        # ---------- LINKS: WiVRn APK-Installation ----------
-        apk_card = QFrame()
-        apk_card.setObjectName("settingsCard")
-        apk_card.setStyleSheet(_card_css)
-        apk_box = QVBoxLayout(apk_card)
-        apk_box.setContentsMargins(12, 12, 12, 12)
-        apk_box.setSpacing(8)
-
-        self.lbl_apk_title = QLabel(tr("dashboard_apk_title"))
-        self.lbl_apk_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
-        self.lbl_apk_title.setWordWrap(True)
-        apk_box.addWidget(self.lbl_apk_title)
-
-        self.apk_info_lbl = QLabel(tr("dashboard_apk_info"))
-        self.apk_info_lbl.setStyleSheet("color: #d8dee9; font-size: 11px;")
-        self.apk_info_lbl.setWordWrap(True)
-        apk_box.addWidget(self.apk_info_lbl)
-
-        apk_btn_row = QHBoxLayout()
-        self.btn_apk_install = QPushButton(tr("dashboard_apk_btn"))
-        self.btn_apk_install.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
-                          padding: 7px 14px; border-radius: 4px; border: none; }
-            QPushButton:hover { background-color: #81a1c1; }
-            QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
-        """)
-        self.btn_apk_cancel = QPushButton(tr("dashboard_apk_cancel"))
-        self.btn_apk_cancel.setVisible(False)
-        self.btn_apk_cancel.setStyleSheet("""
-            QPushButton { background-color: #bf616a; color: white; font-weight: bold;
-                          padding: 7px 14px; border-radius: 4px; border: none; }
-            QPushButton:hover { background-color: #d08770; }
-        """)
-        apk_btn_row.addWidget(self.btn_apk_install)
-        apk_btn_row.addWidget(self.btn_apk_cancel)
-        apk_btn_row.addStretch()
-        apk_box.addLayout(apk_btn_row)
-
-        self.lbl_apk_status = QLabel("")
-        self.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
-        self.lbl_apk_status.setWordWrap(True)
-        apk_box.addWidget(self.lbl_apk_status)
-        apk_box.addStretch()
-
-        # ---------- RECHTS: VRChat Picture Folder Fix ----------
-        vrchat_card = QFrame()
-        vrchat_card.setObjectName("settingsCard")
-        vrchat_card.setStyleSheet(_card_css)
-        vrchat_box = QVBoxLayout(vrchat_card)
-        vrchat_box.setContentsMargins(12, 12, 12, 12)
-        vrchat_box.setSpacing(8)
-
-        self.lbl_vrchat_title = QLabel(tr("settings_vrchat_title"))
-        self.lbl_vrchat_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
-        self.lbl_vrchat_title.setWordWrap(True)
-        vrchat_box.addWidget(self.lbl_vrchat_title)
-
-        self.lbl_vrchat_desc = QLabel(tr("settings_vrchat_desc_short"))
-        self.lbl_vrchat_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
-        self.lbl_vrchat_desc.setWordWrap(True)
-        vrchat_box.addWidget(self.lbl_vrchat_desc)
-
-        self.btn_vrchat_symlink = QPushButton(tr("settings_vrchat_btn"))
-        self.btn_vrchat_symlink.setFixedWidth(160)
-        self.btn_vrchat_symlink.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
-                          padding: 8px; border-radius: 4px; border: none; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
-        vrchat_box.addWidget(self.btn_vrchat_symlink, alignment=Qt.AlignLeft)
-
-        self.lbl_vrchat_status = QLabel("")
-        self.lbl_vrchat_status.setStyleSheet("font-size: 11px;")
-        self.lbl_vrchat_status.setWordWrap(True)
-        vrchat_box.addWidget(self.lbl_vrchat_status)
-        vrchat_box.addStretch()
-
-        # Beide Boxen gleich breit nebeneinander (stretch-Faktor 1/1)
-        general_row.addWidget(apk_card, 1)
-        general_row.addWidget(vrchat_card, 1)
-        general_layout.addLayout(general_row)
-
-        layout.addWidget(self.general_group)
 
         # --- BACKUP (jetzt oben, beide Buttons nebeneinander) ---
         self.backup_group = QGroupBox(tr("backup_title"))
@@ -966,6 +1063,84 @@ class Ui_MainWindow(object):
         openxr_layout.addWidget(self.openxr_manual_widget)
 
         layout.addWidget(self.openxr_group)
+
+        # --- QUICK OSC QUERY FIX ---
+        # Aktiviert OSCQuery in den Configs der unterstützten OSC-Programme
+        # (OSCLeash, OscGoesBrrr, ...) — hilft bei OSC-Bugs. Die Programmliste
+        # lebt in core/queryfix.py (PROGRAMS), das Widget in ui/queryfix_widget.py.
+        from ui.queryfix_widget import QueryFixWidget
+        self.oscquery_widget = QueryFixWidget()
+        layout.addWidget(self.oscquery_widget)
+
+        # --- CUSTOM KILL COMMANDS (ganz unten) ---
+        # Dynamische Liste von "Name → Befehl"-Paaren. Wird beim Klick auf
+        # "Apps schließen" (oder beim Server-Stopp) VOR dem normalen Kill
+        # ausgeführt. Für Sonderfälle wie VRCX (Electron -> mehrere Prozesse).
+        self.killcmd_group = QGroupBox(tr("killcmd_group"))
+        killcmd_layout = QVBoxLayout(self.killcmd_group)
+        killcmd_layout.setSpacing(8)
+
+        self.lbl_killcmd_desc = QLabel(tr("killcmd_desc"))
+        self.lbl_killcmd_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        self.lbl_killcmd_desc.setWordWrap(True)
+        self.lbl_killcmd_desc.setTextFormat(Qt.RichText)
+        killcmd_layout.addWidget(self.lbl_killcmd_desc)
+
+        self.lbl_killcmd_warn = QLabel(tr("killcmd_warn"))
+        self.lbl_killcmd_warn.setStyleSheet(
+            "color: #ebcb8b; font-size: 11px; font-style: italic;")
+        self.lbl_killcmd_warn.setWordWrap(True)
+        killcmd_layout.addWidget(self.lbl_killcmd_warn)
+
+        # Kopfzeile für die Tabelle (nur Beschriftung, kein echtes QTableWidget —
+        # eine einfache VBox mit HBox-Zeilen ist flexibler zum dynamischen Hinzufügen).
+        killcmd_head = QHBoxLayout()
+        head_label = QLabel(tr("killcmd_col_label"))
+        head_label.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold;")
+        head_label.setFixedWidth(180)
+        killcmd_head.addWidget(head_label)
+        head_cmd = QLabel(tr("killcmd_col_command"))
+        head_cmd.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold;")
+        killcmd_head.addWidget(head_cmd, 1)
+        head_spacer = QLabel("")
+        head_spacer.setFixedWidth(30)
+        killcmd_head.addWidget(head_spacer)
+        killcmd_layout.addLayout(killcmd_head)
+        # Merken, um die Kopfzeilen-Labels beim Sprachwechsel neu setzen zu können.
+        self._killcmd_head_label = head_label
+        self._killcmd_head_cmd = head_cmd
+
+        # Container für die eigentlichen Zeilen — main.py füllt ihn beim Start
+        # und beim Hinzufügen/Löschen. Die einzelnen Zeilen werden in
+        # self.killcmd_rows (Liste von Dicts) verwaltet.
+        self.killcmd_rows_container = QVBoxLayout()
+        self.killcmd_rows_container.setSpacing(6)
+        killcmd_layout.addLayout(self.killcmd_rows_container)
+        self.killcmd_rows = []  # Liste von {"input_label": QLineEdit, "input_cmd": QLineEdit, "row_widget": QWidget}
+
+        # Buttons unten: Hinzufügen + Speichern
+        killcmd_btns = QHBoxLayout()
+        self.btn_killcmd_add = QPushButton(tr("killcmd_add_btn"))
+        self.btn_killcmd_add.setCursor(Qt.PointingHandCursor)
+        self.btn_killcmd_add.setStyleSheet("""
+            QPushButton { background-color: #2e3440; color: #eceff4; border: 1px solid #4c566a;
+                          font-weight: bold; padding: 6px 12px; border-radius: 4px; font-size: 12px; }
+            QPushButton:hover { background-color: #3b4252; border-color: #a3be8c; }
+        """)
+        killcmd_btns.addWidget(self.btn_killcmd_add)
+
+        self.btn_killcmd_save = QPushButton(tr("killcmd_save_btn"))
+        self.btn_killcmd_save.setCursor(Qt.PointingHandCursor)
+        self.btn_killcmd_save.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 6px 14px; border-radius: 4px; font-size: 12px; }
+            QPushButton:hover { background-color: #81a1c1; }
+        """)
+        killcmd_btns.addWidget(self.btn_killcmd_save)
+        killcmd_btns.addStretch()
+        killcmd_layout.addLayout(killcmd_btns)
+
+        layout.addWidget(self.killcmd_group)
 
         layout.addStretch()
 

@@ -7,9 +7,9 @@ import os
 import json
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QMessageBox,
                                QHBoxLayout, QVBoxLayout, QComboBox, QLineEdit,
-                               QPushButton, QFileDialog)
+                               QPushButton, QFileDialog, QFrame, QWidget)
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QPixmap
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
@@ -33,6 +33,7 @@ from overlay_manager import (DesignInstallWorker, set_slimevr_ui,
                              is_slimevr_active, is_design_installed,
                              reset_wayvr_to_default)
 from programs import INSTALL_PACKAGES, INSTALL_FLATPAK, TOOLS_APPS, TOOLS_OSC
+import games as games_db
 import openxr_manager as oxr
 from translations import tr, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
@@ -154,6 +155,66 @@ class ApkWorker(QThread):
             self.finished_signal.emit(False)
 
 
+class ClickableFrame(QFrame):
+    """QFrame, das wie ein großer Button funktioniert (für die Spiel-Kacheln)."""
+    clicked = QtSignal()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class GameScanWorker(QThread):
+    """Scannt die Steam-Bibliotheken im Hintergrund nach ALLEN VR-Spielen."""
+    result_signal = QtSignal(object)  # (tested: [appid], untested: [{appid,name}])
+
+    def run(self):
+        try:
+            result = games_db.scan_installed_games()
+        except Exception as e:
+            print(f"[Games] Scan fehlgeschlagen: {e}")
+            result = ([], [])
+        self.result_signal.emit(result)
+
+
+class ProtonPlusInstallWorker(QThread):
+    """
+    Öffnet ein Terminal ("in deine Fresse") mit der interaktiven
+    ProtonPlus-CLI-Installation eines Runners, z. B.:
+        protonplus install steam-system proton-ge-rtsp
+    Ohne 'latest' listet ProtonPlus alle Releases auf und der Nutzer
+    wählt die empfohlene Version per Nummer aus.
+    """
+    finished_signal = QtSignal(bool)
+
+    def __init__(self, cli_cmd):
+        super().__init__()
+        self.cli_cmd = cli_cmd  # Liste, z. B. ["protonplus", "install", ...]
+
+    def run(self):
+        from install_worker import find_terminal
+        terminal, exec_flags = find_terminal()
+        if terminal is None or not self.cli_cmd:
+            self.finished_signal.emit(False)
+            return
+        cli_str = " ".join(self.cli_cmd)
+        bash_cmd = (
+            f"echo '=== ProtonPlus: {cli_str} ==='; "
+            f"{cli_str}; "
+            "echo ''; echo 'Fertig. Dieses Fenster schliesst sich gleich automatisch...'; "
+            "sleep 3"
+        )
+        cmd = [terminal] + exec_flags + ["bash", "-c", bash_cmd]
+        try:
+            proc = subprocess.Popen(cmd)
+            proc.wait()
+            self.finished_signal.emit(proc.returncode == 0)
+        except Exception as e:
+            print(f"[Games] ProtonPlus-Terminal konnte nicht geöffnet werden: {e}")
+            self.finished_signal.emit(False)
+
+
 class VRApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -168,10 +229,21 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.0.8-alpha"
+        self.APP_VERSION = "v1.0.9-alpha"
         self.server_process = None
         self.pairing_process = None
         self._overlay_worker = None
+
+        # --- Games-Tab ---
+        self._games_scan_worker = None       # laufender Scan-Thread
+        self._pp_worker = None               # laufender ProtonPlus-Install-Thread
+        self._games_tab_visited = False      # erster Klick auf den Tab -> Auto-Scan
+        self._games_untested_names = {}      # appid -> Anzeigename (ungetestete Spiele)
+        self._games_tile_pos = {}            # appid -> (grid, zeile, spalte) fürs Inline-Panel
+        self._games_detail_widget = None     # aktuell ausgeklapptes Inline-Panel
+        self._detail_params_edit = None      # Parameterfeld des offenen Panels (für "Play")
+        self._detail_status_lbl = None       # Statuszeile des offenen Panels
+        self._selected_proton = games_db.load_selected_protons()  # appid -> per "Use" gewählte Version
 
         # Gemerkter Server-Zustand — die Anzeige liest nur noch diese Variable,
         # statt jede Sekunde per Subprozess zu prüfen. Der manuelle Check-Knopf
@@ -499,6 +571,10 @@ class VRApp(QMainWindow):
         # Navigation
         self.ui.sidebar.currentRowChanged.connect(self.on_tab_changed)
 
+        # Games-Tab
+        self.ui.btn_games_scan.clicked.connect(self.start_games_scan)
+        self.ui.btn_games_info.clicked.connect(self.show_games_info)
+
         # Installation / Update
         self.ui.btn_install.clicked.connect(self.start_package_installation)
         self.ui.btn_update.clicked.connect(self.start_system_update)
@@ -523,6 +599,12 @@ class VRApp(QMainWindow):
         self.refresh_overlay_state()
         self.fill_openxr_fields()
         self.refresh_openxr_status()
+
+        # Custom-Kill-Befehle (Settings, ganz unten):
+        # Add/Save verdrahten und gespeicherte Einträge laden.
+        self.ui.btn_killcmd_add.clicked.connect(lambda: self._killcmd_add_row("", ""))
+        self.ui.btn_killcmd_save.clicked.connect(self._killcmd_save)
+        self._killcmd_load_from_config()
 
         # Dashboard Steuerung — Schiebeschalter statt Start/Stop-Buttons
         self.ui.toggle_server.toggled.connect(self.on_server_toggled)
@@ -575,7 +657,9 @@ class VRApp(QMainWindow):
         self.ui.btn_tools_check.clicked.connect(self.start_tools_update_check)
 
         # Settings Tab
-        self.ui.btn_vrchat_symlink.clicked.connect(self.create_vrchat_symlink)
+        # HINWEIS: btn_vrchat_symlink wird NICHT mehr hier verbunden — der
+        # VRChat Picture Folder Fix lebt jetzt als dynamischer Button im
+        # ausgeklappten VRChat-Bereich des Games-Tabs (siehe _build_game_detail).
 
     def get_wivrn_version(self):
         # Flatpak: Version aus 'flatpak info' lesen
@@ -628,6 +712,603 @@ class VRApp(QMainWindow):
         self.ui.pages.setCurrentIndex(index)
         if index == 1: self.refresh_headset_list()
         if index == 3: self.check_tools_status()
+        if index == 4: self.on_games_tab_opened()
+
+    # ------------------------------------------------------------------ #
+    #  Games-Tab
+    # ------------------------------------------------------------------ #
+    def on_games_tab_opened(self):
+        """
+        Beim ersten Klick auf den Tab: gecachte Spiele aus der Config laden.
+        Wurde noch NIE gescannt (kein Cache-Key vorhanden) -> automatisch
+        scannen. Danach lädt der Tab nur noch aus dem Cache; neu gescannt
+        wird nur über den "Spiele scannen"-Button.
+        """
+        if self._games_tab_visited:
+            return
+        self._games_tab_visited = True
+
+        tested, untested, was_scanned = games_db.load_cached_games()
+        if was_scanned:
+            self.render_games_cards(tested, untested)
+        else:
+            self.start_games_scan()
+
+    def start_games_scan(self):
+        """Startet den Steam-Scan im Hintergrund (Button oder Erst-Besuch)."""
+        if self._games_scan_worker and self._games_scan_worker.isRunning():
+            return
+        self.ui.btn_games_scan.setEnabled(False)
+        self.ui.lbl_games_status.setText(tr("games_scanning"))
+        self._games_scan_worker = GameScanWorker()
+        self._games_scan_worker.result_signal.connect(self._on_games_scan_done)
+        self._games_scan_worker.start()
+
+    def _on_games_scan_done(self, result):
+        """Scan fertig: Ergebnis fest in die Config schreiben + anzeigen."""
+        tested, untested = result
+        games_db.save_cached_games(tested, untested)
+        self.ui.btn_games_scan.setEnabled(True)
+        self.render_games_cards(tested, untested)
+
+    # --- Kachel-Grid + Akkordeon -------------------------------------- #
+    GAMES_TILES_PER_ROW = 4          # Kacheln pro Zeile
+    GAMES_TILE_W, GAMES_TILE_H = 150, 240   # Kachelgröße
+    GAMES_COVER_W, GAMES_COVER_H = 126, 189 # Coverfläche (2:3 wie Steam-Capsule)
+
+    def _clear_layout(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+    def render_games_cards(self, tested, untested):
+        """
+        Baut die Kacheln in ZWEI Sektionen untereinander:
+          * "Getestete VR-Spiele"  : kuratierte Profile aus core/games.py
+          * "Ungetestete VR-Spiele": alle übrigen erkannten VR-Spiele —
+            bekommen beim Aufklappen automatisch generierte Proton-
+            Empfehlungen (games_db.dynamic_protons()).
+        Dem Nutzer wird immer der NAME angezeigt, nie die AppID. Leere
+        Sektionen bleiben samt Überschrift ausgeblendet.
+        """
+        self._clear_layout(self.ui.games_grid_tested)
+        self._clear_layout(self.ui.games_grid_untested)
+        self._games_tiles = {}
+        self._games_tile_pos = {}
+        self._games_untested_names = {}
+        self._games_detail_widget = None
+        self._detail_params_edit = None
+        self._detail_status_lbl = None
+        self._expanded_appid = None
+        self._selected_proton = games_db.load_selected_protons()
+
+        total = len(tested) + len(untested)
+        if total == 0:
+            self.ui.lbl_games_tested_header.setVisible(False)
+            self.ui.lbl_games_untested_header.setVisible(False)
+            self.ui.lbl_games_status.setText(tr("games_none"))
+            return
+        self.ui.lbl_games_status.setText(tr("games_found").format(n=total))
+
+        # Kacheln liegen auf den GERADEN Grid-Zeilen (row*2); die ungeraden
+        # Zeilen dazwischen sind für das Inline-Detail-Panel reserviert, das
+        # beim Klick direkt unter der Reihe der Kachel erscheint.
+        # Sektion 1: getestete Spiele (Profil vorhanden)
+        self.ui.lbl_games_tested_header.setVisible(bool(tested))
+        for idx, appid in enumerate(tested):
+            game = games_db.GAMES.get(appid)
+            if not game:
+                continue
+            tile = self._build_game_tile(appid, game["name"])
+            self._games_tiles[appid] = tile
+            row, col = divmod(idx, self.GAMES_TILES_PER_ROW)
+            self._games_tile_pos[appid] = (self.ui.games_grid_tested, row, col)
+            self.ui.games_grid_tested.addWidget(tile, row * 2, col)
+
+        # Sektion 2: ungetestete Spiele (automatische Empfehlung)
+        self.ui.lbl_games_untested_header.setVisible(bool(untested))
+        for idx, entry in enumerate(untested):
+            appid, name = entry["appid"], entry["name"]
+            self._games_untested_names[appid] = name
+            tile = self._build_game_tile(appid, name)
+            self._games_tiles[appid] = tile
+            row, col = divmod(idx, self.GAMES_TILES_PER_ROW)
+            self._games_tile_pos[appid] = (self.ui.games_grid_untested, row, col)
+            self.ui.games_grid_untested.addWidget(tile, row * 2, col)
+
+    def _tile_css(self, selected):
+        if selected:
+            return """
+                QFrame#gameTile { background-color: #2e3440; border: 2px solid #88c0d0;
+                                  border-radius: 8px; }
+            """
+        return """
+            QFrame#gameTile { background-color: #21252b; border: 1px solid #2e3440;
+                              border-radius: 8px; }
+            QFrame#gameTile:hover { background-color: #282c34; border-color: #5e81ac; }
+        """
+
+    def _build_game_tile(self, appid, name):
+        """
+        Das "kleine Viereck" (150x240) — für getestete UND ungetestete
+        Spiele identisch: vertikales Steam-Cover aus dem lokalen Cache
+        (find_game_cover), Spielname darüber, Pfeil darunter. Die ganze
+        Kachel ist klickbar.
+        """
+        tile = ClickableFrame()
+        tile.setObjectName("gameTile")
+        tile.setFixedSize(self.GAMES_TILE_W, self.GAMES_TILE_H)
+        tile.setCursor(Qt.PointingHandCursor)
+        tile.setStyleSheet(self._tile_css(selected=False))
+
+        box = QVBoxLayout(tile)
+        box.setContentsMargins(8, 8, 8, 6)
+        box.setSpacing(4)
+
+        # Name (sauberer Text über dem Cover)
+        lbl_name = QLabel(name)
+        lbl_name.setStyleSheet(
+            "font-weight: bold; color: #eceff4; font-size: 12px; background: transparent; border: none;")
+        lbl_name.setAlignment(Qt.AlignHCenter)
+        lbl_name.setWordWrap(True)
+        box.addWidget(lbl_name)
+
+        # Vertikales Coverbild aus dem Steam-Cache; Fallback: 🎮-Platzhalter
+        lbl_cover = QLabel()
+        lbl_cover.setAlignment(Qt.AlignCenter)
+        lbl_cover.setStyleSheet("background: transparent; border: none;")
+        cover_path = games_db.find_game_cover(appid)
+        pix = QPixmap(cover_path) if cover_path else QPixmap()
+        if not pix.isNull():
+            lbl_cover.setPixmap(pix.scaled(
+                self.GAMES_COVER_W, self.GAMES_COVER_H,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            lbl_cover.setText("🎮")
+            lbl_cover.setStyleSheet(
+                "font-size: 48px; background-color: #2e3440; border-radius: 6px; border: none;")
+            lbl_cover.setFixedSize(self.GAMES_COVER_W, self.GAMES_COVER_H)
+        box.addWidget(lbl_cover, alignment=Qt.AlignHCenter)
+
+        # Kleiner Pfeil: zeigt an, dass die Kachel aufklappbar ist
+        lbl_arrow = QLabel("▾")
+        lbl_arrow.setAlignment(Qt.AlignHCenter)
+        lbl_arrow.setStyleSheet(
+            "color: #7b88a1; font-size: 12px; background: transparent; border: none;")
+        box.addWidget(lbl_arrow)
+        tile._arrow = lbl_arrow  # zum Umschalten ▾/▴
+
+        tile.clicked.connect(lambda a=appid: self._on_game_tile_clicked(a))
+        return tile
+
+    def _game_data_for(self, appid):
+        """
+        Spieldaten für die Detail-Sektion:
+          * getestet   -> kuratierter Eintrag aus games_db.GAMES
+          * ungetestet -> synthetischer Eintrag mit automatisch generierten
+                          Proton-Empfehlungen und LEEREN Startparametern
+                          (der Nutzer kann eigene eintragen).
+        """
+        game = games_db.GAMES.get(appid)
+        if game:
+            return game
+        name = self._games_untested_names.get(appid)
+        if name is None:
+            return None
+        return {
+            "name": name,
+            "untested": True,
+            "protons": games_db.dynamic_protons(),
+            "launch_params": {},
+            "fixes": [],
+        }
+
+    def _collapse_detail(self):
+        """Klappt das aktuell offene Inline-Panel zu (falls eines offen ist)."""
+        if self._games_detail_widget is not None:
+            grid = self._games_detail_widget.parentWidget()
+            self._games_detail_widget.setParent(None)
+            self._games_detail_widget.deleteLater()
+            self._games_detail_widget = None
+        self._detail_params_edit = None
+        self._detail_status_lbl = None
+        for a, tile in self._games_tiles.items():
+            tile.setStyleSheet(self._tile_css(selected=False))
+            if getattr(tile, "_arrow", None):
+                tile._arrow.setText("▾")
+        self._expanded_appid = None
+
+    def _expand_game(self, appid):
+        """
+        Klappt das Detail-Panel INLINE auf: es wird in dieselbe Grid-Sektion
+        gesetzt, direkt in die (reservierte ungerade) Zeile unter der Reihe
+        der angeklickten Kachel — über die volle Breite. So klebt das Panel
+        immer am richtigen Spiel, statt global unter der Liste zu hängen.
+        """
+        game = self._game_data_for(appid)
+        pos = self._games_tile_pos.get(appid)
+        if not game or not pos:
+            return
+        grid, row, _col = pos
+
+        self._expanded_appid = appid
+        tile = self._games_tiles.get(appid)
+        if tile:
+            tile.setStyleSheet(self._tile_css(selected=True))
+            if getattr(tile, "_arrow", None):
+                tile._arrow.setText("▴")
+
+        detail = self._build_game_detail(appid, game)
+        self._games_detail_widget = detail
+        grid.addWidget(detail, row * 2 + 1, 0, 1, self.GAMES_TILES_PER_ROW)
+
+    def _refresh_detail(self):
+        """Baut das offene Panel neu auf (z. B. nach 'Use': Aktiv-Badge)."""
+        appid = self._expanded_appid
+        if appid is None:
+            return
+        self._collapse_detail()
+        self._expand_game(appid)
+
+    def _on_game_tile_clicked(self, appid):
+        """
+        Akkordeon: Klick klappt das Panel inline unter der Kachel-Reihe auf.
+        Erneuter Klick auf dieselbe Kachel (oder Klick auf eine andere)
+        klappt das alte Panel wieder zu.
+        """
+        was_expanded = (appid == self._expanded_appid)
+        self._collapse_detail()
+        if not was_expanded:
+            self._expand_game(appid)
+
+    # ------------------------------------------------------------------ #
+    #  "Use" (Proton wählen) + "Play" (Spiel starten)
+    # ------------------------------------------------------------------ #
+    def _detail_status(self, text, color="#88c0d0"):
+        if self._detail_status_lbl is not None:
+            self._detail_status_lbl.setText(text)
+            self._detail_status_lbl.setStyleSheet(
+                f"color: {color}; font-size: 11px; border: none;")
+
+    def _use_proton(self, appid, proton):
+        """
+        'Use': setzt diese Proton-Version als aktive Version für das Spiel —
+        sie wird in Steams CompatToolMapping geschrieben (gleicher Weg wie
+        ProtonPlus), in der App-Config gemerkt und vom 'Play'-Button benutzt.
+        """
+        tool, found, kind = games_db.resolve_steam_tool(proton)
+        if not found:
+            self._detail_status(tr("games_tool_missing"), "#ebcb8b")
+            return
+        ok, err = games_db.set_steam_compat_tool(appid, tool)
+        if not ok:
+            self._detail_status(f"Steam-Config: {err}", "#bf616a")
+            return
+
+        version = proton.get("version", "")
+        self._selected_proton[appid] = version
+        games_db.save_selected_proton(appid, version)
+
+        if tool is None:
+            msg = tr("games_use_default")
+        else:
+            msg = tr("games_use_applied").format(tool=tool)
+        if games_db.steam_is_running():
+            msg += " " + tr("games_steam_restart_hint")
+        # Panel neu bauen, damit das ✓-Aktiv-Badge umzieht — Status danach setzen
+        self._refresh_detail()
+        self._detail_status(msg, "#a3be8c")
+
+    def _play_game(self, appid, game):
+        """
+        'Play': schreibt die AKTUELLEN Startparameter aus dem Textfeld in
+        Steams LaunchOptions und startet das Spiel per Steam-CLI. Die per
+        'Use' gewählte Proton-Version steht bereits im CompatToolMapping.
+        """
+        params = self._detail_params_edit.text().strip() \
+            if self._detail_params_edit is not None else ""
+        ok, err = games_db.set_steam_launch_options(appid, params)
+        warn = "" if ok else " " + tr("games_options_failed").format(err=err)
+
+        cmd = games_db.steam_launch_cmd(appid)
+        if not cmd:
+            self._detail_status(tr("games_play_failed") + warn, "#bf616a")
+            return
+        try:
+            subprocess.Popen(cmd)
+        except Exception:
+            self._detail_status(tr("games_play_failed") + warn, "#bf616a")
+            return
+        msg = tr("games_play_starting").format(name=game.get("name", ""))
+        if games_db.steam_is_running() and not ok:
+            pass
+        elif games_db.steam_is_running():
+            msg += " " + tr("games_steam_restart_hint")
+        self._detail_status(msg + warn, "#a3be8c" if ok else "#ebcb8b")
+
+    def _build_game_detail(self, appid, game):
+        """
+        Ausgeklappte Detail-Sektion einer Kachel:
+          * Proton-Versionen (auf CachyOS ohne das normale Valve-Proton)
+            mit Beschreibung, Kopieren- und ProtonPlus-Install-Knopf
+          * Startparameter passend zur erkannten GPU mit Kopieren-Knopf
+          * Spiel-spezifische Fixes (z. B. VRChat Picture Folder Fix)
+        """
+        lang = get_language()
+        rec_role = games_db.recommended_role()
+        gpu = games_db.detect_gpu_vendor()
+        pp_available = games_db.find_protonplus() is not None
+
+        card = QFrame()
+        card.setObjectName("settingsCard")
+        card.setStyleSheet("""
+            QFrame#settingsCard {
+                background-color: #21252b;
+                border: 1px solid #88c0d0;
+                border-radius: 6px;
+            }
+        """)
+        box = QVBoxLayout(card)
+        box.setContentsMargins(14, 12, 14, 12)
+        box.setSpacing(8)
+
+        # Kopfzeile: Spielname + "Play"-Button direkt daneben.
+        # Play startet das Spiel per Steam-CLI mit der per "Use" gewählten
+        # Proton-Version und den Startparametern aus dem Textfeld unten.
+        name_row = QHBoxLayout()
+        lbl_name = QLabel(game["name"])
+        lbl_name.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 15px; border: none;")
+        name_row.addWidget(lbl_name)
+
+        btn_play = QPushButton(tr("games_play_btn"))
+        btn_play.setCursor(Qt.PointingHandCursor)
+        btn_play.setStyleSheet("""
+            QPushButton { background-color: #a3be8c; color: #21252b; border: none;
+                          font-weight: bold; padding: 5px 16px; border-radius: 4px; font-size: 12px; }
+            QPushButton:hover { background-color: #b8d19f; }
+        """)
+        btn_play.clicked.connect(lambda _, a=appid, g=game: self._play_game(a, g))
+        name_row.addWidget(btn_play)
+        name_row.addStretch()
+        box.addLayout(name_row)
+
+        # --- Proton-Versionen (gefiltert + Empfehlung zuerst) ---
+        lbl_proton = QLabel(tr("games_proton_section"))
+        lbl_proton.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+        box.addWidget(lbl_proton)
+
+        role_labels = {
+            "main": tr("games_role_main"),
+            "main_cachyos": tr("games_role_cachyos"),
+            "alternative": tr("games_role_alt"),
+            "alternative_ge": tr("games_role_alt_ge"),
+        }
+
+        for proton in games_db.visible_protons(game):
+            row_frame = QFrame()
+            is_rec = proton.get("role") == rec_role
+            row_frame.setStyleSheet(
+                "QFrame { background-color: #2e3440; border-radius: 4px; border: none; }"
+                if is_rec else
+                "QFrame { background-color: transparent; border: 1px solid #2e3440; border-radius: 4px; }")
+            row = QVBoxLayout(row_frame)
+            row.setContentsMargins(10, 8, 10, 8)
+            row.setSpacing(4)
+
+            head = QHBoxLayout()
+            ver_text = proton.get("version", "")
+            if proton.get("untested"):
+                ver_text = f"{ver_text} {tr('games_untested_suffix')}"
+            lbl_ver = QLabel(ver_text)
+            lbl_ver.setStyleSheet(
+                "color: #a3be8c; font-family: monospace; font-size: 12px; font-weight: bold; border: none;")
+            lbl_ver.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            head.addWidget(lbl_ver)
+
+            badge_text = (tr("games_recommended_cachyos")
+                          if is_rec and rec_role == "main_cachyos"
+                          else tr("games_recommended")) if is_rec \
+                else role_labels.get(proton.get("role"), "")
+            lbl_badge = QLabel(badge_text)
+            lbl_badge.setStyleSheet(
+                "color: #ebcb8b; font-size: 11px; font-weight: bold; border: none;" if is_rec
+                else "color: #7b88a1; font-size: 11px; border: none;")
+            head.addWidget(lbl_badge)
+
+            # Per "Use" als aktiv gewählte Version markieren
+            is_active = self._selected_proton.get(appid) == proton.get("version")
+            if is_active:
+                lbl_active = QLabel(tr("games_active_badge"))
+                lbl_active.setStyleSheet(
+                    "color: #a3be8c; font-size: 11px; font-weight: bold; border: none;")
+                head.addWidget(lbl_active)
+            head.addStretch()
+
+            # "Use": setzt diese Version als aktive Version für den Play-Button
+            # (schreibt sie in Steams CompatToolMapping und merkt sie dauerhaft)
+            btn_use = QPushButton(tr("games_use_btn"))
+            btn_use.setCursor(Qt.PointingHandCursor)
+            btn_use.setEnabled(not is_active)
+            btn_use.setStyleSheet("""
+                QPushButton { background-color: #5e81ac; color: white; border: none;
+                              font-weight: bold; padding: 3px 12px; border-radius: 4px; font-size: 11px; }
+                QPushButton:hover { background-color: #81a1c1; }
+                QPushButton:disabled { background-color: #3b4252; color: #a3be8c; }
+            """)
+            btn_use.clicked.connect(
+                lambda _, a=appid, p=proton: self._use_proton(a, p))
+            head.addWidget(btn_use)
+
+            btn_copy_ver = QPushButton(tr("games_copy_btn"))
+            btn_copy_ver.setCursor(Qt.PointingHandCursor)
+            btn_copy_ver.setStyleSheet("""
+                QPushButton { background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a;
+                              padding: 3px 10px; border-radius: 4px; font-size: 11px; }
+                QPushButton:hover { background-color: #3b4252; border-color: #5e81ac; }
+            """)
+            btn_copy_ver.clicked.connect(
+                lambda _, v=proton.get("version", ""), b=btn_copy_ver:
+                self._copy_games_text(v, b))
+            head.addWidget(btn_copy_ver)
+
+            runner_id = proton.get("protonplus_runner")
+            if runner_id and pp_available:
+                btn_pp = QPushButton(tr("games_pp_install_btn"))
+                btn_pp.setCursor(Qt.PointingHandCursor)
+                btn_pp.setStyleSheet("""
+                    QPushButton { background-color: #5e81ac; color: white; border: none;
+                                  font-weight: bold; padding: 3px 10px; border-radius: 4px; font-size: 11px; }
+                    QPushButton:hover { background-color: #81a1c1; }
+                    QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+                """)
+                btn_pp.clicked.connect(
+                    lambda _, r=runner_id: self.start_protonplus_install(r))
+                head.addWidget(btn_pp)
+            row.addLayout(head)
+
+            desc = proton.get("desc", {})
+            lbl_desc = QLabel(desc.get(lang) or desc.get("en") or desc.get("de") or "")
+            lbl_desc.setStyleSheet("color: #d8dee9; font-size: 11px; border: none;")
+            lbl_desc.setWordWrap(True)
+            row.addWidget(lbl_desc)
+
+            if runner_id is None:
+                lbl_src = QLabel(tr("games_pp_steam_note"))
+                lbl_src.setStyleSheet("color: #7b88a1; font-size: 10px; font-style: italic; border: none;")
+                row.addWidget(lbl_src)
+            elif not pp_available:
+                lbl_src = QLabel(tr("games_pp_missing"))
+                lbl_src.setStyleSheet("color: #ebcb8b; font-size: 10px; font-style: italic; border: none;")
+                lbl_src.setWordWrap(True)
+                row.addWidget(lbl_src)
+
+            box.addWidget(row_frame)
+
+        # --- Startparameter (passend zur erkannten GPU) ---
+        # Getestete Spiele: hinterlegte Parameter, schreibgeschützt.
+        # Ungetestete Spiele ohne Parameter: leeres, EDITIERBARES Feld mit
+        # Platzhalter — der Nutzer kann bei Bedarf eigene eintragen und
+        # sie mit dem Kopieren-Knopf für Steam übernehmen.
+        params = game.get("launch_params", {})
+        show_params = bool(params) or game.get("untested", False)
+        if show_params:
+            if params and gpu in ("amd", "nvidia"):
+                gpu_name = tr("games_gpu_amd") if gpu == "amd" else tr("games_gpu_nvidia")
+                lbl_params = QLabel(tr("games_params_section").format(gpu=gpu_name))
+                param_value = params.get(gpu, "")
+            else:
+                lbl_params = QLabel(tr("games_params_section_unknown"))
+                param_value = (params.get("amd", "") or next(iter(params.values()), "")) if params else ""
+            lbl_params.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+            box.addWidget(lbl_params)
+
+            param_row = QHBoxLayout()
+            txt_params = QLineEdit(param_value)
+            if params:
+                txt_params.setReadOnly(True)
+            else:
+                txt_params.setPlaceholderText(tr("games_params_placeholder"))
+            txt_params.setStyleSheet("font-family: monospace; font-size: 11px;")
+            self._detail_params_edit = txt_params   # Play liest hieraus
+            param_row.addWidget(txt_params)
+
+            btn_copy = QPushButton(tr("games_copy_btn"))
+            btn_copy.setCursor(Qt.PointingHandCursor)
+            btn_copy.setStyleSheet("""
+                QPushButton { background-color: #5e81ac; color: white; border: none;
+                              font-weight: bold; padding: 6px 12px; border-radius: 4px; font-size: 11px; }
+                QPushButton:hover { background-color: #81a1c1; }
+            """)
+            btn_copy.clicked.connect(
+                lambda _, t=txt_params, b=btn_copy:
+                self._copy_games_text(t.text(), b))
+            param_row.addWidget(btn_copy)
+            box.addLayout(param_row)
+
+        # --- Spiel-spezifische Fixes (Umzug aus Settings -> "General") ---
+        if "vrchat_pictures" in game.get("fixes", []):
+            lbl_fix_head = QLabel(tr("games_fixes_section"))
+            lbl_fix_head.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+            box.addWidget(lbl_fix_head)
+
+            fix_row = QHBoxLayout()
+            btn_fix = QPushButton(tr("settings_vrchat_btn"))
+            btn_fix.setCursor(Qt.PointingHandCursor)
+            btn_fix.setToolTip(tr("settings_vrchat_desc_short"))
+            btn_fix.setStyleSheet("""
+                QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
+                              padding: 6px 12px; border-radius: 4px; border: none; font-size: 11px; }
+                QPushButton:hover { background-color: #81a1c1; }
+                QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+            """)
+            lbl_fix_status = QLabel("")
+            lbl_fix_status.setStyleSheet("font-size: 11px; border: none;")
+            lbl_fix_status.setWordWrap(True)
+
+            # Die bestehende Symlink-Logik (create_vrchat_symlink) schreibt in
+            # self.ui.btn_vrchat_symlink / self.ui.lbl_vrchat_status — wir
+            # hängen die dynamischen Widgets einfach dort ein, dann läuft
+            # alles unverändert weiter.
+            self.ui.btn_vrchat_symlink = btn_fix
+            self.ui.lbl_vrchat_status = lbl_fix_status
+            btn_fix.clicked.connect(self.create_vrchat_symlink)
+
+            fix_row.addWidget(btn_fix)
+            fix_row.addStretch()
+            box.addLayout(fix_row)
+
+            lbl_fix_desc = QLabel(tr("settings_vrchat_desc_short"))
+            lbl_fix_desc.setStyleSheet("color: #d8dee9; font-size: 10px; border: none;")
+            lbl_fix_desc.setWordWrap(True)
+            box.addWidget(lbl_fix_desc)
+            box.addWidget(lbl_fix_status)
+
+        # Statuszeile für Use-/Play-Feedback (Steam-Neustart-Hinweis usw.)
+        self._detail_status_lbl = QLabel("")
+        self._detail_status_lbl.setStyleSheet("color: #88c0d0; font-size: 11px; border: none;")
+        self._detail_status_lbl.setWordWrap(True)
+        box.addWidget(self._detail_status_lbl)
+
+        return card
+
+    def _copy_games_text(self, text, button):
+        """Text in die Zwischenablage + kurzes 'Kopiert!'-Feedback am Knopf."""
+        QApplication.clipboard().setText(text)
+        original = button.text()
+        button.setText(tr("games_copied"))
+        QTimer.singleShot(1200, lambda: button.setText(original))
+
+    def start_protonplus_install(self, runner_id):
+        """
+        Öffnet die interaktive ProtonPlus-Installation im Terminal.
+        Dort listet ProtonPlus alle Releases; der Nutzer wählt die auf der
+        Karte empfohlene Version per Nummer aus.
+        """
+        if self._pp_worker and self._pp_worker.isRunning():
+            return
+        cmd = games_db.protonplus_install_cmd(runner_id)
+        if not cmd:
+            self.ui.lbl_games_status.setText(tr("games_pp_missing"))
+            return
+        self.ui.lbl_games_status.setText(tr("games_pp_running"))
+        self._pp_worker = ProtonPlusInstallWorker(cmd)
+        self._pp_worker.finished_signal.connect(self._on_pp_install_done)
+        self._pp_worker.start()
+
+    def _on_pp_install_done(self, ok):
+        self.ui.lbl_games_status.setText(tr("games_pp_done") if ok else tr("games_pp_missing"))
+
+    def show_games_info(self):
+        """Das kleine (i): erklärt, wo man in Steam Proton-Version und
+        Startparameter einträgt."""
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("games_info_title"))
+        box.setTextFormat(Qt.RichText)
+        box.setText(tr("games_info_text"))
+        box.setIcon(QMessageBox.Information)
+        box.exec()
 
     def check_tools_status(self):
         """Lädt den Status aus dem Cache (programs.json) und zeigt ihn sofort an."""
@@ -1874,8 +2555,133 @@ class VRApp(QMainWindow):
             except Exception as e:
                 print(f"[Autostart] Konnte '{cmd}' nicht starten: {e}")
 
+    # ------------------------------------------------------------------ #
+    #  Eigene Kill-Befehle (Settings, ganz unten)
+    # ------------------------------------------------------------------ #
+    # Konzept: Der "Apps schließen"-Button killt alle Autostart-Programme
+    # nach wie vor auf normalem Weg (SIGTERM → SIGKILL). Manche Apps
+    # überleben das aber (Electron/VRCX, AppImage-Wrapper, ...). Für solche
+    # Sonderfälle kann man hier Shell-Befehle hinterlegen, die ZUSÄTZLICH
+    # direkt VOR dem normalen Kill laufen.
+    def _killcmd_add_row(self, label_text="", cmd_text=""):
+        """Fügt eine neue Zeile ins UI ein und merkt sie in self.ui.killcmd_rows."""
+        from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QPushButton
+        row_widget = QWidget()
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(6)
+
+        input_label = QLineEdit(label_text)
+        input_label.setPlaceholderText(tr("killcmd_placeholder_lbl"))
+        input_label.setFixedWidth(180)
+        row_layout.addWidget(input_label)
+
+        input_cmd = QLineEdit(cmd_text)
+        input_cmd.setPlaceholderText(tr("killcmd_placeholder_cmd"))
+        row_layout.addWidget(input_cmd, 1)
+
+        btn_del = QPushButton("✕")
+        btn_del.setToolTip(tr("killcmd_del_tooltip"))
+        btn_del.setCursor(Qt.PointingHandCursor)
+        btn_del.setFixedWidth(30)
+        btn_del.setStyleSheet(
+            "QPushButton { background-color: #2e3440; color: #bf616a; border: 1px solid #4c566a;"
+            " font-weight: bold; padding: 4px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #bf616a; color: white; border-color: #bf616a; }")
+        row_layout.addWidget(btn_del)
+
+        row_data = {"input_label": input_label, "input_cmd": input_cmd,
+                    "btn_del": btn_del, "row_widget": row_widget}
+        btn_del.clicked.connect(lambda: self._killcmd_remove_row(row_data))
+
+        self.ui.killcmd_rows.append(row_data)
+        self.ui.killcmd_rows_container.addWidget(row_widget)
+
+    def _killcmd_remove_row(self, row_data):
+        """Entfernt eine Zeile aus UI und Liste (Speichern muss der Nutzer selbst)."""
+        try:
+            self.ui.killcmd_rows.remove(row_data)
+        except ValueError:
+            pass
+        row_data["row_widget"].setParent(None)
+        row_data["row_widget"].deleteLater()
+
+    def _killcmd_load_from_config(self):
+        """Liest gespeicherte Kill-Befehle aus der Config und baut die Zeilen."""
+        entries = load_saved_settings().get("custom_kill_commands", []) or []
+        # Alte UI-Zeilen aus einem evtl. Reload sauber entfernen (direkt, ohne
+        # den Umweg über self._killcmd_remove_row — spart Sonderfälle).
+        for row in list(self.ui.killcmd_rows):
+            row["row_widget"].setParent(None)
+            row["row_widget"].deleteLater()
+        self.ui.killcmd_rows.clear()
+        for e in entries:
+            if isinstance(e, dict):
+                self._killcmd_add_row(e.get("label", ""), e.get("cmd", ""))
+            elif isinstance(e, str):
+                # Rückwärtskompatibel: reine String-Liste ist auch okay.
+                self._killcmd_add_row("", e)
+
+    def _killcmd_save(self):
+        """Schreibt die aktuellen Zeilen in die App-Config."""
+        entries = []
+        for row in self.ui.killcmd_rows:
+            label = row["input_label"].text().strip()
+            cmd = row["input_cmd"].text().strip()
+            if not cmd:
+                continue  # leere Befehle sind kein Eintrag
+            entries.append({"label": label, "cmd": cmd})
+
+        # Direkt in die config.json schreiben, ohne save_all_settings() zu bemühen
+        # (das würde alle Dashboard-Werte mitspeichern — hier gerade nicht gewollt).
+        try:
+            data = load_saved_settings() or {}
+        except Exception:
+            data = {}
+        data["custom_kill_commands"] = entries
+        try:
+            import json as _json
+            from config_manager import CONFIG_FILE, CONFIG_DIR
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(CONFIG_FILE, "w") as f:
+                _json.dump(data, f, indent=4)
+        except Exception as e:
+            QMessageBox.warning(self, tr("killcmd_group"), f"{e}")
+            return
+
+        # Kurzes visuelles Feedback am Speichern-Button.
+        self.ui.btn_killcmd_save.setText(tr("killcmd_saved"))
+        QTimer.singleShot(1500,
+            lambda: self.ui.btn_killcmd_save.setText(tr("killcmd_save_btn")))
+
+    def _run_custom_kill_commands(self):
+        """Führt die hinterlegten Zusatz-Kill-Befehle als Shell aus (best effort)."""
+        try:
+            entries = load_saved_settings().get("custom_kill_commands", []) or []
+        except Exception:
+            entries = []
+        for e in entries:
+            cmd = e.get("cmd") if isinstance(e, dict) else (e if isinstance(e, str) else "")
+            cmd = (cmd or "").strip()
+            if not cmd:
+                continue
+            try:
+                # Als Shell starten, aber warten (die Befehle sind typisch schnelle
+                # pkill/killall/...); wenn einer hängt, nach 5s aufgeben und weiter.
+                subprocess.run(cmd, shell=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=5)
+            except subprocess.TimeoutExpired:
+                print(f"[Autostart] Zusatz-Kill-Befehl brauchte zu lange: {cmd}")
+            except Exception as e:
+                print(f"[Autostart] Zusatz-Kill-Befehl fehlgeschlagen ({cmd}): {e}")
+
     def stop_autostart_apps(self):
         """Beendet alle zuvor gestarteten Autostart-Programme (samt Kindprozessen)."""
+        # Erst zusätzliche, benutzerdefinierte Kill-Befehle laufen lassen
+        # (Sonderfälle wie VRCX/Electron, die den normalen Kill überleben).
+        # Der normale Kill unten läuft anschließend wie gewohnt weiter.
+        self._run_custom_kill_commands()
         import signal as _signal
         for p in self._autostart_procs:
             try:

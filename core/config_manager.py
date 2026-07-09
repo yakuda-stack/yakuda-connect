@@ -65,8 +65,11 @@ def save_all_settings(hand, fbt, steam, refresh, count, apps_data, streaming_dat
     }
 
     # Sonstige Keys aus der bestehenden Config NICHT verlieren
-    # (z. B. Backup-Flag, Sprache, gemerkte Installationsmethode).
-    for extra_key in ("vr_backup_created", "language", "runtime_install_method"):
+    # (z. B. Backup-Flag, Sprache, gemerkte Installationsmethode,
+    #  benutzerdefinierte Kill-Befehle, Spiele-Scan-Cache des Games-Tabs).
+    for extra_key in ("vr_backup_created", "language", "runtime_install_method",
+                      "custom_kill_commands", "detected_games",
+                      "detected_games_untested", "games_selected_proton"):
         if extra_key in current_data:
             new_settings[extra_key] = current_data[extra_key]
 

@@ -147,6 +147,25 @@ TRANSLATIONS = {
                                    "• Foveated encoding reduces encode time — 50% is a good start<br>"
                                    "• Set your GPU power profile to performance while playing"),
 
+        # Custom kill commands (Settings, at the bottom)
+        "killcmd_group":          "Custom kill commands (Autostart)",
+        "killcmd_desc":           ("The <b>Kill apps</b> button on the dashboard already terminates all "
+                                   "autostart programs the normal way (SIGTERM → SIGKILL). Some apps ignore "
+                                   "that though — Electron apps (VRCX) fork into several processes, some "
+                                   "AppImages run under a different process name, and a few tools want to be "
+                                   "closed with their own command. Add such special cases here: they run "
+                                   "in addition to the normal kill, right before it."),
+        "killcmd_col_label":      "Name / note",
+        "killcmd_col_command":    "Command (shell)",
+        "killcmd_placeholder_lbl":"e.g. VRCX",
+        "killcmd_placeholder_cmd":"e.g. pkill -f VRCX.AppImage",
+        "killcmd_add_btn":        "＋ Add",
+        "killcmd_del_tooltip":    "Remove this entry",
+        "killcmd_save_btn":       "💾 Save",
+        "killcmd_saved":          "Saved.",
+        "killcmd_warn":           ("⚠ These commands are executed as a shell — only enter commands you trust. "
+                                   "Missing entries are simply skipped."),
+
         "pkg_incomplete":         "⚠ Not fully installed",
         "tools_installing":       "Installing...",
         "tools_install_error":    "Installation error",
@@ -215,6 +234,79 @@ TRANSLATIONS = {
         "openxr_status_ok":      "Status: OK — absolute paths, ready for Steam.",
         "openxr_status_broken":  "Status: broken — fix recommended (current file has a wrong/relative path).",
         "openxr_status_missing": "Status: no custom runtime file — using system default (relative paths; may fail under Steam).",
+        "oscquery_group":         "Quick OSC Query Fix",
+        "oscquery_desc":          ("If OSC bugs occur (parameters not arriving, tools not reacting), this enables OSCQuery "
+                                   "directly in the config of every supported program — all other settings in the file stay "
+                                   "untouched. Only existing configs are changed (start the program once first)."),
+        "oscquery_fix_btn":       "🔧 Fix OSCQuery",
+        "oscquery_show_programs": "▸ Show supported programs ({n})",
+        "oscquery_hide_programs": "▾ Hide supported programs",
+        "oscquery_detail_path":   "path:     ",
+        "oscquery_detail_param":  "parameter:",
+        "oscquery_msg_fixed":      "fixed",
+        "oscquery_msg_already":    "already set",
+        "oscquery_msg_not_found":  "config not found — program not installed or never started",
+        "oscquery_msg_unreadable": "config unreadable",
+        "oscquery_msg_write_failed": "could not write config",
+        "oscquery_restart_hint":  "↻ Restart the programs to apply the change.",
+
+        # Games Tab
+        "nav_games":              "Games",
+        "games_title":            "VR Games",
+        "games_subtitle":         ("Your installed Steam VR games with recommended Proton versions and launch "
+                                   "options. Detected games are saved, so Steam is not re-scanned on every visit."),
+        "games_scan_btn":         "🔍 Scan games",
+        "games_click_hint":       "Click a game tile to expand its Proton recommendations, launch options and fixes.",
+        "games_fixes_section":    "Fixes:",
+        "games_section_tested":   "Tested VR Games",
+        "games_section_untested": "Untested VR Games (Auto-Recommendation)",
+        "games_untested_suffix":  "(untested)",
+        "games_role_alt_ge":      "Alternative (Recommended for Video/Codec fixes)",
+        "games_play_btn":         "▶ Play",
+        "games_use_btn":          "Use",
+        "games_active_badge":     "✓ Active",
+        "games_use_applied":      "Proton set for this game: {tool}",
+        "games_use_default":      "Steam default Proton set for this game.",
+        "games_tool_missing":     "This Proton version is not installed yet — install it first (e.g. via ProtonPlus).",
+        "games_steam_restart_hint": "Steam is currently running — the change takes effect after a Steam restart.",
+        "games_play_starting":    "Launch options saved — starting {name} via Steam...",
+        "games_play_failed":      "Could not launch Steam (steam not found?).",
+        "games_options_failed":   "Warning: launch options could not be written ({err}).",
+        "games_params_placeholder": "No launch options stored for this game — enter your own here if needed.",
+        "games_info_tooltip":     "How do I change the Proton version and launch options in Steam?",
+        "games_scanning":         "Scanning Steam libraries...",
+        "games_found":            "{n} supported VR game(s) detected.",
+        "games_none":             "No supported VR games found. Is Steam installed and are the games downloaded?",
+        "games_recommended":      "⭐ Recommended for you",
+        "games_recommended_cachyos": "⭐ Recommended (CachyOS)",
+        "games_role_main":        "Recommended (default)",
+        "games_role_cachyos":     "Recommended for CachyOS users",
+        "games_role_alt":         "Alternative",
+        "games_proton_section":   "Proton versions:",
+        "games_params_section":   "Launch options ({gpu} GPU detected):",
+        "games_params_section_unknown": "Launch options:",
+        "games_gpu_amd":          "AMD",
+        "games_gpu_nvidia":       "NVIDIA",
+        "games_copy_btn":         "Copy",
+        "games_copied":           "Copied!",
+        "games_pp_install_btn":   "⬇ Install via ProtonPlus",
+        "games_pp_missing":       "Install ProtonPlus (Tools tab) to install Proton versions directly from here.",
+        "games_pp_running":       "ProtonPlus is running in the terminal — pick the version listed above.",
+        "games_pp_done":          "ProtonPlus finished. Now select the version in Steam (see the i button at the top).",
+        "games_pp_steam_note":    "Comes with Steam itself (Steam → Settings → Compatibility).",
+        "games_info_title":       "Proton version & launch options in Steam",
+        "games_info_text": (
+            "<b>Change the Proton version of a game:</b><br>"
+            "1. Open Steam and right-click the game in your library<br>"
+            "2. <i>Properties…</i> → <i>Compatibility</i><br>"
+            "3. Check <i>Force the use of a specific Steam Play compatibility tool</i><br>"
+            "4. Pick the recommended version from the dropdown (e.g. installed via ProtonPlus)<br>"
+            "5. If a freshly installed version is missing from the list: restart Steam first<br><br>"
+            "<b>Set launch options:</b><br>"
+            "1. Right-click the game → <i>Properties…</i> → <i>General</i><br>"
+            "2. Paste the copied launch options into the <i>Launch Options</i> field at the bottom<br><br>"
+            "<i>Tip: the Copy buttons on each game card put the right values into your clipboard.</i>"
+        ),
         "settings_touch_title":  "Controller Thumbstick Touch Disable",
         "settings_touch_desc":   "Disables thumbstick touch detection — useful if your controller falsely registers finger contact on the thumbstick (common with worn-out Quest/Pico controllers).",
         "settings_touch_coming": "⏳  Coming soon — waiting for WiVRn/Monado to expose this in their config API.\n    Track progress: github.com/WiVRn/WiVRn/issues/868",
@@ -399,6 +491,25 @@ TRANSLATIONS = {
                                    "• Foveated Encoding senkt die Encode-Zeit — 50% ist ein guter Start<br>"
                                    "• GPU-Powerprofil beim Spielen auf Performance stellen"),
 
+        # Eigene Kill-Befehle (Settings, ganz unten)
+        "killcmd_group":          "Eigene Kill-Befehle (Autostart)",
+        "killcmd_desc":           ("Der <b>Apps schließen</b>-Button im Dashboard beendet die Autostart-Programme "
+                                   "bereits auf normalem Weg (SIGTERM → SIGKILL). Manche Apps ignorieren das "
+                                   "aber — Electron-Apps (VRCX) forken sich in mehrere Prozesse, manche "
+                                   "AppImages laufen unter anderem Prozessnamen, und einzelne Tools wollen mit "
+                                   "einem eigenen Befehl geschlossen werden. Solche Sonderfälle kommen hier "
+                                   "rein: sie laufen zusätzlich zum normalen Kill, direkt davor."),
+        "killcmd_col_label":      "Name / Notiz",
+        "killcmd_col_command":    "Befehl (Shell)",
+        "killcmd_placeholder_lbl":"z. B. VRCX",
+        "killcmd_placeholder_cmd":"z. B. pkill -f VRCX.AppImage",
+        "killcmd_add_btn":        "＋ Hinzufügen",
+        "killcmd_del_tooltip":    "Diesen Eintrag entfernen",
+        "killcmd_save_btn":       "💾 Speichern",
+        "killcmd_saved":          "Gespeichert.",
+        "killcmd_warn":           ("⚠ Die Befehle werden als Shell ausgeführt — nur eingeben, was du dir "
+                                   "vertraust. Leere Einträge werden einfach übersprungen."),
+
         "pkg_incomplete":         "⚠ Nicht vollständig im System",
         "tools_installing":       "Wird installiert...",
         "tools_install_error":    "Fehler bei Installation",
@@ -467,6 +578,81 @@ TRANSLATIONS = {
         "openxr_status_ok":      "Status: OK — absolute Pfade, bereit für Steam.",
         "openxr_status_broken":  "Status: defekt — Reparatur empfohlen (aktuelle Datei hat einen falschen/relativen Pfad).",
         "openxr_status_missing": "Status: keine eigene Runtime-Datei — System-Standard aktiv (relative Pfade; kann unter Steam scheitern).",
+        "oscquery_group":         "Quick OSC Query Fix",
+        "oscquery_desc":          ("Falls OSC-Bugs auftreten (Parameter kommen nicht an, Tools reagieren nicht), aktiviert das "
+                                   "OSCQuery direkt in der Config jedes unterstützten Programms — alle anderen Einstellungen "
+                                   "der Datei bleiben erhalten. Es werden nur vorhandene Configs geändert (Programm vorher "
+                                   "einmal starten)."),
+        "oscquery_fix_btn":       "🔧 OSCQuery fixen",
+        "oscquery_show_programs": "▸ Unterstützte Programme anzeigen ({n})",
+        "oscquery_hide_programs": "▾ Unterstützte Programme ausblenden",
+        "oscquery_detail_path":   "Pfad:     ",
+        "oscquery_detail_param":  "Parameter:",
+        "oscquery_msg_fixed":      "repariert",
+        "oscquery_msg_already":    "war bereits gesetzt",
+        "oscquery_msg_not_found":  "Config nicht gefunden — Programm nicht installiert oder nie gestartet",
+        "oscquery_msg_unreadable": "Config nicht lesbar",
+        "oscquery_msg_write_failed": "Config konnte nicht geschrieben werden",
+        "oscquery_restart_hint":  "↻ Programme neu starten, damit die Änderung wirkt.",
+
+        # Games Tab
+        "nav_games":              "Games",
+        "games_title":            "VR-Spiele",
+        "games_subtitle":         ("Deine installierten Steam-VR-Spiele mit empfohlenen Proton-Versionen und "
+                                   "Startparametern. Erkannte Spiele werden gespeichert — Steam wird nicht bei "
+                                   "jedem Besuch neu gescannt."),
+        "games_scan_btn":         "🔍 Spiele scannen",
+        "games_click_hint":       "Klicke auf eine Spiel-Kachel, um Proton-Empfehlungen, Startparameter und Fixes auszuklappen.",
+        "games_fixes_section":    "Fixes:",
+        "games_section_tested":   "Getestete VR-Spiele",
+        "games_section_untested": "Ungetestete VR-Spiele (Automatische Empfehlung)",
+        "games_untested_suffix":  "(ungetestet)",
+        "games_role_alt_ge":      "Alternative (Empfohlen bei Video-/Codec-Problemen)",
+        "games_play_btn":         "▶ Spielen",
+        "games_use_btn":          "Verwenden",
+        "games_active_badge":     "✓ Aktiv",
+        "games_use_applied":      "Proton für dieses Spiel gesetzt: {tool}",
+        "games_use_default":      "Steam-Standard-Proton für dieses Spiel gesetzt.",
+        "games_tool_missing":     "Diese Proton-Version ist noch nicht installiert — bitte zuerst installieren (z. B. über ProtonPlus).",
+        "games_steam_restart_hint": "Steam läuft gerade — die Änderung greift erst nach einem Steam-Neustart.",
+        "games_play_starting":    "Startparameter gespeichert — starte {name} über Steam...",
+        "games_play_failed":      "Steam konnte nicht gestartet werden (steam nicht gefunden?).",
+        "games_options_failed":   "Achtung: Startparameter konnten nicht geschrieben werden ({err}).",
+        "games_params_placeholder": "Für dieses Spiel sind keine Startparameter hinterlegt — bei Bedarf hier eigene eintragen.",
+        "games_info_tooltip":     "Wie ändere ich Proton-Version und Startparameter in Steam?",
+        "games_scanning":         "Scanne Steam-Bibliotheken...",
+        "games_found":            "{n} unterstützte(s) VR-Spiel(e) erkannt.",
+        "games_none":             "Keine unterstützten VR-Spiele gefunden. Ist Steam installiert und sind die Spiele heruntergeladen?",
+        "games_recommended":      "⭐ Für dich empfohlen",
+        "games_recommended_cachyos": "⭐ Empfohlen (CachyOS)",
+        "games_role_main":        "Empfehlung (Standard)",
+        "games_role_cachyos":     "Empfehlung für CachyOS-Nutzer",
+        "games_role_alt":         "Alternative",
+        "games_proton_section":   "Proton-Versionen:",
+        "games_params_section":   "Startparameter ({gpu}-GPU erkannt):",
+        "games_params_section_unknown": "Startparameter:",
+        "games_gpu_amd":          "AMD",
+        "games_gpu_nvidia":       "NVIDIA",
+        "games_copy_btn":         "Kopieren",
+        "games_copied":           "Kopiert!",
+        "games_pp_install_btn":   "⬇ Über ProtonPlus installieren",
+        "games_pp_missing":       "Installiere ProtonPlus (Tools-Tab), um Proton-Versionen direkt von hier zu installieren.",
+        "games_pp_running":       "ProtonPlus läuft im Terminal — wähle dort die oben genannte Version aus.",
+        "games_pp_done":          "ProtonPlus fertig. Wähle die Version jetzt in Steam aus (siehe i-Knopf oben).",
+        "games_pp_steam_note":    "Kommt direkt mit Steam (Steam → Einstellungen → Kompatibilität).",
+        "games_info_title":       "Proton-Version & Startparameter in Steam",
+        "games_info_text": (
+            "<b>Proton-Version eines Spiels ändern:</b><br>"
+            "1. Steam öffnen und in der Bibliothek mit Rechtsklick auf das Spiel klicken<br>"
+            "2. <i>Eigenschaften…</i> → <i>Kompatibilität</i><br>"
+            "3. Haken bei <i>Verwendung eines bestimmten Steam Play-Kompatibilitätstools erzwingen</i> setzen<br>"
+            "4. Im Dropdown die empfohlene Version auswählen (z. B. über ProtonPlus installiert)<br>"
+            "5. Fehlt eine frisch installierte Version in der Liste: Steam vorher neu starten<br><br>"
+            "<b>Startparameter eintragen:</b><br>"
+            "1. Rechtsklick auf das Spiel → <i>Eigenschaften…</i> → <i>Allgemein</i><br>"
+            "2. Die kopierten Startparameter unten in das Feld <i>Startoptionen</i> einfügen<br><br>"
+            "<i>Tipp: Die Kopieren-Knöpfe auf jeder Spiel-Karte legen dir die richtigen Werte in die Zwischenablage.</i>"
+        ),
         "settings_touch_title":  "Controller-Thumbstick-Touch deaktivieren",
         "settings_touch_desc":   "Deaktiviert die Touch-Erkennung des Thumbsticks — nützlich, wenn dein Controller fälschlicherweise Fingerkontakt am Thumbstick meldet (häufig bei abgenutzten Quest/Pico-Controllern).",
         "settings_touch_coming": "⏳  Demnächst — wartet darauf, dass WiVRn/Monado dies in der Config-API verfügbar macht.\n    Fortschritt verfolgen: github.com/WiVRn/WiVRn/issues/868",

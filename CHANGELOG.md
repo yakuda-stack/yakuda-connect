@@ -1,5 +1,41 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.0.9-alpha
+
+#### 🇬🇧 English
+* **Added** | New **Games** tab: scans all your Steam libraries (native, Flatpak and extra library folders) and shows every detected VR game as a compact cover tile — using the vertical artwork straight from your local Steam cache, no downloads needed. Results are saved to the config, so Steam is only re-scanned when you hit the "Scan games" button (the first visit scans automatically).
+* **Added** | Two sections in the Games tab: **Tested VR Games** with curated profiles (Proton recommendations, launch options and game-specific fixes — starting with VRChat) and **Untested VR Games (auto-recommendation)** for everything else. VR games are detected fully offline via their OpenVR/OpenXR loader files in the install folder.
+* **Added** | Clicking a tile expands an **inline detail panel** right under its row — it sticks to the game instead of jumping to the bottom of the list, and only one game is open at a time (accordion).
+* **Added** | **▶ Play** button next to the game name: writes the current launch options into Steam (`localconfig.vdf`) and starts the game via `steam -applaunch` — with Flatpak-Steam and `steam://` fallbacks.
+* **Added** | **Use** button on every Proton entry: sets that version as the active one for the game by writing Steam's `CompatToolMapping` (the same mechanism ProtonPlus uses), remembers your choice in the config and marks it with a green "✓ Active" badge. Every VDF write creates a timestamped backup first, and the app warns you when Steam is running (changes apply after a Steam restart).
+* **Added** | Automatic Proton recommendations for untested games: on CachyOS you get ⭐ `proton-cachyos`, on standard distros Steam's default Proton — plus **Proton-GE** as a universal alternative whenever in-game videos or audio codecs act up. "Proton-GE" and "proton-cachyos" resolve automatically to the newest installed build in `compatibilitytools.d`.
+* **Added** | **ProtonPlus integration**: recommended Proton builds (GE / RTSP / CachyOS) can be installed straight from the game panel — a terminal opens with the interactive ProtonPlus CLI (works with native and Flatpak ProtonPlus).
+* **Added** | GPU-aware launch options: the app detects AMD vs. NVIDIA and shows the matching parameters with a copy button; untested games get an empty, editable field for your own options.
+* **Added** | Small **(i)** button in the Games tab with a step-by-step guide on forcing a Proton version and entering launch options in Steam.
+* **Added** | **Quick OSC Query Fix** in Settings: enables OSCQuery in the configs of supported OSC tools (OSC Leash, OscGoesBrrr) with one click — existing settings stay untouched, and the supported-programs list is expandable with per-tool details.
+* **Changed** | The **headset APK installer** moved from Settings to the **Installation** tab, where it belongs in the setup flow.
+* **Changed** | The **VRChat Picture Folder Fix** moved from Settings into the expanded VRChat panel in the Games tab; the now-empty "General" settings box was removed.
+* **Changed** | On CachyOS, plain Valve Proton is hidden for VRChat — `proton-cachyos` and `proton-rtsp` are all you need there.
+* **Fixed** | Saving settings no longer wipes the new config keys (game scan cache, per-game Proton selection) — the config whitelist was extended accordingly.
+
+#### 🇩🇪 Deutsch
+* **Neu** | Neuer **Games**-Tab: scannt alle Steam-Bibliotheken (nativ, Flatpak und zusätzliche Bibliotheksordner) und zeigt jedes erkannte VR-Spiel als kompakte Cover-Kachel — mit dem vertikalen Artwork direkt aus deinem lokalen Steam-Cache, ganz ohne Downloads. Die Ergebnisse werden in der Config gespeichert, Steam wird also nur beim Klick auf „Spiele scannen" neu durchsucht (der erste Besuch scannt automatisch).
+* **Neu** | Zwei Sektionen im Games-Tab: **Getestete VR-Spiele** mit kuratierten Profilen (Proton-Empfehlungen, Startparameter und spielspezifische Fixes — den Anfang macht VRChat) und **Ungetestete VR-Spiele (Automatische Empfehlung)** für alles andere. VR-Spiele werden komplett offline über ihre OpenVR-/OpenXR-Loader-Dateien im Installationsordner erkannt.
+* **Neu** | Klick auf eine Kachel klappt ein **Inline-Detail-Panel** direkt unter ihrer Reihe auf — es klebt am Spiel, statt ans Listenende zu springen, und es ist immer nur ein Spiel gleichzeitig offen (Akkordeon).
+* **Neu** | **▶ Spielen**-Knopf direkt neben dem Spielnamen: schreibt die aktuellen Startparameter in Steam (`localconfig.vdf`) und startet das Spiel per `steam -applaunch` — mit Flatpak-Steam- und `steam://`-Fallbacks.
+* **Neu** | **Verwenden**-Knopf an jeder Proton-Version: setzt sie als aktive Version für das Spiel, indem Steams `CompatToolMapping` geschrieben wird (derselbe Mechanismus wie bei ProtonPlus), merkt sich die Wahl in der Config und markiert sie mit grünem „✓ Aktiv"-Badge. Vor jedem VDF-Schreiben wird ein Zeitstempel-Backup angelegt, und die App warnt, wenn Steam gerade läuft (Änderungen greifen nach einem Steam-Neustart).
+* **Neu** | Automatische Proton-Empfehlungen für ungetestete Spiele: Auf CachyOS gibt's ⭐ `proton-cachyos`, auf Standard-Distros Steams Standard-Proton — plus **Proton-GE** als universelle Alternative, falls In-Game-Videos oder Audio-Codecs zicken. „Proton-GE" und „proton-cachyos" lösen automatisch auf die neueste installierte Version in `compatibilitytools.d` auf.
+* **Neu** | **ProtonPlus-Integration**: Empfohlene Proton-Versionen (GE / RTSP / CachyOS) lassen sich direkt aus dem Spiel-Panel installieren — es öffnet sich ein Terminal mit der interaktiven ProtonPlus-CLI (funktioniert mit nativem und Flatpak-ProtonPlus).
+* **Neu** | GPU-bewusste Startparameter: Die App erkennt AMD vs. NVIDIA und zeigt die passenden Parameter mit Kopieren-Knopf; ungetestete Spiele bekommen ein leeres, editierbares Feld für eigene Optionen.
+* **Neu** | Kleiner **(i)**-Knopf im Games-Tab mit Schritt-für-Schritt-Anleitung, wie man in Steam eine Proton-Version erzwingt und Startparameter einträgt.
+* **Neu** | **Quick OSC Query Fix** in den Settings: aktiviert OSCQuery in den Configs der unterstützten OSC-Tools (OSC Leash, OscGoesBrrr) mit einem Klick — bestehende Einstellungen bleiben erhalten, und die Liste der unterstützten Programme ist mit Details pro Tool ausklappbar.
+* **Geändert** | Der **Headset-APK-Installer** ist von den Settings in den **Installation**-Tab umgezogen, wo er im Einrichtungsablauf hingehört.
+* **Geändert** | Der **VRChat Picture Folder Fix** ist von den Settings in das ausgeklappte VRChat-Panel im Games-Tab umgezogen; die dadurch leere „General"-Box in den Settings wurde entfernt.
+* **Geändert** | Auf CachyOS wird das normale Valve-Proton für VRChat ausgeblendet — dort reichen `proton-cachyos` und `proton-rtsp` völlig.
+* **Behoben** | Beim Speichern der Einstellungen gehen die neuen Config-Werte (Spiele-Scan-Cache, Proton-Auswahl pro Spiel) nicht mehr verloren — die Config-Whitelist wurde entsprechend erweitert.
+
+---
+
 ### 🚀 v1.0.8-alpha
 
 #### 🇬🇧 English
