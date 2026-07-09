@@ -69,7 +69,8 @@ def save_all_settings(hand, fbt, steam, refresh, count, apps_data, streaming_dat
     #  benutzerdefinierte Kill-Befehle, Spiele-Scan-Cache des Games-Tabs).
     for extra_key in ("vr_backup_created", "language", "runtime_install_method",
                       "custom_kill_commands", "detected_games",
-                      "detected_games_untested", "games_selected_proton"):
+                      "detected_games_untested", "games_selected_proton",
+                      "games_launch_toggles"):
         if extra_key in current_data:
             new_settings[extra_key] = current_data[extra_key]
 

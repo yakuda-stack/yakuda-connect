@@ -45,58 +45,158 @@ APP_CONFIG = os.path.join(HOME, ".config/yakuda-connect/config/config.json")
 PROTONPLUS_FLATPAK_ID = "com.vysp3r.ProtonPlus"
 
 # --------------------------------------------------------------------------- #
+#  Bausteine für die Spieldatenbank
+# --------------------------------------------------------------------------- #
+#  NEUES SPIEL HINZUFÜGEN — Kurzanleitung
+#  --------------------------------------
+#  In GAMES einen Eintrag ergänzen: Schlüssel ist die Steam-AppID (String),
+#  Wert ist ein game(...)-Aufruf. Der Nutzer sieht immer nur den Namen.
+#
+#    "1234567": game("Mein VR-Spiel", protons_valve_main()),
+#
+#  Mehr Möglichkeiten:
+#
+#    "1234567": game(
+#        "Mein VR-Spiel",
+#        protons_ge_main(),                      # GE statt Valve als Empfehlung
+#        launch_params=all_gpus("gamemoderun %command%"),   # gleiche Parameter
+#        # launch_params={"amd": "...", "nvidia": "..."},   # oder je GPU
+#        fixes=["vrchat_pictures"],              # spielspezifische Fix-Buttons
+#    ),
+#
+#  Braucht ein Spiel eigene Proton-Versionen/Texte (wie VRChat), baust du die
+#  Liste mit proton(...) selbst:
+#
+#    protons=[
+#        proton(P_GE, "main", de="...", en="..."),
+#        proton(P_CACHYOS, "main_cachyos", de="...", en="..."),
+#        proton(P_VALVE, "alternative", de="...", en="...", hide_on_cachyos=True),
+#    ]
+#
+#  Rollen:  "main"         -> Empfehlung auf Standard-Distros
+#           "main_cachyos" -> Empfehlung auf CachyOS
+#           "alternative"  -> alles Weitere
+#  hide_on_cachyos=True blendet den Eintrag auf CachyOS komplett aus.
+
+# Bekannte Proton-Quellen: (version, protonplus_runner)
+# runner None = bringt Steam selbst mit; sonst der Runner der ProtonPlus-CLI.
+P_VALVE   = ("Proton 11 (Standard)",  None)
+P_CACHYOS = ("proton-cachyos-11.x",   "proton-cachyos")
+P_GE      = ("Proton-GE",             "proton-ge")
+P_RTSP    = ("Proton-GE RTSP",        "proton-ge-rtsp")   # GE mit RTSP-Codecs (VRChat)
+
+
+def proton(source, role, de="", en="", hide_on_cachyos=False, version=None):
+    """
+    Ein Proton-Eintrag für die "protons"-Liste eines Spiels.
+      source          : eine der P_*-Konstanten (version, runner)
+      role            : "main" | "main_cachyos" | "alternative"
+      de / en         : Beschreibung, die im Panel unter der Version steht
+      hide_on_cachyos : Eintrag auf CachyOS ausblenden
+      version         : überschreibt den Versionsnamen (für angepinnte Builds)
+    """
+    ver, runner = source
+    entry = {
+        "version": version or ver,
+        "role": role,
+        "protonplus_runner": runner,
+        "desc": {"de": de, "en": en},
+    }
+    if hide_on_cachyos:
+        entry["hide_on_cachyos"] = True
+    return entry
+
+
+def game(name, protons, launch_params=None, fixes=None):
+    """Ein Eintrag für die GAMES-Tabelle."""
+    return {
+        "name": name,
+        "protons": protons,
+        "launch_params": launch_params or {},
+        "fixes": fixes or [],
+    }
+
+
+def all_gpus(params):
+    """Dieselben Startparameter für AMD und NVIDIA."""
+    return {"amd": params, "nvidia": params}
+
+
+# --------------------------------------------------------------------------- #
+#  Fertige Proton-Sets (decken die meisten Spiele ab)
+# --------------------------------------------------------------------------- #
+# Unterschied ist nur, WELCHE Version auf Standard-Distros die Empfehlung ist.
+# Auf CachyOS ist es in beiden Fällen proton-cachyos. Die Funktionen liefern
+# jedes Mal frische Dicts, damit sich die Spiele keine Objekte teilen.
+
+_D_REC_DE = "Getestete Empfehlung für dieses Spiel."
+_D_REC_EN = "Tested recommendation for this game."
+_D_CACHY_DE = "Getestete Empfehlung für CachyOS-Nutzer (beste Performance/Latenz)."
+_D_CACHY_EN = "Tested recommendation for CachyOS users (best performance/latency)."
+_D_ALT_GE_DE = ("Alternative — empfohlen, falls es zu Problemen mit In-Game-Videos "
+                "oder Audio-Codecs kommt (GE bringt zusätzliche Media-Codecs mit).")
+_D_ALT_GE_EN = ("Alternative — recommended if you run into problems with in-game "
+                "videos or audio codecs (GE ships extra media codecs).")
+_D_ALT_VALVE_DE = "Alternative — Steams normales Proton, falls Proton-GE Probleme macht."
+_D_ALT_VALVE_EN = "Alternative — Steam's default Proton, in case Proton-GE causes trouble."
+
+
+def protons_valve_main():
+    """Proton 11 (Standard) = Empfehlung, CachyOS-Proton auf CachyOS, GE = Alternative."""
+    return [
+        proton(P_VALVE,   "main",         de=_D_REC_DE,     en=_D_REC_EN),
+        proton(P_CACHYOS, "main_cachyos", de=_D_CACHY_DE,   en=_D_CACHY_EN),
+        proton(P_GE,      "alternative",  de=_D_ALT_GE_DE,  en=_D_ALT_GE_EN),
+    ]
+
+
+def protons_ge_main():
+    """Proton-GE = Empfehlung, CachyOS-Proton auf CachyOS, Valve-Proton = Alternative."""
+    return [
+        proton(P_GE,      "main",         de=_D_REC_DE,        en=_D_REC_EN),
+        proton(P_CACHYOS, "main_cachyos", de=_D_CACHY_DE,      en=_D_CACHY_EN),
+        proton(P_VALVE,   "alternative",  de=_D_ALT_VALVE_DE,  en=_D_ALT_VALVE_EN),
+    ]
+
+
+# --------------------------------------------------------------------------- #
 #  Spieldatenbank (Schlüssel = Steam-AppID als String)
 # --------------------------------------------------------------------------- #
 GAMES = {
-    "438100": {
-        "name": "VRChat",
-        # Spiel-spezifische Fixes, die im ausgeklappten Bereich der Kachel
-        # als Buttons angeboten werden (Umzug aus Settings -> "General").
-        "fixes": ["vrchat_pictures"],
-        "launch_params": {
-            "amd":    "gamemoderun %command% --enable-avpro-in-prose --enable-hardware-decoding --fps=90 --disable-amd-stutter-workaround",
-            "nvidia": "gamemoderun %command% --enable-avpro-in-prose --enable-hardware-decoding --fps=90 --disable-amd-stutter-workaround",
-        },
-        "protons": [
-            {
-                "version": "proton-rtsp-11.0-20260609-1",
-                "role": "main",
-                "protonplus_runner": "proton-ge-rtsp",
-                "desc": {
-                    "de": ("Alle Videoplayer funktionieren, aber Social-Liste und Invites "
-                           "sowie die Performance sind ein bisschen schlechter."),
-                    "en": ("All video players work, but the social list and invites "
-                           "as well as performance are slightly worse."),
-                },
-            },
-            {
-                "version": "proton-cachyos-11.0-20260602",
-                "role": "main_cachyos",
-                "protonplus_runner": "proton-cachyos",
-                "desc": {
-                    "de": ("Alle Videoplayer funktionieren außer dem alten Unity-Player. "
-                           "Maximale Performance/Latenz, Social-Liste und Invites funktionieren."),
-                    "en": ("All video players work except the old Unity player. "
-                           "Maximum performance/latency, social list and invites work."),
-                },
-            },
-            {
-                "version": "proton-11.0-1",
-                "role": "alternative",
-                "protonplus_runner": None,   # Valves offizielles Proton — kommt aus Steam selbst
-                # Auf CachyOS überflüssig (bricht dort nur die Videoplayer):
-                # proton-cachyos + proton-rtsp reichen völlig -> ausblenden.
-                "hide_on_cachyos": True,
-                "desc": {
-                    "de": "Maximale Performance, aber keine Videoplayer funktionieren.",
-                    "en": "Maximum performance, but no video players work.",
-                },
-            },
+    # VRChat pinnt bewusst konkrete Builds und hat eigene Beschreibungen.
+    "438100": game(
+        "VRChat",
+        protons=[
+            proton(P_RTSP, "main", version="proton-rtsp-11.0-20260609-1",
+                   de=("Alle Videoplayer funktionieren, aber Social-Liste und Invites "
+                       "sowie die Performance sind ein bisschen schlechter."),
+                   en=("All video players work, but the social list and invites "
+                       "as well as performance are slightly worse.")),
+            proton(P_CACHYOS, "main_cachyos", version="proton-cachyos-11.0-20260602",
+                   de=("Alle Videoplayer funktionieren außer dem alten Unity-Player. "
+                       "Maximale Performance/Latenz, Social-Liste und Invites funktionieren."),
+                   en=("All video players work except the old Unity player. "
+                       "Maximum performance/latency, social list and invites work.")),
+            # Auf CachyOS überflüssig (bricht dort nur die Videoplayer):
+            # proton-cachyos + proton-rtsp reichen völlig -> ausblenden.
+            proton(P_VALVE, "alternative", version="proton-11.0-1", hide_on_cachyos=True,
+                   de="Maximale Performance, aber keine Videoplayer funktionieren.",
+                   en="Maximum performance, but no video players work."),
         ],
-    },
+        launch_params=all_gpus(
+            "gamemoderun %command% --enable-avpro-in-prose "
+            "--enable-hardware-decoding --fps=90 --disable-amd-stutter-workaround"),
+        fixes=["vrchat_pictures"],
+    ),
+
+    "1540210": game("Arizona Sunshine 2",         protons_valve_main()),
+    "2897700": game("Arizona Sunshine Remake",    protons_valve_main()),
+    "2669410": game("Metro Awakening",            protons_ge_main()),
+    "2800080": game("Thief VR: Legacy of Shadow", protons_valve_main()),
+    "620980":  game("Beat Saber",                 protons_valve_main()),
+
     # Weitere VR-Spiele hier ergänzen ...
 }
-
 
 # --------------------------------------------------------------------------- #
 #  Steam-Bibliotheken finden + installierte Spiele scannen
@@ -784,3 +884,109 @@ def save_selected_proton(appid, version):
             json.dump(data, f, indent=4)
     except Exception as e:
         print(f"[Games] Konnte Proton-Auswahl nicht speichern: {e}")
+
+
+# --------------------------------------------------------------------------- #
+#  Startparameter-Toggles (+ eigene Parameter)
+# --------------------------------------------------------------------------- #
+# Optionale Zusatz-Parameter, die im Spiel-Panel per Schalter zugeschaltet
+# werden. Entscheidend ist die POSITION relativ zu %command%:
+#
+#   position "before" -> Wrapper, der Steam's Befehl umschließt und deshalb
+#                        VOR %command% stehen muss (z. B. mullvad-exclude,
+#                        genau wie gamemoderun).
+#   position "after"  -> Argument, das an das SPIEL geht und deshalb HINTER
+#                        %command% stehen muss (z. B. --force-openxr).
+#
+# Ein neuer Schalter braucht nur einen weiteren Eintrag hier — Panel,
+# Zusammenbau und Speicherung ziehen automatisch nach. Die Beschriftungen
+# kommen über tr("games_toggle_<key>") aus translations.py.
+LAUNCH_TOGGLES = [
+    {
+        "key": "force_openxr",
+        "arg": "--force-openxr",
+        "position": "after",
+    },
+    {
+        "key": "mullvad_exclude",
+        "arg": "mullvad-exclude",
+        "position": "before",
+    },
+]
+
+COMMAND_TOKEN = "%command%"
+
+
+def _split_command(text):
+    """Zerlegt einen Parameter-String in (Teile vor %command%, Teile danach).
+    Fehlt %command%, gilt alles als Argument HINTER dem Befehl."""
+    prefix, sep, suffix = (text or "").partition(COMMAND_TOKEN)
+    if not sep:
+        return [], (text or "").split()
+    return prefix.split(), suffix.split()
+
+
+def compose_launch_options(base, enabled_keys, custom=""):
+    """
+    Baut den finalen Steam-Startparameter-String aus:
+      base         : hinterlegte Parameter des Spiels (z. B. VRChat) oder ""
+      enabled_keys : Menge/Liste der aktiven Toggle-Keys
+      custom       : eigene Zusatz-Parameter des Nutzers
+
+    Wrapper landen vor %command%, Spiel-Argumente dahinter — egal in welcher
+    Reihenfolge sie zugeschaltet werden. Doppelte Parameter werden vermieden.
+    Enthält 'custom' selbst ein %command%, wird es korrekt auf beide Seiten
+    aufgeteilt (so lassen sich auch eigene Wrapper wie 'mangohud' setzen).
+    """
+    enabled = set(enabled_keys or ())
+    prefix, suffix = _split_command(base)
+
+    for t in LAUNCH_TOGGLES:
+        if t["key"] not in enabled:
+            continue
+        target = prefix if t["position"] == "before" else suffix
+        if t["arg"] not in target:
+            target.append(t["arg"])
+
+    custom = (custom or "").strip()
+    if custom:
+        c_prefix, c_suffix = _split_command(custom)
+        for p in c_prefix:
+            if p not in prefix:
+                prefix.append(p)
+        for s in c_suffix:
+            if s not in suffix:
+                suffix.append(s)
+
+    return " ".join(prefix + [COMMAND_TOKEN] + suffix)
+
+
+def load_launch_toggles(appid):
+    """
+    Gemerkte Einstellung eines Spiels.
+    Rückgabe: (aktive_toggle_keys: list, custom: str)
+    """
+    data = _load_app_config().get("games_launch_toggles", {})
+    entry = data.get(str(appid), {}) if isinstance(data, dict) else {}
+    if not isinstance(entry, dict):
+        return [], ""
+    keys = [k for k in entry.get("toggles", [])
+            if any(t["key"] == k for t in LAUNCH_TOGGLES)]
+    return keys, entry.get("custom", "") or ""
+
+
+def save_launch_toggles(appid, enabled_keys, custom):
+    """Merkt Toggles + eigene Parameter eines Spiels dauerhaft in der Config."""
+    try:
+        data = _load_app_config()
+        all_t = data.get("games_launch_toggles", {})
+        if not isinstance(all_t, dict):
+            all_t = {}
+        all_t[str(appid)] = {"toggles": list(enabled_keys),
+                             "custom": (custom or "").strip()}
+        data["games_launch_toggles"] = all_t
+        os.makedirs(os.path.dirname(APP_CONFIG), exist_ok=True)
+        with open(APP_CONFIG, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"[Games] Konnte Startparameter-Toggles nicht speichern: {e}")

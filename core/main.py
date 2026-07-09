@@ -7,9 +7,11 @@ import os
 import json
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QMessageBox,
                                QHBoxLayout, QVBoxLayout, QComboBox, QLineEdit,
-                               QPushButton, QFileDialog, QFrame, QWidget)
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QPixmap
+                               QPushButton, QFileDialog, QFrame, QWidget,
+                               QCheckBox)
+from PySide6.QtCore import Qt, QTimer, QUrl, QSize, QPointF
+from PySide6.QtGui import (QDesktopServices, QPixmap, QIcon, QPainter,
+                           QPolygonF, QColor)
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
@@ -155,6 +157,33 @@ class ApkWorker(QThread):
             self.finished_signal.emit(False)
 
 
+def make_play_icon(size=14, color="#21252b"):
+    """
+    Zeichnet ein gefülltes Play-Dreieck als Icon.
+
+    Bewusst selbst gezeichnet statt des Unicode-Zeichens "▶": Das Zeichen
+    fehlt in manchen System-Schriften oder wird als Kästchen/hauchdünner
+    Pfeil gerendert. Ein gemaltes Dreieck sieht auf jeder Distro identisch
+    und klar nach "Play" aus.
+    """
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setBrush(QColor(color))
+    p.setPen(Qt.NoPen)
+    # Leicht eingerückt, damit das Dreieck optisch mittig sitzt
+    inset = size * 0.14
+    tri = QPolygonF([
+        QPointF(inset * 1.6, inset),               # oben links
+        QPointF(size - inset, size / 2.0),         # Spitze rechts (Mitte)
+        QPointF(inset * 1.6, size - inset),        # unten links
+    ])
+    p.drawPolygon(tri)
+    p.end()
+    return QIcon(pm)
+
+
 class ClickableFrame(QFrame):
     """QFrame, das wie ein großer Button funktioniert (für die Spiel-Kacheln)."""
     clicked = QtSignal()
@@ -229,7 +258,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.0.9-alpha"
+        self.APP_VERSION = "v1.1.0"
         self.server_process = None
         self.pairing_process = None
         self._overlay_worker = None
@@ -241,8 +270,11 @@ class VRApp(QMainWindow):
         self._games_untested_names = {}      # appid -> Anzeigename (ungetestete Spiele)
         self._games_tile_pos = {}            # appid -> (grid, zeile, spalte) fürs Inline-Panel
         self._games_detail_widget = None     # aktuell ausgeklapptes Inline-Panel
-        self._detail_params_edit = None      # Parameterfeld des offenen Panels (für "Play")
+        self._detail_params_edit = None      # Feld mit den FINALEN Parametern (für "Play")
         self._detail_status_lbl = None       # Statuszeile des offenen Panels
+        self._detail_toggles = {}            # toggle_key -> QCheckBox des offenen Panels
+        self._detail_custom_edit = None      # Feld für eigene Parameter
+        self._detail_base_params = ""        # hinterlegte Basis-Parameter des Spiels
         self._selected_proton = games_db.load_selected_protons()  # appid -> per "Use" gewählte Version
 
         # Gemerkter Server-Zustand — die Anzeige liest nur noch diese Variable,
@@ -781,6 +813,9 @@ class VRApp(QMainWindow):
         self._games_detail_widget = None
         self._detail_params_edit = None
         self._detail_status_lbl = None
+        self._detail_toggles = {}
+        self._detail_custom_edit = None
+        self._detail_base_params = ""
         self._expanded_appid = None
         self._selected_proton = games_db.load_selected_protons()
 
@@ -872,16 +907,56 @@ class VRApp(QMainWindow):
             lbl_cover.setFixedSize(self.GAMES_COVER_W, self.GAMES_COVER_H)
         box.addWidget(lbl_cover, alignment=Qt.AlignHCenter)
 
+        # Fußzeile der Kachel: [▶ Starten]  ...  [▾ aufklappen]
+        # Der ▶-Knopf startet das Spiel SOFORT (gemerkte Proton-Version +
+        # gespeicherte Startparameter), ohne dass man aufklappen muss.
+        # Der Klick bleibt am Knopf hängen und klappt die Kachel NICHT auf.
+        foot = QHBoxLayout()
+        foot.setContentsMargins(0, 0, 0, 0)
+        foot.setSpacing(4)
+
+        # Grün gefüllter Knopf mit gemaltem Dreieck -> unmissverständlich "Play"
+        btn_tile_play = QPushButton()
+        btn_tile_play.setObjectName("tilePlay")
+        btn_tile_play.setCursor(Qt.PointingHandCursor)
+        btn_tile_play.setFixedSize(34, 24)
+        btn_tile_play.setIcon(make_play_icon(13, "#21252b"))
+        btn_tile_play.setIconSize(QSize(13, 13))
+        btn_tile_play.setToolTip(self._tile_play_tooltip(appid, name))
+        btn_tile_play.setStyleSheet("""
+            QPushButton#tilePlay { background-color: #a3be8c; border: none; border-radius: 4px; }
+            QPushButton#tilePlay:hover { background-color: #b8d19f; }
+            QPushButton#tilePlay:pressed { background-color: #8fae76; }
+        """)
+        btn_tile_play.clicked.connect(lambda _, a=appid: self._play_game_from_tile(a))
+        foot.addWidget(btn_tile_play)
+        foot.addStretch()
+
         # Kleiner Pfeil: zeigt an, dass die Kachel aufklappbar ist
         lbl_arrow = QLabel("▾")
-        lbl_arrow.setAlignment(Qt.AlignHCenter)
         lbl_arrow.setStyleSheet(
             "color: #7b88a1; font-size: 12px; background: transparent; border: none;")
-        box.addWidget(lbl_arrow)
-        tile._arrow = lbl_arrow  # zum Umschalten ▾/▴
+        foot.addWidget(lbl_arrow)
+        foot.addStretch()
+        # Platzhalter, damit der Pfeil trotz ▶-Knopf mittig bleibt
+        spacer = QLabel("")
+        spacer.setFixedSize(34, 24)
+        spacer.setStyleSheet("background: transparent; border: none;")
+        foot.addWidget(spacer)
+
+        box.addLayout(foot)
+        tile._arrow = lbl_arrow      # zum Umschalten ▾/▴
+        tile._play_btn = btn_tile_play
 
         tile.clicked.connect(lambda a=appid: self._on_game_tile_clicked(a))
         return tile
+
+    def _tile_play_tooltip(self, appid, name):
+        """Tooltip des ▶-Knopfs: zeigt, mit welcher Proton-Version gestartet wird."""
+        version = self._selected_proton.get(appid)
+        if version:
+            return tr("games_tile_play_tip").format(name=name, proton=version)
+        return tr("games_tile_play_tip_default").format(name=name)
 
     def _game_data_for(self, appid):
         """
@@ -914,6 +989,9 @@ class VRApp(QMainWindow):
             self._games_detail_widget = None
         self._detail_params_edit = None
         self._detail_status_lbl = None
+        self._detail_toggles = {}
+        self._detail_custom_edit = None
+        self._detail_base_params = ""
         for a, tile in self._games_tiles.items():
             tile.setStyleSheet(self._tile_css(selected=False))
             if getattr(tile, "_arrow", None):
@@ -972,6 +1050,26 @@ class VRApp(QMainWindow):
             self._detail_status_lbl.setStyleSheet(
                 f"color: {color}; font-size: 11px; border: none;")
 
+    def _current_toggle_keys(self):
+        return [k for k, cb in self._detail_toggles.items() if cb.isChecked()]
+
+    def _update_final_params(self):
+        """Baut den finalen Parameter-String neu (Basis + Toggles + Eigene)."""
+        if self._detail_params_edit is None:
+            return ""
+        custom = self._detail_custom_edit.text() if self._detail_custom_edit else ""
+        final = games_db.compose_launch_options(
+            self._detail_base_params, self._current_toggle_keys(), custom)
+        self._detail_params_edit.setText(final)
+        return final
+
+    def _on_launch_opts_changed(self, appid):
+        """Toggle geklickt oder eigene Parameter getippt: finalen String neu
+        bauen und die Auswahl dauerhaft für dieses Spiel merken."""
+        self._update_final_params()
+        custom = self._detail_custom_edit.text() if self._detail_custom_edit else ""
+        games_db.save_launch_toggles(appid, self._current_toggle_keys(), custom)
+
     def _use_proton(self, appid, proton):
         """
         'Use': setzt diese Proton-Version als aktive Version für das Spiel —
@@ -990,6 +1088,8 @@ class VRApp(QMainWindow):
         version = proton.get("version", "")
         self._selected_proton[appid] = version
         games_db.save_selected_proton(appid, version)
+        g = self._game_data_for(appid)
+        game_name_for_tooltip = g.get("name", "") if g else ""
 
         if tool is None:
             msg = tr("games_use_default")
@@ -997,36 +1097,84 @@ class VRApp(QMainWindow):
             msg = tr("games_use_applied").format(tool=tool)
         if games_db.steam_is_running():
             msg += " " + tr("games_steam_restart_hint")
+        # Tooltip des ▶-Knopfs auf der Kachel nachziehen (neue Proton-Version)
+        tile = self._games_tiles.get(appid)
+        if tile is not None and getattr(tile, "_play_btn", None):
+            tile._play_btn.setToolTip(
+                self._tile_play_tooltip(appid, game_name_for_tooltip))
+
         # Panel neu bauen, damit das ✓-Aktiv-Badge umzieht — Status danach setzen
         self._refresh_detail()
         self._detail_status(msg, "#a3be8c")
 
-    def _play_game(self, appid, game):
+    def _saved_launch_options(self, appid, game):
         """
-        'Play': schreibt die AKTUELLEN Startparameter aus dem Textfeld in
-        Steams LaunchOptions und startet das Spiel per Steam-CLI. Die per
-        'Use' gewählte Proton-Version steht bereits im CompatToolMapping.
+        Baut die Startparameter eines Spiels aus den GESPEICHERTEN Angaben —
+        ohne dass das Panel offen sein muss (für den ▶-Knopf auf der Kachel).
+        Basis (GPU-abhängig) + gemerkte Toggles + eigene Parameter.
         """
-        params = self._detail_params_edit.text().strip() \
-            if self._detail_params_edit is not None else ""
-        ok, err = games_db.set_steam_launch_options(appid, params)
+        params = game.get("launch_params", {})
+        gpu = games_db.detect_gpu_vendor()
+        if params:
+            base = params.get(gpu) or params.get("amd") or next(iter(params.values()), "")
+        else:
+            base = ""
+        keys, custom = games_db.load_launch_toggles(appid)
+        return games_db.compose_launch_options(base, keys, custom)
+
+    def _launch_game(self, appid, game, params, status):
+        """
+        Gemeinsame Start-Routine für beide Play-Knöpfe (Kachel + Panel):
+        schreibt die Startparameter in Steams LaunchOptions und startet das
+        Spiel per Steam-CLI. Die per "Use" gewählte Proton-Version steht
+        bereits in Steams CompatToolMapping.
+          status: Callback(text, farbe) für die jeweilige Statuszeile.
+        """
+        ok, err = games_db.set_steam_launch_options(appid, (params or "").strip())
         warn = "" if ok else " " + tr("games_options_failed").format(err=err)
 
         cmd = games_db.steam_launch_cmd(appid)
         if not cmd:
-            self._detail_status(tr("games_play_failed") + warn, "#bf616a")
+            status(tr("games_play_failed") + warn, "#bf616a")
             return
         try:
             subprocess.Popen(cmd)
         except Exception:
-            self._detail_status(tr("games_play_failed") + warn, "#bf616a")
+            status(tr("games_play_failed") + warn, "#bf616a")
             return
+
         msg = tr("games_play_starting").format(name=game.get("name", ""))
-        if games_db.steam_is_running() and not ok:
-            pass
-        elif games_db.steam_is_running():
+        if ok and games_db.steam_is_running():
             msg += " " + tr("games_steam_restart_hint")
-        self._detail_status(msg + warn, "#a3be8c" if ok else "#ebcb8b")
+        status(msg + warn, "#a3be8c" if ok else "#ebcb8b")
+
+    def _play_game(self, appid, game):
+        """▶ im aufgeklappten Panel: nimmt die AKTUELLEN Werte aus dem Panel."""
+        params = (self._update_final_params() or "").strip()
+        self._launch_game(appid, game, params, self._detail_status)
+
+    def _play_game_from_tile(self, appid):
+        """
+        ▶ direkt auf der Kachel: startet das Spiel, ohne es aufzuklappen.
+        Benutzt die gespeicherten Toggles/Parameter und die per "Use"
+        gewählte Proton-Version. Rückmeldung in der Statuszeile oben.
+        """
+        game = self._game_data_for(appid)
+        if not game:
+            return
+        # Ist das Spiel gerade offen, gelten die (evtl. ungespeicherten)
+        # Panel-Werte — sonst die gespeicherten.
+        if appid == self._expanded_appid and self._detail_params_edit is not None:
+            params = (self._update_final_params() or "").strip()
+        else:
+            params = self._saved_launch_options(appid, game)
+
+        def status(text, color):
+            self.ui.lbl_games_status.setText(text)
+            self.ui.lbl_games_status.setStyleSheet(
+                f"color: {color}; font-size: 12px; font-weight: bold;")
+
+        self._launch_game(appid, game, params, status)
 
     def _build_game_detail(self, appid, game):
         """
@@ -1063,11 +1211,15 @@ class VRApp(QMainWindow):
         name_row.addWidget(lbl_name)
 
         btn_play = QPushButton(tr("games_play_btn"))
+        btn_play.setObjectName("panelPlay")
         btn_play.setCursor(Qt.PointingHandCursor)
+        btn_play.setIcon(make_play_icon(12, "#21252b"))
+        btn_play.setIconSize(QSize(12, 12))
         btn_play.setStyleSheet("""
-            QPushButton { background-color: #a3be8c; color: #21252b; border: none;
+            QPushButton#panelPlay { background-color: #a3be8c; color: #21252b; border: none;
                           font-weight: bold; padding: 5px 16px; border-radius: 4px; font-size: 12px; }
-            QPushButton:hover { background-color: #b8d19f; }
+            QPushButton#panelPlay:hover { background-color: #b8d19f; }
+            QPushButton#panelPlay:pressed { background-color: #8fae76; }
         """)
         btn_play.clicked.connect(lambda _, a=appid, g=game: self._play_game(a, g))
         name_row.addWidget(btn_play)
@@ -1186,46 +1338,83 @@ class VRApp(QMainWindow):
 
             box.addWidget(row_frame)
 
-        # --- Startparameter (passend zur erkannten GPU) ---
-        # Getestete Spiele: hinterlegte Parameter, schreibgeschützt.
-        # Ungetestete Spiele ohne Parameter: leeres, EDITIERBARES Feld mit
-        # Platzhalter — der Nutzer kann bei Bedarf eigene eintragen und
-        # sie mit dem Kopieren-Knopf für Steam übernehmen.
+        # --- Startparameter: Basis (GPU-abhängig) + Zusatz-Optionen ---
+        # Aufbau: hinterlegte Basis-Parameter  ->  Toggle-Schalter
+        #         ->  eigene Parameter  ->  finaler, kopierbarer String.
+        # Der finale String wird live neu berechnet und ist genau das, was
+        # "Play" in Steams LaunchOptions schreibt.
         params = game.get("launch_params", {})
-        show_params = bool(params) or game.get("untested", False)
-        if show_params:
-            if params and gpu in ("amd", "nvidia"):
-                gpu_name = tr("games_gpu_amd") if gpu == "amd" else tr("games_gpu_nvidia")
-                lbl_params = QLabel(tr("games_params_section").format(gpu=gpu_name))
-                param_value = params.get(gpu, "")
-            else:
-                lbl_params = QLabel(tr("games_params_section_unknown"))
-                param_value = (params.get("amd", "") or next(iter(params.values()), "")) if params else ""
-            lbl_params.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-            box.addWidget(lbl_params)
+        if params and gpu in ("amd", "nvidia"):
+            gpu_name = tr("games_gpu_amd") if gpu == "amd" else tr("games_gpu_nvidia")
+            lbl_params = QLabel(tr("games_params_section").format(gpu=gpu_name))
+            self._detail_base_params = params.get(gpu, "")
+        else:
+            lbl_params = QLabel(tr("games_params_section_unknown"))
+            self._detail_base_params = (params.get("amd", "")
+                                        or next(iter(params.values()), "")) if params else ""
+        lbl_params.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+        box.addWidget(lbl_params)
 
-            param_row = QHBoxLayout()
-            txt_params = QLineEdit(param_value)
-            if params:
-                txt_params.setReadOnly(True)
-            else:
-                txt_params.setPlaceholderText(tr("games_params_placeholder"))
-            txt_params.setStyleSheet("font-family: monospace; font-size: 11px;")
-            self._detail_params_edit = txt_params   # Play liest hieraus
-            param_row.addWidget(txt_params)
+        saved_keys, saved_custom = games_db.load_launch_toggles(appid)
 
-            btn_copy = QPushButton(tr("games_copy_btn"))
-            btn_copy.setCursor(Qt.PointingHandCursor)
-            btn_copy.setStyleSheet("""
-                QPushButton { background-color: #5e81ac; color: white; border: none;
-                              font-weight: bold; padding: 6px 12px; border-radius: 4px; font-size: 11px; }
-                QPushButton:hover { background-color: #81a1c1; }
-            """)
-            btn_copy.clicked.connect(
-                lambda _, t=txt_params, b=btn_copy:
-                self._copy_games_text(t.text(), b))
-            param_row.addWidget(btn_copy)
-            box.addLayout(param_row)
+        # Toggle-Schalter (aus games_db.LAUNCH_TOGGLES — neue einfach dort ergänzen)
+        lbl_toggles = QLabel(tr("games_toggles_section"))
+        lbl_toggles.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+        box.addWidget(lbl_toggles)
+
+        toggle_row = QHBoxLayout()
+        toggle_row.setSpacing(16)
+        self._detail_toggles = {}
+        for t in games_db.LAUNCH_TOGGLES:
+            cb = QCheckBox(tr(f"games_toggle_{t['key']}"))
+            cb.setCursor(Qt.PointingHandCursor)
+            cb.setChecked(t["key"] in saved_keys)
+            cb.setToolTip(tr(f"games_toggle_{t['key']}_tip"))
+            cb.setStyleSheet(
+                "QCheckBox { color: #d8dee9; font-size: 11px; font-family: monospace; border: none; }")
+            cb.toggled.connect(lambda _, a=appid: self._on_launch_opts_changed(a))
+            self._detail_toggles[t["key"]] = cb
+            toggle_row.addWidget(cb)
+        toggle_row.addStretch()
+        box.addLayout(toggle_row)
+
+        # Eigene Parameter (auch der Platz für ungetestete Spiele ohne Profil)
+        lbl_custom = QLabel(tr("games_custom_params"))
+        lbl_custom.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+        box.addWidget(lbl_custom)
+
+        self._detail_custom_edit = QLineEdit(saved_custom)
+        self._detail_custom_edit.setPlaceholderText(tr("games_custom_placeholder"))
+        self._detail_custom_edit.setStyleSheet("font-family: monospace; font-size: 11px;")
+        self._detail_custom_edit.textEdited.connect(
+            lambda _, a=appid: self._on_launch_opts_changed(a))
+        box.addWidget(self._detail_custom_edit)
+
+        # Finaler String (schreibgeschützt, wird live gebaut) + Kopieren
+        lbl_final = QLabel(tr("games_final_params"))
+        lbl_final.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+        box.addWidget(lbl_final)
+
+        param_row = QHBoxLayout()
+        txt_params = QLineEdit()
+        txt_params.setReadOnly(True)
+        txt_params.setStyleSheet("font-family: monospace; font-size: 11px; color: #a3be8c;")
+        self._detail_params_edit = txt_params   # Play liest hieraus
+        param_row.addWidget(txt_params)
+
+        btn_copy = QPushButton(tr("games_copy_btn"))
+        btn_copy.setCursor(Qt.PointingHandCursor)
+        btn_copy.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 6px 12px; border-radius: 4px; font-size: 11px; }
+            QPushButton:hover { background-color: #81a1c1; }
+        """)
+        btn_copy.clicked.connect(
+            lambda _, t=txt_params, b=btn_copy: self._copy_games_text(t.text(), b))
+        param_row.addWidget(btn_copy)
+        box.addLayout(param_row)
+
+        self._update_final_params()   # Startwert berechnen
 
         # --- Spiel-spezifische Fixes (Umzug aus Settings -> "General") ---
         if "vrchat_pictures" in game.get("fixes", []):

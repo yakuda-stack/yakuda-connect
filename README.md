@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/X5TaN4A47h)
 [![Donate](https://img.shields.io/badge/Donate_via_PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/riesensika)
-[![Version](https://img.shields.io/badge/Version-v1.0.9--alpha-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.1.0-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard designed for Arch-based Linux systems. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -20,6 +20,10 @@
     <td><b>Tools Hub</b><br><img src="assets/tools.png" alt="Tools" width="300"/></td>
     <td><b>General Settings</b><br><img src="assets/settings.png" alt="Settings" width="300"/></td>
     <td><b>Advanced Settings</b><br><img src="assets/settings2.png" alt="Settings 2" width="300"/></td>
+  </tr>
+  <tr>
+    <td><b>Tools Hub</b><br><img src="assets/games1.png" alt="Tools" width="300"/></td>
+    <td><b>General Settings</b><br><img src="assets/games2.png" alt="Settings" width="300"/></td>
   </tr>
 </table>
 
@@ -122,6 +126,26 @@ bash install.sh
 
 
 # Changelog - Yakuda Connect
+
+---
+
+### 🚀 v1.1.0
+
+#### 🇬🇧 English
+
+**Highlights:** a Play button right in the window · a new window structure for the game panel · more supported VR games.
+
+* **Added** | **Play button right on the tile**: every game tile now has its own play button, so you can start a game with its saved Proton version and launch options without expanding anything first. The rest of the tile still opens the details, and the tooltip shows which Proton will be used. Both play buttons now use a hand-drawn play triangle instead of the Unicode arrow, so they look identical and crisp on every distribution.
+* **Changed** | **New window structure for the game panel**: launch options are now built from three clearly separated parts — the stored base parameters, toggle switches for **`--force-openxr`** (game argument) and **`mullvad-exclude`** (VPN wrapper), and a free text field for your own parameters. Everything is merged position-aware (wrappers before `%command%`, game arguments after it) and the resulting string is shown live, copyable, and used by Play. Toggles and custom parameters are remembered per game.
+* **Added** | **More supported VR games**: **Arizona Sunshine 2**, **Arizona Sunshine Remake**, **Metro Awakening**, **Thief VR: Legacy of Shadow** and **Beat Saber** joined the tested games — each with its own Proton recommendation (Steam's Proton 11 by default, `proton-cachyos` on CachyOS, Proton-GE as the alternative; Metro Awakening recommends Proton-GE instead). Adding a new game is now a one-liner in `core/games.py`.
+
+#### 🇩🇪 Deutsch
+
+**Highlights:** Play-Knopf direkt im Fenster · neue Fenster-Struktur im Spiel-Panel · mehr unterstützte VR-Spiele.
+
+* **Neu** | **Play-Knopf direkt auf der Kachel**: Jede Spiel-Kachel hat jetzt einen eigenen Play-Knopf — so startest du ein Spiel mit der gemerkten Proton-Version und den gespeicherten Startparametern, ohne vorher etwas aufklappen zu müssen. Der Rest der Kachel öffnet weiterhin die Details, und der Tooltip verrät, welches Proton benutzt wird. Beide Play-Knöpfe zeigen jetzt ein selbst gezeichnetes Play-Dreieck statt des Unicode-Pfeils und sehen dadurch auf jeder Distribution gleich sauber aus.
+* **Geändert** | **Neue Fenster-Struktur im Spiel-Panel**: Die Startparameter bestehen jetzt aus drei klar getrennten Teilen — den hinterlegten Basis-Parametern, Schaltern für **`--force-openxr`** (Spiel-Argument) und **`mullvad-exclude`** (VPN-Wrapper) sowie einem freien Feld für eigene Parameter. Alles wird positionsbewusst zusammengebaut (Wrapper vor `%command%`, Spiel-Argumente dahinter), und der fertige String steht live und kopierbar im Panel und wird von Play benutzt. Schalter und eigene Parameter werden pro Spiel gemerkt.
+* **Neu** | **Mehr unterstützte VR-Spiele**: **Arizona Sunshine 2**, **Arizona Sunshine Remake**, **Metro Awakening**, **Thief VR: Legacy of Shadow** und **Beat Saber** sind zu den getesteten Spielen dazugekommen — jeweils mit eigener Proton-Empfehlung (standardmäßig Steams Proton 11, auf CachyOS `proton-cachyos`, Proton-GE als Alternative; bei Metro Awakening ist Proton-GE die Empfehlung). Ein neues Spiel hinzuzufügen ist jetzt ein Einzeiler in `core/games.py`.
 
 ---
 
