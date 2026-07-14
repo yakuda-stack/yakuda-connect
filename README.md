@@ -28,7 +28,7 @@
 </table>
 <table>
   <tr>
-    <td><b>Dashboard</b><br><img src="assets/miau.gif" alt="Dashboard" width="800"/></td>
+    <td><b>Dashboard</b><br><img src="assets/miau.gif" alt="Dashboard" width="600"/></td>
 </table>
 ---
 
