@@ -26,7 +26,10 @@
     <td><b>General Settings</b><br><img src="assets/games2.png" alt="Settings" width="300"/></td>
   </tr>
 </table>
-
+<table>
+  <tr>
+    <td><b>Dashboard</b><br><img src="assets/miau.gif" alt="Dashboard" width="800"/></td>
+</table>
 ---
 
 ## 🚀 Key Features
@@ -321,4 +324,3 @@ bash install.sh
 * **Neu** | Spezifischer WayVR-Design-Button, der speziell auf SlimeVR-Setups zugeschnitten ist.
 * **Geändert** | Allgemeine Sprachkorrekturen und Lokalisierungen.
 * **Geändert** | Autostart-Verhalten korrigiert, um Begleitprogramme beim Trennen der PC-Verbindung zuverlässig zu beenden.
-
