@@ -80,9 +80,29 @@ yakuda-connect is a free hobby project — built by VR enthusiasts, for VR enthu
 
 ## 📦 Installation & Setup
 
-Whether you are a Linux newcomer or a power user, there are two straightforward ways to get `yakuda-connect` up and running.
+Whether you are a Linux newcomer or a power user, there are several straightforward ways to get `yakuda-connect` up and running.
 
-### Method 1: Express Installation (AppImage & Terminal)
+### Method 1: AUR (Recommended for Arch, CachyOS, EndeavourOS, Manjaro)
+
+`yakuda-connect` is available in the [AUR](https://aur.archlinux.org/packages/yakuda-connect). Install it with your favourite AUR helper — all dependencies are pulled in automatically, and you get updates through your normal system update:
+
+```bash
+yay -S yakuda-connect
+```
+
+or
+
+```bash
+paru -S yakuda-connect
+```
+
+Then launch it from your application menu or simply run:
+
+```bash
+yakuda-connect
+```
+
+### Method 2: Express Installation (AppImage & Terminal)
 
 Choose one of the two options below to get started as quickly as possible:
 
@@ -103,7 +123,7 @@ bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/mai
 
 ---
 
-### Method 2: Manual Installation (From Source)
+### Method 3: Manual Installation (From Source)
 
 If you prefer to clone the repository and run the application directly from the source code, execute these commands in your terminal sequence:
 
