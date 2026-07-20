@@ -249,6 +249,19 @@ def latest_version(tool):
 # --------------------------------------------------------------------------- #
 #  Installationsmethoden (AppImage / yay / paru) – distro-abhängig
 # --------------------------------------------------------------------------- #
+def is_package_managed_install():
+    """
+    True, wenn yakuda-connect aus einem Distributionspaket läuft (z. B. AUR:
+    /usr/share/yakuda-connect). Dann darf sich die App NICHT selbst updaten —
+    das würde an pacman vorbei eine zweite Kopie unter /opt anlegen und die
+    Paketverwaltung zerschießen. Updates laufen dort über yay/paru.
+
+    False bei install.sh (/opt/yakuda-connect) und beim Start aus dem Quellcode.
+    """
+    here = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+    return here.startswith("/usr/")
+
+
 def is_arch_based():
     """True, wenn die Distro auf Arch basiert (pacman/yay/paru-Welt)."""
     try:
@@ -262,6 +275,39 @@ def is_arch_based():
     except Exception:
         pass
     return shutil.which("pacman") is not None
+
+
+def _os_release_ids():
+    """(id, id_like) aus /etc/os-release, alles lowercase."""
+    osid, idlike = "", ""
+    try:
+        with open("/etc/os-release", "r") as f:
+            for line in f:
+                low = line.strip().lower()
+                if low.startswith("id="):
+                    osid = low[3:].strip('"')
+                elif low.startswith("id_like="):
+                    idlike = low[8:].strip('"')
+    except Exception:
+        pass
+    return osid, idlike
+
+
+def is_fedora_based():
+    """True auf Fedora und Ableitungen (Nobara, Bazzite, ...)."""
+    osid, idlike = _os_release_ids()
+    if "fedora" in osid or "fedora" in idlike or "rhel" in idlike:
+        return True
+    return (not is_arch_based()) and shutil.which("dnf") is not None
+
+
+def is_debian_based():
+    """True auf Ubuntu/Debian und Ableitungen (Mint, Pop!_OS, ...)."""
+    osid, idlike = _os_release_ids()
+    if osid in ("ubuntu", "debian") or "debian" in idlike or "ubuntu" in idlike:
+        return True
+    return (not is_arch_based()) and (not is_fedora_based()) \
+        and shutil.which("apt") is not None
 
 
 def available_aur_helpers():
@@ -373,20 +419,25 @@ def default_method(methods):
 
 def available_update_methods():
     """
-    Verfügbare System-Update-Methoden (Installations-Tab):
-      Arch       -> yay/paru (+ flatpak, falls vorhanden)
-      Nicht-Arch -> 'native', falls WiVRn nativ selbst installiert wurde
-                    (+ flatpak, falls vorhanden)  [Ubuntu, Fedora, NixOS, ...]
+    Verfügbare Methoden für den Installations-Tab (nur noch NATIV, kein Flatpak):
+      Arch    -> yay/paru
+      Fedora  -> dnf (offizielle Repos: wivrn + opencomposite)
+      Ubuntu  -> keine Methode: Install-Knopf zeigt eine Kurzanleitung,
+                 Update-Knopf wird komplett ausgeblendet.
+      Sonst   -> 'native', falls WiVRn selbst nativ installiert wurde.
     """
     methods = []
     if is_arch_based():
         methods.extend(available_aur_helpers())     # yay vor paru
+    elif is_fedora_based():
+        if shutil.which("dnf"):
+            methods.append("dnf")
+    elif is_debian_based():
+        pass                                        # Ubuntu/Debian: nur Anleitung
     else:
-        # Nicht-Arch: hat die Person WiVRn selbst nativ installiert?
+        # Unbekannte Distro (z. B. NixOS): hat die Person WiVRn selbst installiert?
         if wivrn_native_present():
             methods.append("native")
-    if flatpak_available():
-        methods.append("flatpak")
     return methods
 
 
@@ -396,8 +447,8 @@ def wivrn_native_present():
 
 
 def default_update_method(methods):
-    """Vorauswahl: yay -> paru -> native -> flatpak -> erstes."""
-    for pref in ("yay", "paru", "native", "flatpak"):
+    """Vorauswahl: yay -> paru -> dnf -> native -> erstes."""
+    for pref in ("yay", "paru", "dnf", "native"):
         if pref in methods:
             return pref
     return methods[0] if methods else ""

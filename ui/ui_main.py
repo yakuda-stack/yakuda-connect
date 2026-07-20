@@ -4,7 +4,7 @@ import sys
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QListWidget,
                                QStackedWidget, QLabel, QPushButton, QCheckBox,
                                QComboBox, QLineEdit, QGroupBox, QFormLayout,
-                               QSlider, QTextEdit, QFrame)
+                               QSlider, QTextEdit, QFrame, QGridLayout)
 from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF
 from PySide6.QtGui import QPainter, QColor
 
@@ -300,11 +300,6 @@ class Ui_MainWindow(object):
         self.backup_group.setTitle(tr("backup_title"))
         self.btn_vr_backup.setText(tr("backup_create_btn"))
         self.btn_vr_restore.setText(tr("backup_restore_btn"))
-        self.overlay_group.setTitle(tr("overlay_group"))
-        self.btn_overlay_design.setText(tr("overlay_design_btn"))
-        self.btn_overlay_reset.setText(tr("overlay_reset_btn"))
-        self.chk_overlay_slimevr.setText(tr("overlay_slimevr_btn"))
-        self.lbl_overlay_credits.setText(tr("overlay_credits"))
         self.openxr_group.setTitle(tr("openxr_group"))
         if hasattr(self, "oscquery_widget"):
             self.oscquery_widget.retranslate()
@@ -324,6 +319,12 @@ class Ui_MainWindow(object):
         self.btn_community_check.setText(tr("community_check_btn"))
         self.btn_community_discord.setText(tr("community_discord_btn"))
         self.btn_community_donate.setText(tr("community_donate_btn"))
+
+        # --- WayVR Design ---
+        self.wayvr_group.setTitle(tr("wayvr_group"))
+        self.lbl_wayvr_desc.setText(tr("wayvr_desc"))
+        self.btn_wayvr_install.setText(tr("wayvr_install_btn"))
+        self.btn_wayvr_reset.setText(tr("wayvr_reset_btn"))
 
         # --- Custom Kill Commands ---
         self.killcmd_group.setTitle(tr("killcmd_group"))
@@ -892,6 +893,55 @@ class Ui_MainWindow(object):
 
         layout.addWidget(self.community_group)
 
+        # --- WAYVR DESIGN (cubee-cb Overlay-Design) ---
+        # Zwei Knöpfe: Design von cubee-cb (linux-vr-compat) installieren und
+        # WayVR komplett zurücksetzen (~/.config/wayvr löschen, Backup vorher).
+        # Logik liegt in core/overlay_manager.py — hier nur die Oberfläche.
+        self.wayvr_group = QGroupBox(tr("wayvr_group"))
+        wayvr_layout = QVBoxLayout(self.wayvr_group)
+        wayvr_layout.setSpacing(8)
+
+        self.lbl_wayvr_desc = QLabel(tr("wayvr_desc"))
+        self.lbl_wayvr_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
+        self.lbl_wayvr_desc.setWordWrap(True)
+        # Link zum Design-Repo klickbar machen (öffnet im Browser)
+        self.lbl_wayvr_desc.setTextFormat(Qt.RichText)
+        self.lbl_wayvr_desc.setOpenExternalLinks(True)
+        wayvr_layout.addWidget(self.lbl_wayvr_desc)
+
+        wayvr_btn_row = QHBoxLayout()
+        wayvr_btn_row.setSpacing(10)
+
+        self.btn_wayvr_install = QPushButton(tr("wayvr_install_btn"))
+        self.btn_wayvr_install.setCursor(Qt.PointingHandCursor)
+        self.btn_wayvr_install.setStyleSheet("""
+            QPushButton { background-color: #5e81ac; color: white; border: none;
+                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """)
+        wayvr_btn_row.addWidget(self.btn_wayvr_install)
+
+        self.btn_wayvr_reset = QPushButton(tr("wayvr_reset_btn"))
+        self.btn_wayvr_reset.setCursor(Qt.PointingHandCursor)
+        self.btn_wayvr_reset.setStyleSheet("""
+            QPushButton { background-color: #2e3440; color: #eceff4; border: 1px solid #4c566a;
+                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
+            QPushButton:hover { background-color: #bf616a; border-color: #bf616a; color: white; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """)
+        wayvr_btn_row.addWidget(self.btn_wayvr_reset)
+        wayvr_btn_row.addStretch()
+        wayvr_layout.addLayout(wayvr_btn_row)
+
+        # Status-Zeile (Download/Installation/installiert) — setzt main.py.
+        self.lbl_wayvr_status = QLabel("")
+        self.lbl_wayvr_status.setStyleSheet("color: #7b88a1; font-size: 11px;")
+        self.lbl_wayvr_status.setWordWrap(True)
+        wayvr_layout.addWidget(self.lbl_wayvr_status)
+
+        layout.addWidget(self.wayvr_group)
+
 
         # --- BACKUP (jetzt oben, beide Buttons nebeneinander) ---
         self.backup_group = QGroupBox(tr("backup_title"))
@@ -918,52 +968,6 @@ class Ui_MainWindow(object):
         backup_btn_row.addWidget(self.btn_vr_restore)
 
         backup_layout.addLayout(backup_btn_row)
-
-        # --- WAYVR OVERLAY (UI Design) ---
-        self.overlay_group = QGroupBox(tr("overlay_group"))
-        overlay_layout = QVBoxLayout(self.overlay_group)
-        overlay_layout.setSpacing(10)
-
-        # Beide Buttons nebeneinander in einer horizontalen Reihe
-        overlay_btn_row = QHBoxLayout()
-        overlay_btn_row.setSpacing(10)
-
-        self.btn_overlay_design = QPushButton(tr("overlay_design_btn"))
-        self.btn_overlay_design.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            QPushButton:hover { background-color: #81a1c1; }
-            QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
-        """)
-        overlay_btn_row.addWidget(self.btn_overlay_design)
-
-        self.btn_overlay_reset = QPushButton(tr("overlay_reset_btn"))
-        self.btn_overlay_reset.setStyleSheet("""
-            QPushButton { background-color: #4c566a; color: #eceff4; border: none;
-                          font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            QPushButton:hover { background-color: #bf616a; color: white; }
-            QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
-        """)
-        overlay_btn_row.addWidget(self.btn_overlay_reset)
-
-        overlay_layout.addLayout(overlay_btn_row)
-
-        self.chk_overlay_slimevr = QCheckBox(tr("overlay_slimevr_btn"))
-        self.chk_overlay_slimevr.setStyleSheet("font-size: 13px; padding: 4px;")
-        overlay_layout.addWidget(self.chk_overlay_slimevr)
-
-        # Credits / Links zum WayVR-Projekt und den Design-Autoren
-        self.lbl_overlay_credits = QLabel(tr("overlay_credits"))
-        self.lbl_overlay_credits.setStyleSheet(
-            "color: #d8dee9; font-size: 11px; background-color: #2e3440; "
-            "border-radius: 4px; padding: 8px;"
-        )
-        self.lbl_overlay_credits.setWordWrap(True)
-        self.lbl_overlay_credits.setOpenExternalLinks(True)
-        self.lbl_overlay_credits.setTextFormat(Qt.RichText)
-        overlay_layout.addWidget(self.lbl_overlay_credits)
-
-        layout.addWidget(self.overlay_group)
 
         # Backup-Box zwischen WayVR-Overlay und OpenXR-Runtime einordnen
         layout.addWidget(self.backup_group)

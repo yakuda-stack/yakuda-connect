@@ -38,6 +38,10 @@ Hinweis zur Distro-Logik:
   Es gibt bewusst KEINE getrennten Listen pro Distro. Stattdessen entscheidet
   zur Laufzeit detect_install_methods(): Arch-Distros bekommen yay/paru, alle
   Distros AppImage/Flatpak – je nachdem, was vorhanden ist.
+
+  WICHTIG: Flatpak ist NUR noch für Tools erlaubt (dieser Tab hier).
+  Die WiVRn-Runtime im Installations-Tab wird ausschließlich nativ
+  installiert (Arch: AUR, Fedora: dnf, Ubuntu: Anleitung zum Selbstbauen).
 """
 
 INSTALL_PACKAGES = {
@@ -47,9 +51,28 @@ INSTALL_PACKAGES = {
     "opencomposite": ["opencomposite-git"],
 }
 
-# Runtime-Quelle für Nicht-Arch-Systeme (Installations-Tab):
-#   flatpak : Flatpak-App-IDs (flatpak install -y flathub <id>)
-INSTALL_FLATPAK = ["io.github.wivrn.wivrn"]
+# Runtime-Quelle für Fedora (Installations-Tab, offizielle Repos):
+#   wivrn           : https://packages.fedoraproject.org/pkgs/wivrn/wivrn/
+#   wivrn-dashboard : Subpaket von wivrn, eigenes RPM
+#   opencomposite   : https://packages.fedoraproject.org/pkgs/opencomposite/opencomposite/
+#
+# Die Schluessel muessen zu INSTALL_PACKAGES passen, damit die Statuszeilen
+# im Installations-Tab auf beiden Distros gleich heissen.
+#
+# NICHT dabei:
+#   * xrizer — gibt es in den offiziellen Fedora-Repos NICHT, nur als COPR
+#     (@xr-sig/xrizer). Wird dem Nutzer als Hinweis gezeigt, aber nicht ohne
+#     Nachfrage aktiviert. 'envision-xrizer' ist KEIN xrizer, sondern nur die
+#     Build-Abhaengigkeiten, die Envision zum Selbstbauen braucht.
+#   * lib32-* — Fedora loest 32-Bit ueber Multilib (wivrn.i686) und zieht das
+#     bei Bedarf selbst; ein eigenes lib32-Paket wie im AUR gibt es nicht.
+INSTALL_DNF = {
+    "WiVRn / Monado": ["wivrn"],
+    "WiVRn Dashboard": ["wivrn-dashboard"],
+    "opencomposite": ["opencomposite"],
+}
+# Optionales COPR für xrizer auf Fedora (wird dem Nutzer nur als Hinweis gezeigt)
+FEDORA_XRIZER_COPR = "@xr-sig/xrizer"
 
 TOOLS_APPS = [
     {

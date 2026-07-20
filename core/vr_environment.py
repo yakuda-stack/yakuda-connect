@@ -25,7 +25,6 @@ HOME = os.path.expanduser("~")
 APP_CONFIG = os.path.join(HOME, ".config/yakuda-connect/config/config.json")
 
 STEAM_FLATPAK_BASE = os.path.join(HOME, ".var/app/com.valvesoftware.Steam")
-WIVRN_FLATPAK_ID = "io.github.wivrn.wivrn"
 
 
 # --------------------------------------------------------------------------- #
@@ -113,17 +112,15 @@ def primary_active_runtime():
 # --------------------------------------------------------------------------- #
 def _manifest_candidates():
     c = [
-        "/usr/share/openxr/1/openxr_wivrn.json",                                  # nativ/Arch
-        os.path.join(HOME, ".local/share/openxr/1/openxr_wivrn.json"),
-        # Flatpak (Exports)
-        os.path.join(HOME, ".local/share/flatpak/exports/share/openxr/1/openxr_wivrn.json"),
-        "/var/lib/flatpak/exports/share/openxr/1/openxr_wivrn.json",
+        "/usr/share/openxr/1/openxr_wivrn.json",                                  # nativ (Arch/Fedora)
+        os.path.join(HOME, ".local/share/openxr/1/openxr_wivrn.json"),            # Selbstbau (Ubuntu)
+        "/usr/local/share/openxr/1/openxr_wivrn.json",                            # make install
     ]
     return c
 
 
 def find_wivrn_manifest():
-    """Pfad zum openxr_wivrn.json (nativ/flatpak/nix). Fällt auf Arch-Default zurück."""
+    """Pfad zum openxr_wivrn.json (nativ/selbstgebaut). Fällt auf Arch-Default zurück."""
     for p in _manifest_candidates():
         if os.path.exists(p):
             return p
@@ -176,16 +173,20 @@ def find_wivrn_libs():
 #  OpenVR-Kompatibilität (opencomposite / xrizer)
 # --------------------------------------------------------------------------- #
 def find_opencomposite():
-    for p in ["/opt/opencomposite",
-              os.path.join(HOME, ".local/share/opencomposite")]:
+    for p in ["/opt/opencomposite",                                    # Arch (AUR)
+              "/usr/lib64/opencomposite",                              # Fedora (dnf)
+              "/usr/lib/opencomposite",
+              os.path.join(HOME, ".local/share/opencomposite")]:       # Selbstbau
         if os.path.isdir(p):
             return p
     return "/opt/opencomposite"
 
 
 def find_xrizer():
-    for p in ["/opt/xrizer",
-              os.path.join(HOME, ".local/share/xrizer")]:
+    for p in ["/opt/xrizer",                                           # Arch (AUR)
+              "/usr/lib64/xrizer",                                     # Fedora (COPR)
+              "/usr/lib/xrizer",
+              os.path.join(HOME, ".local/share/xrizer")]:              # Selbstbau
         if os.path.isdir(p):
             return p
     return "/opt/xrizer"
@@ -241,25 +242,11 @@ def vrchat_proton_prefix():
 # --------------------------------------------------------------------------- #
 #  WiVRn-Config-Datei (Sandbox-bewusst!)
 # --------------------------------------------------------------------------- #
-def wivrn_uses_flatpak():
-    """
-    True, wenn WiVRn als Flatpak läuft. Primär aus der gemerkten Methode,
-    sonst Heuristik: Flatpak vorhanden und keine native wivrn-server-Binary.
-    """
-    if get_runtime_method() == "flatpak":
-        return True
-    base = os.path.join(HOME, ".var/app", WIVRN_FLATPAK_ID)
-    return os.path.isdir(base) and shutil.which("wivrn-server") is None
-
-
 def wivrn_config_dir():
     """
-    Verzeichnis der WiVRn-config.json.
-    Flatpak hat ein eigenes $HOME -> ~/.var/app/<id>/config/wivrn
-    Nativ/AUR -> ~/.config/wivrn
+    Verzeichnis der WiVRn-config.json — immer der native Host-Pfad.
+    (WiVRn-Flatpak wird nicht mehr unterstützt: nativ = schlanker + schneller.)
     """
-    if wivrn_uses_flatpak():
-        return os.path.join(HOME, ".var/app", WIVRN_FLATPAK_ID, "config/wivrn")
     return os.path.join(HOME, ".config/wivrn")
 
 
@@ -269,13 +256,8 @@ def wivrn_config_file():
 
 def openvr_compat_path(choice):
     """
-    Wert für 'openvr-compat-path' je nach Methode.
-      nativ/AUR -> Host-Pfad (/opt/opencomposite bzw. /opt/xrizer)
-      Flatpak   -> None: Host-Pfade sind im Sandbox unsichtbar; das WiVRn-Flatpak
-                   bringt OpenComposite selbst mit. Der Key wird dann NICHT gesetzt
-                   (WiVRn nutzt seinen eingebauten Standard).
+    Wert für 'openvr-compat-path' — immer der native Host-Pfad
+    (/opt/opencomposite bzw. /opt/xrizer, mit ~/.local-Fallbacks).
     """
-    if wivrn_uses_flatpak():
-        return None
     return find_opencomposite() if choice == "opencomposite" else find_xrizer()
 

@@ -13,11 +13,6 @@ from config_manager import save_all_settings, load_saved_settings
 from translations import tr
 import vr_environment as venv
 
-# Steam-Startoption für Flatpak-WiVRn (pro VR-Spiel in den Startoptionen setzen)
-STEAM_FLATPAK_LAUNCH_OPTION = (
-    "PRESSURE_VESSEL_FILESYSTEMS_RW=/var/lib/flatpak/app/io.github.wivrn.wivrn %command%"
-)
-
 
 
 class StreamingTab(QWidget):
@@ -230,36 +225,6 @@ class StreamingTab(QWidget):
 
         layout.addWidget(self.openxr_group)
 
-        # --- Steam-Startoption (nur für Flatpak-WiVRn) ---------------------- #
-        # Damit das (ggf. gesandboxte) Steam die WiVRn-Flatpak-Dateien lesen darf,
-        # muss pro VR-Spiel diese Startoption gesetzt werden.
-        self.flatpak_group = QGroupBox(tr("streaming_flatpak_launch_title"))
-        fp_layout = QVBoxLayout(self.flatpak_group)
-
-        self.lbl_flatpak_launch = QLabel(tr("streaming_flatpak_launch_desc"))
-        self.lbl_flatpak_launch.setWordWrap(True)
-        fp_layout.addWidget(self.lbl_flatpak_launch)
-
-        fp_row = QHBoxLayout()
-        self.txt_flatpak_launch = QLineEdit(STEAM_FLATPAK_LAUNCH_OPTION)
-        self.txt_flatpak_launch.setReadOnly(True)
-        self.txt_flatpak_launch.setStyleSheet(
-            "QLineEdit { background-color: #2e3440; color: #d8dee9; "
-            "border: 1px solid #3b4252; border-radius: 4px; padding: 6px; }"
-        )
-        self.btn_flatpak_launch_copy = QPushButton(tr("openxr_copy_btn"))
-        self.btn_flatpak_launch_copy.setStyleSheet(
-            "QPushButton { background-color: #81a1c1; color: #2e3440; font-weight: bold; padding: 8px; } "
-            "QPushButton:hover { background-color: #88c0d0; }"
-        )
-        fp_row.addWidget(self.txt_flatpak_launch)
-        fp_row.addWidget(self.btn_flatpak_launch_copy)
-        fp_layout.addLayout(fp_row)
-
-        # Nur anzeigen, wenn WiVRn tatsächlich als Flatpak läuft
-        self.flatpak_group.setVisible(venv.wivrn_uses_flatpak())
-        layout.addWidget(self.flatpak_group)
-
         layout.addStretch()
 
         # --- SIGNALE VERKNÜPFEN ---
@@ -282,9 +247,6 @@ class StreamingTab(QWidget):
         self.btn_switch_wivrn.clicked.connect(self.set_openxr_runtime_wivrn)
         self.btn_switch_steamvr.clicked.connect(self.set_openxr_runtime_steamvr)
         self.check_active_openxr_runtime()
-
-        # Steam-Startoption kopieren (Flatpak)
-        self.btn_flatpak_launch_copy.clicked.connect(self.copy_steam_launch_option)
 
         # VR-Priorität (CAP_SYS_NICE)
         self.btn_vr_priority.clicked.connect(self.enable_vr_priority)
@@ -335,7 +297,6 @@ class StreamingTab(QWidget):
         selected_text = self.combo_openvr.currentText()
         choice = "opencomposite" if selected_text == "opencomposite" else "xrizer"
 
-        # Wert methoden-abhängig: bei Flatpak gibt es keinen nutzbaren Host-Pfad
         target_path = venv.openvr_compat_path(choice)
         wivrn_config_file = venv.wivrn_config_file()
 
@@ -344,15 +305,8 @@ class StreamingTab(QWidget):
                 with open(wivrn_config_file, "r") as f:
                     wivrn_data = json.load(f)
 
-                if target_path:
-                    wivrn_data["openvr-compat-path"] = target_path
-                    print(f"[Streaming Tab] openvr-compat-path -> '{target_path}'.")
-                else:
-                    # Flatpak: Host-Pfad unbrauchbar -> Key entfernen, WiVRn nutzt
-                    # seinen eingebauten OpenComposite-Standard.
-                    wivrn_data.pop("openvr-compat-path", None)
-                    print("[Streaming Tab] Flatpak erkannt -> openvr-compat-path nicht gesetzt "
-                          "(WiVRn-Flatpak bringt OpenComposite selbst mit).")
+                wivrn_data["openvr-compat-path"] = target_path
+                print(f"[Streaming Tab] openvr-compat-path -> '{target_path}'.")
 
                 with open(wivrn_config_file, "w") as f:
                     json.dump(wivrn_data, f, indent=4)
@@ -386,7 +340,7 @@ class StreamingTab(QWidget):
             self.lbl_active_runtime.setText(tr("streaming_rt_error") + str(e))
 
     def set_openxr_runtime_wivrn(self):
-        """Schaltet die OpenXR Runtime auf WiVRn um (Host + Flatpak-Steam)."""
+        """Schaltet die OpenXR Runtime auf WiVRn um (Host + Steam-Flatpak-Sandbox)."""
         try:
             wivrn_runtime_path = venv.find_wivrn_manifest()
             data = {"file_format_version": "1.0.0", "runtime": {"library_path": wivrn_runtime_path}}
@@ -401,7 +355,7 @@ class StreamingTab(QWidget):
             QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(e))
 
     def set_openxr_runtime_steamvr(self):
-        """Schaltet die OpenXR Runtime auf SteamVR um (Host + Flatpak-Steam)."""
+        """Schaltet die OpenXR Runtime auf SteamVR um (Host + Steam-Flatpak-Sandbox)."""
         try:
             steamvr_runtime_path = venv.find_steamvr_manifest()
             data = {"file_format_version": "1.0.0", "runtime": {"library_path": steamvr_runtime_path}}
@@ -419,18 +373,6 @@ class StreamingTab(QWidget):
         """Findet die wivrn-server-Binary (Symlinks aufgelöst). None, wenn nicht da."""
         return venv.wivrn_server_binary()
 
-    def copy_steam_launch_option(self):
-        """Kopiert die Steam-Startoption (Flatpak) in die Zwischenablage."""
-        QApplication.clipboard().setText(STEAM_FLATPAK_LAUNCH_OPTION)
-        self.btn_flatpak_launch_copy.setText(tr("openxr_copied"))
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(1500, lambda: self.btn_flatpak_launch_copy.setText(tr("openxr_copy_btn")))
-
-    def refresh_flatpak_launch_visibility(self):
-        """Blendet die Steam-Startoption je nach Installationsmethode ein/aus."""
-        if hasattr(self, "flatpak_group"):
-            self.flatpak_group.setVisible(venv.wivrn_uses_flatpak())
-
     def check_vr_priority(self):
         """Prüft, ob die wivrn-server-Binary bereits CAP_SYS_NICE besitzt."""
         path = self._wivrn_server_path()
@@ -440,7 +382,7 @@ class StreamingTab(QWidget):
             self.btn_vr_priority.setEnabled(False)
             return
 
-        # Bei Nix (read-only /nix/store) oder Flatpak (Sandbox) ist setcap nicht möglich
+        # Bei Nix (read-only /nix/store) ist setcap nicht möglich
         if not venv.supports_setcap():
             self.lbl_prio_status.setText(tr("streaming_prio_unsupported"))
             self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")

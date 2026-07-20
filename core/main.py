@@ -5,7 +5,7 @@ import shutil
 import re
 import os
 import json
-from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QMessageBox,
+from PySide6.QtWidgets import (QColorDialog, QApplication, QMainWindow, QLabel, QMessageBox,
                                QHBoxLayout, QVBoxLayout, QComboBox, QLineEdit,
                                QPushButton, QFileDialog, QFrame, QWidget,
                                QCheckBox)
@@ -13,17 +13,48 @@ from PySide6.QtCore import Qt, QTimer, QUrl, QSize, QPointF
 from PySide6.QtGui import (QDesktopServices, QPixmap, QIcon, QPainter,
                            QPolygonF, QColor)
 
+import webbrowser
+
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
 PAYPAL_URL  = "https://paypal.me/riesensika"
+
+# Ubuntu/Debian: WiVRn ist nicht in den Repos. Diese Befehle bauen es nativ —
+# schlanker und schneller als ein Flatpak, dafür einmalig etwas Handarbeit.
+UBUNTU_BUILD_COMMANDS = """# 1) Build-Werkzeuge und Abhängigkeiten
+sudo apt update
+sudo apt install -y git cmake build-essential ninja-build pkg-config \\
+    libvulkan-dev glslang-tools libavcodec-dev libavutil-dev libavfilter-dev \\
+    libx264-dev libva-dev libeigen3-dev nlohmann-json3-dev libcli11-dev \\
+    libudev-dev libwayland-dev libx11-dev libxrandr-dev libgl1-mesa-dev \\
+    libbsd-dev libsystemd-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \\
+    libpulse-dev libopenxr-dev libavdevice-dev
+
+# 2) WiVRn holen und bauen
+git clone https://github.com/WiVRn/WiVRn.git
+cd WiVRn
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWIVRN_BUILD_CLIENT=OFF
+cmake --build build
+
+# 3) Installieren (legt /usr/local/share/openxr/1/openxr_wivrn.json an)
+sudo cmake --install build
+
+# 4) OpenComposite fuer OpenVR-Spiele (z. B. VRChat)
+git clone https://gitlab.com/znixian/OpenOVR.git ~/opencomposite
+cd ~/opencomposite
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+sudo mkdir -p /opt/opencomposite
+sudo cp -r build/bin/linux64 /opt/opencomposite/"""
 
 # Korrektur des Pfads für das UI, da main.py jetzt in core/ liegt
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.ui_main import Ui_MainWindow
 
 # Interne Importe (liegen im selben Ordner 'core')
-from install_worker import (InstallWorker, UpdateWorker,
-                            AppUpdateCheckWorker, AppUpdateWorker)
+from install_worker import (InstallWorker, UpdateWorker, RemoveWorker,
+                            AppUpdateCheckWorker, AppUpdateWorker,
+                            CoverDownloadWorker)
 from appimage_installer import AppImageInstallWorker
 import appimage_installer as appimg
 import vr_environment as venv
@@ -31,12 +62,11 @@ from config_manager import load_saved_settings, save_all_settings
 from streaming_tab import StreamingTab
 from backup_manager import (create_vr_backup, restore_vr_environment,
                             auto_backup_on_start)
-from overlay_manager import (DesignInstallWorker, set_slimevr_ui,
-                             is_slimevr_active, is_design_installed,
-                             reset_wayvr_to_default)
-from programs import INSTALL_PACKAGES, INSTALL_FLATPAK, TOOLS_APPS, TOOLS_OSC
+from programs import (INSTALL_PACKAGES, INSTALL_DNF, FEDORA_XRIZER_COPR,
+                      TOOLS_APPS, TOOLS_OSC)
 import games as games_db
 import openxr_manager as oxr
+import overlay_manager as ovl
 from translations import tr, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
 
@@ -258,10 +288,9 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.1.0"
+        self.APP_VERSION = "v1.1.1"
         self.server_process = None
         self.pairing_process = None
-        self._overlay_worker = None
 
         # --- Games-Tab ---
         self._games_scan_worker = None       # laufender Scan-Thread
@@ -344,6 +373,12 @@ class VRApp(QMainWindow):
         self._app_update_available = False
         self._app_remote_version = ""
         self._app_update_check_worker = None
+
+        # --- Spiel-Cover ---
+        # Kacheln, deren Bild noch fehlt: {appid: QLabel}. Werden nach dem
+        # Aufbau des Games-Tabs im Hintergrund vom Steam-CDN nachgeladen.
+        self._pending_covers = {}
+        self._cover_worker = None
         self._app_update_worker = None
         self._refresh_app_version_label()
         QTimer.singleShot(1500, self.check_app_update)
@@ -426,6 +461,11 @@ class VRApp(QMainWindow):
         """Blendet den Update-Pfeil ein/aus — je nach Ergebnis des Checks."""
         self._app_update_available = bool(available)
         self._app_remote_version = remote_version or ""
+        # Paketinstallation (AUR): niemals den Selbst-Update-Pfeil zeigen —
+        # Updates laufen dort ausschließlich über yay/paru.
+        if appimg.is_package_managed_install():
+            self.ui.btn_app_update.setVisible(False)
+            return
         if available:
             self.ui.btn_app_update.setToolTip(
                 tr("app_update_tooltip").format(version=self._app_remote_version))
@@ -435,6 +475,13 @@ class VRApp(QMainWindow):
 
     def start_app_self_update(self):
         """Klick auf den Pfeil: nachfragen, dann install.sh im Terminal ausführen."""
+        # AUR/Distro-Paket: install.sh würde eine zweite Kopie unter /opt anlegen
+        # und pacman aushebeln -> stattdessen den korrekten Weg nennen.
+        if appimg.is_package_managed_install():
+            QMessageBox.information(self, tr("app_update_title"),
+                                    tr("app_update_pkg_managed"))
+            return
+
         ver = self._app_remote_version or "?"
         reply = QMessageBox.question(
             self, tr("app_update_title"),
@@ -598,6 +645,54 @@ class VRApp(QMainWindow):
         self.ui.btn_openxr_manual_toggle.setText(
             tr("openxr_manual_hide") if visible else tr("openxr_manual_show"))
 
+    # ------------------------------------------------------------------ #
+    #  WayVR Design (Settings): cubee-cb-Design installieren / zurücksetzen
+    #  Logik in core/overlay_manager.py — Design kommt 1:1 aus dem Repo,
+    #  ohne jede Veränderung. Hier nur UI-Zustand & Dialoge.
+    # ------------------------------------------------------------------ #
+    def start_wayvr_design_install(self):
+        """Lädt cubees dotfiles/wayvr von GitHub und kopiert sie 1:1 nach ~/.config/wayvr."""
+        if self._wayvr_worker and self._wayvr_worker.isRunning():
+            return
+        self.ui.btn_wayvr_install.setEnabled(False)
+        self.ui.btn_wayvr_reset.setEnabled(False)
+        self.ui.lbl_wayvr_status.setText(tr("wayvr_status_download"))
+        self._wayvr_worker = ovl.DesignInstallWorker()
+        self._wayvr_worker.status_signal.connect(self._on_wayvr_status)
+        self._wayvr_worker.finished_signal.connect(self._on_wayvr_install_done)
+        self._wayvr_worker.start()
+
+    def _on_wayvr_status(self, key):
+        """Fortschrittstext aus dem Worker (backup/download/install/patch/...)."""
+        self.ui.lbl_wayvr_status.setText(tr(f"wayvr_status_{key}"))
+
+    def _on_wayvr_install_done(self, ok, info):
+        self.ui.btn_wayvr_install.setEnabled(True)
+        self.ui.btn_wayvr_reset.setEnabled(True)
+        if ok:
+            self.ui.lbl_wayvr_status.setText(tr("wayvr_installed_hint"))
+            QMessageBox.information(self, tr("success"), tr("wayvr_install_ok"))
+        else:
+            self.ui.lbl_wayvr_status.setText("")
+            QMessageBox.warning(self, tr("error"), tr("wayvr_install_fail").format(err=info))
+
+    def reset_wayvr_design(self):
+        """Löscht ~/.config/wayvr komplett (Backup vorher) — Werkseinstellung."""
+        answer = QMessageBox.question(
+            self, tr("wayvr_reset_confirm_title"), tr("wayvr_reset_confirm_text"),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        ok, info = ovl.reset_wayvr_to_default()
+        if ok:
+            self.ui.lbl_wayvr_status.setText("")
+            msg = tr("wayvr_reset_ok")
+            if info:
+                msg += "\n\n" + tr("wayvr_reset_backup_at").format(path=info)
+            QMessageBox.information(self, tr("success"), msg)
+        else:
+            QMessageBox.warning(self, tr("error"), tr("wayvr_reset_fail").format(err=info))
+
     def init_logic_connections(self):
         """Verknüpft die UI-Komponenten aus ui_main.py mit den Logik-Funktionen."""
         # Navigation
@@ -612,13 +707,10 @@ class VRApp(QMainWindow):
         self.ui.btn_update.clicked.connect(self.start_system_update)
         self._populate_install_method_combo()
         self.ui.combo_install_method.currentIndexChanged.connect(self._on_install_method_changed)
-        # NixOS: ggf. auf Flatpak hinweisen / Flathub einrichten (nach Fensterstart)
-        QTimer.singleShot(400, self._maybe_offer_nixos_flatpak)
+        # Ubuntu/Debian: Update-Knopf ausblenden (kein Paket in den Repos)
+        QTimer.singleShot(400, self._apply_distro_ui_rules)
         self.ui.btn_vr_backup.clicked.connect(self.trigger_vr_backup)
         self.ui.btn_vr_restore.clicked.connect(self.trigger_vr_restore)
-        self.ui.btn_overlay_design.clicked.connect(self.start_overlay_design)
-        self.ui.btn_overlay_reset.clicked.connect(self.reset_overlay_design)
-        self.ui.chk_overlay_slimevr.toggled.connect(self.toggle_overlay_slimevr)
         self.ui.btn_openxr_copy_path.clicked.connect(self.copy_openxr_path)
         self.ui.btn_openxr_copy_content.clicked.connect(self.copy_openxr_content)
         # OpenXR: automatischer Fix + Ein-/Ausklappen des manuellen Bereichs
@@ -628,7 +720,12 @@ class VRApp(QMainWindow):
         self.ui.btn_community_check.clicked.connect(self.manual_check_app_update)
         self.ui.btn_community_discord.clicked.connect(self.open_discord_link)
         self.ui.btn_community_donate.clicked.connect(self.open_paypal_link)
-        self.refresh_overlay_state()
+        # WayVR Design (Settings): cubee-cb-Design installieren / Config löschen
+        self._wayvr_worker = None
+        self.ui.btn_wayvr_install.clicked.connect(self.start_wayvr_design_install)
+        self.ui.btn_wayvr_reset.clicked.connect(self.reset_wayvr_design)
+        if ovl.is_design_installed():
+            self.ui.lbl_wayvr_status.setText(tr("wayvr_installed_hint"))
         self.fill_openxr_fields()
         self.refresh_openxr_status()
 
@@ -694,11 +791,7 @@ class VRApp(QMainWindow):
         # ausgeklappten VRChat-Bereich des Games-Tabs (siehe _build_game_detail).
 
     def get_wivrn_version(self):
-        # Flatpak: Version aus 'flatpak info' lesen
-        if self._install_method() == "flatpak" and INSTALL_FLATPAK:
-            ok, ver = appimg.flatpak_query({"flatpak_id": INSTALL_FLATPAK[0]})
-            if ok:
-                return ver or "Flatpak"
+        # Immer nativ: Version direkt aus der wivrn-server-Binary lesen
         try:
             res = subprocess.run(["wivrn-server", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if res.returncode == 0:
@@ -713,12 +806,7 @@ class VRApp(QMainWindow):
         method = self._install_method()
         if not method:
             return False
-        if method == "flatpak":
-            if not INSTALL_FLATPAK:
-                return False
-            ok, _ = appimg.flatpak_query({"flatpak_id": INSTALL_FLATPAK[0]})
-            return ok
-        if method == "native":
+        if method in ("dnf", "native"):
             return shutil.which("wivrn-server") is not None
         # yay/paru: WiVRn/Monado-Pakete vorhanden?
         if not shutil.which(method):
@@ -805,6 +893,13 @@ class VRApp(QMainWindow):
         Dem Nutzer wird immer der NAME angezeigt, nie die AppID. Leere
         Sektionen bleiben samt Überschrift ausgeblendet.
         """
+        # Laufenden Cover-Download stoppen und alte Label-Referenzen verwerfen:
+        # die Widgets darunter werden gleich zerstoert.
+        if getattr(self, "_cover_worker", None) is not None and self._cover_worker.isRunning():
+            self._cover_worker.stop()
+            self._cover_worker.wait(2000)
+        self._pending_covers = {}
+
         self._clear_layout(self.ui.games_grid_tested)
         self._clear_layout(self.ui.games_grid_untested)
         self._games_tiles = {}
@@ -853,6 +948,46 @@ class VRApp(QMainWindow):
             self._games_tile_pos[appid] = (self.ui.games_grid_untested, row, col)
             self.ui.games_grid_untested.addWidget(tile, row * 2, col)
 
+        # Fehlende Cover jetzt im Hintergrund vom Steam-CDN holen
+        self._start_cover_downloads()
+
+    # ----------------------------------------------------------------- #
+    #  Spiel-Cover aus dem Netz nachladen
+    # ----------------------------------------------------------------- #
+    def _start_cover_downloads(self):
+        """
+        Startet den Hintergrund-Download für alle Kacheln ohne Bild.
+        Läuft in einem QThread, damit das Fenster nicht einfriert.
+        """
+        if not self._pending_covers:
+            return
+        if self._cover_worker is not None and self._cover_worker.isRunning():
+            self._cover_worker.stop()
+            self._cover_worker.wait(2000)
+        self._cover_worker = CoverDownloadWorker(list(self._pending_covers.keys()))
+        self._cover_worker.cover_ready.connect(self._on_cover_ready)
+        self._cover_worker.start()
+
+    def _on_cover_ready(self, appid, path):
+        """Ein Cover ist da -> Platzhalter der Kachel durch das Bild ersetzen."""
+        lbl = self._pending_covers.pop(str(appid), None)
+        if lbl is None:
+            return
+        try:
+            pix = QPixmap(path)
+            if pix.isNull():
+                return
+            # Platzhalter-Styling zurücknehmen (feste Größe + 🎮-Schrift)
+            lbl.setText("")
+            lbl.setStyleSheet("background: transparent; border: none;")
+            lbl.setFixedSize(self.GAMES_COVER_W, self.GAMES_COVER_H)
+            lbl.setPixmap(pix.scaled(
+                self.GAMES_COVER_W, self.GAMES_COVER_H,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        except RuntimeError:
+            # Kachel wurde inzwischen neu aufgebaut -> Label existiert nicht mehr
+            pass
+
     def _tile_css(self, selected):
         if selected:
             return """
@@ -894,7 +1029,10 @@ class VRApp(QMainWindow):
         lbl_cover = QLabel()
         lbl_cover.setAlignment(Qt.AlignCenter)
         lbl_cover.setStyleSheet("background: transparent; border: none;")
-        cover_path = games_db.find_game_cover(appid)
+        # Ohne Download: was lokal da ist, erscheint SOFORT (Steam-Cache oder
+        # frueher geladenes Cover). Fehlt das Bild, merken wir uns das Label
+        # und holen es im Hintergrund vom Steam-CDN nach.
+        cover_path = games_db.get_game_cover(appid, allow_download=False)
         pix = QPixmap(cover_path) if cover_path else QPixmap()
         if not pix.isNull():
             lbl_cover.setPixmap(pix.scaled(
@@ -905,6 +1043,7 @@ class VRApp(QMainWindow):
             lbl_cover.setStyleSheet(
                 "font-size: 48px; background-color: #2e3440; border-radius: 6px; border: none;")
             lbl_cover.setFixedSize(self.GAMES_COVER_W, self.GAMES_COVER_H)
+            self._pending_covers[str(appid)] = lbl_cover
         box.addWidget(lbl_cover, alignment=Qt.AlignHCenter)
 
         # Fußzeile der Kachel: [▶ Starten]  ...  [▾ aufklappen]
@@ -1566,8 +1705,11 @@ class VRApp(QMainWindow):
             card["lbl_update"].setText("⬆ Update verfügbar" if pm_upd else "")
             st.setText(tr("tools_pm_ok").format(helper=pm_helper))
             st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-            btn.setText(tr("tools_already"))
-            btn.setEnabled(False)
+            # Per yay/paru installiert -> der Knopf wird zum Löschen-Knopf.
+            # Nach dem Entfernen erkennt _refresh_single_tool (yay -Q) den
+            # neuen Zustand und die Karte springt auf 'Nicht installiert'.
+            btn.setText(tr("tools_delete"))
+            btn.setEnabled(True)
             card["cmd_widget"].setVisible(True)
 
         elif flatpak_inst:
@@ -1703,6 +1845,9 @@ class VRApp(QMainWindow):
         # AppImage installiert + kein Update -> Löschen
         if status.get("appimage_installed") and not status.get("appimage_has_update"):
             self.delete_tool(key)
+        elif status.get("pm_installed"):
+            # Per yay/paru installiert -> Paket entfernen
+            self.remove_tool_pm(key)
         else:
             # sonst Installieren bzw. Aktualisieren (per gewählter Methode)
             self.install_tool(key)
@@ -1802,6 +1947,70 @@ class VRApp(QMainWindow):
         # Status frisch berechnen und anzeigen
         self._refresh_single_tool(key)
 
+    def remove_tool_pm(self, key):
+        """
+        Entfernt ein per yay/paru installiertes Tool (Tools-Tab, 'Löschen').
+
+        Öffnet ein Terminal mit '{helper} -Rns {pkg}' (sudo-Passwort + Übersicht
+        für den Nutzer). Danach wird der Status neu berechnet — yay -Q schlägt
+        dann fehl und die Karte springt auf 'Nicht installiert'.
+        """
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        tool = card.get("tool", {})
+        status = card.get("status", {}) or {}
+        name = tool.get("name", key)
+        pkg = tool.get("pkg") or card.get("pkg")
+        helper = status.get("pm_helper") or "yay"
+        if not pkg:
+            return
+
+        # Bestätigung vor dem Entfernen
+        reply = QMessageBox.question(
+            self, tr("tools_pm_remove_title"),
+            tr("tools_pm_remove_text").format(name=name, pkg=pkg, helper=helper),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+
+        # Optional den Config-Ordner mit entfernen (wie beim AppImage-Löschen)
+        also_config = False
+        if tool.get("config_dirs"):
+            hint = appimg.config_path_hint(tool)
+            path = f" ({hint})" if hint else ""
+            reply = QMessageBox.question(
+                self, tr("tools_delete_config_title"),
+                tr("tools_delete_config_text").format(name=name, path=path),
+                QMessageBox.Yes | QMessageBox.No)
+            also_config = (reply == QMessageBox.Yes)
+
+        card["btn_install"].setEnabled(False)
+        card["btn_install"].setText(tr("tools_deleting"))
+        card["lbl_status"].setText("⏳ ...")
+        card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
+
+        self.tool_worker = RemoveWorker([pkg], helper=helper)
+        self.tool_worker.finished_signal.connect(
+            lambda success, k=key, cfg=also_config: self._on_tool_removed(k, success, cfg)
+        )
+        self.tool_worker.start()
+
+    def _on_tool_removed(self, key, success, also_config):
+        """Callback nach dem Terminal-Entfernen: Config löschen (optional) + Status neu."""
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        tool = card.get("tool", {})
+        if success and also_config:
+            try:
+                appimg.delete_config(tool)
+            except Exception as e:
+                print(f"[Tools] Config-Löschen fehlgeschlagen: {e}")
+        # Immer neu prüfen — auch bei Abbruch im Terminal zeigt die Karte
+        # danach den echten Zustand (yay -Q entscheidet, nicht der Returncode).
+        self._refresh_single_tool(key)
+
     def _refresh_single_tool(self, key):
         """Berechnet den Status eines einzelnen Tools neu (lokal/PM) und rendert ihn."""
         card = self.ui.tool_cards.get(key)
@@ -1837,72 +2046,6 @@ class VRApp(QMainWindow):
             card["lbl_status"].setStyleSheet("color: #bf616a; font-size: 12px;")
             card["btn_install"].setText(tr("tools_retry"))
             card["btn_install"].setEnabled(True)
-
-    # ----------------------------------------------------------------------- #
-    #  WayVR Overlay (UI-Design)
-    # ----------------------------------------------------------------------- #
-    def start_overlay_design(self):
-        """Lädt das WayVR-Design herunter und aktiviert das Performance-Overlay."""
-        if self._overlay_worker and self._overlay_worker.isRunning():
-            return
-        self.ui.btn_overlay_design.setEnabled(False)
-        self.ui.btn_overlay_reset.setEnabled(False)
-        self.ui.chk_overlay_slimevr.setEnabled(False)
-        self.ui.btn_overlay_design.setText(tr("overlay_installing"))
-
-        self._overlay_worker = DesignInstallWorker()
-        self._overlay_worker.finished_signal.connect(self._on_overlay_design_done)
-        self._overlay_worker.start()
-
-    def _on_overlay_design_done(self, success, err):
-        self.ui.btn_overlay_design.setEnabled(True)
-        self.ui.btn_overlay_reset.setEnabled(True)
-        self.ui.btn_overlay_design.setText(tr("overlay_design_btn"))
-        if success:
-            QMessageBox.information(self, tr("success"), tr("overlay_design_ok"))
-        else:
-            QMessageBox.critical(self, tr("error"), tr("overlay_design_err") + "\n\n" + (err or ""))
-        # Checkbox-Zustand an die nun installierte watch.xml angleichen
-        self.refresh_overlay_state()
-
-    def reset_overlay_design(self):
-        """Setzt WayVR auf Standard zurück (Design deinstallieren)."""
-        reply = QMessageBox.question(
-            self, tr("overlay_reset_confirm_title"), tr("overlay_reset_confirm_text"),
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply != QMessageBox.Yes:
-            return
-        ok, msg = reset_wayvr_to_default()
-        if ok:
-            QMessageBox.information(self, tr("success"), tr("overlay_reset_ok"))
-        else:
-            QMessageBox.critical(self, tr("error"), tr("overlay_reset_err") + "\n\n" + str(msg))
-        self.refresh_overlay_state()
-
-    def toggle_overlay_slimevr(self, checked):
-        """Schaltet die SlimeVR-Reset-Buttons an/aus (Performance-Overlay bleibt)."""
-        ok, msg = set_slimevr_ui(checked)
-        if ok:
-            key = "overlay_slimevr_ok" if checked else "overlay_slimevr_off"
-            QMessageBox.information(self, tr("success"), tr(key))
-            return
-        # Fehlschlag -> Checkbox ohne erneutes Auslösen zurücksetzen
-        self.ui.chk_overlay_slimevr.blockSignals(True)
-        self.ui.chk_overlay_slimevr.setChecked(not checked)
-        self.ui.chk_overlay_slimevr.blockSignals(False)
-        if msg == "no_design":
-            QMessageBox.warning(self, tr("error"), tr("overlay_need_design"))
-        else:
-            QMessageBox.critical(self, tr("error"), tr("overlay_slimevr_err") + "\n\n" + str(msg))
-
-    def refresh_overlay_state(self):
-        """Spiegelt den tatsächlichen watch.xml-Zustand in die UI (ohne Signale auszulösen)."""
-        design = is_design_installed()
-        self.ui.chk_overlay_slimevr.setEnabled(design)
-        self.ui.chk_overlay_slimevr.blockSignals(True)
-        self.ui.chk_overlay_slimevr.setChecked(design and is_slimevr_active())
-        self.ui.chk_overlay_slimevr.blockSignals(False)
 
     def fill_openxr_fields(self):
         """Füllt das Pfad-Feld und das Inhalt-Feld für die manuelle OpenXR-Reparatur."""
@@ -2151,12 +2294,15 @@ class VRApp(QMainWindow):
         restore_vr_environment(self)
 
     def _package_groups_for(self, method):
-        """Welche Status-Zeilen je Methode? Flatpak/Nativ = nur 'WiVRn'."""
-        if method == "flatpak":
-            return {"WiVRn": list(INSTALL_FLATPAK)}
+        """Welche Status-Zeilen je Methode?"""
+        if method == "dnf":
+            return dict(INSTALL_DNF)          # wivrn + opencomposite (Fedora-Repos)
         if method == "native":
             return {"WiVRn": ["wivrn-server"]}
-        return dict(INSTALL_PACKAGES)
+        if not method:
+            # Ubuntu/Debian: keine Methode -> nur den WiVRn-Status zeigen
+            return {"WiVRn": ["wivrn-server"]}
+        return dict(INSTALL_PACKAGES)         # yay/paru
 
     def _rebuild_package_rows(self):
         """Baut die Status-Zeilen im Installations-Tab passend zur gewählten Methode neu auf."""
@@ -2185,13 +2331,15 @@ class VRApp(QMainWindow):
             installed = True
             has_update = False
 
-            if method == "flatpak":
-                for fid in idents:
-                    ok, _ = appimg.flatpak_query({"flatpak_id": fid})
-                    if not ok:
+            if method == "dnf":
+                # Fedora: rpm -q ist schnell und braucht kein root
+                for pkg in idents:
+                    res = subprocess.run(["rpm", "-q", pkg],
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if res.returncode != 0:
                         installed = False
-            elif method == "native":
-                # Selbst installiert -> nur prüfen, ob die Binary da ist; kein Update-Check
+            elif method == "native" or not method:
+                # Selbst installiert (bzw. Ubuntu) -> nur prüfen, ob die Binary da ist
                 installed = shutil.which("wivrn-server") is not None
             else:
                 if not shutil.which(method):
@@ -2228,40 +2376,56 @@ class VRApp(QMainWindow):
         # Aktualisieren-Knopf je nach Methode (bei 'native' deaktiviert)
         self._update_update_button()
 
-    def _maybe_offer_nixos_flatpak(self):
-        """Auf NixOS: Flatpak erklären bzw. Flathub-Remote per Klick einrichten."""
-        try:
-            if not appimg.is_nixos():
-                return
-            if not appimg.flatpak_available():
-                # Flatpak gar nicht aktiv -> Anleitung zeigen (Rebuild nötig, kein Klick möglich)
-                QMessageBox.information(self, tr("nixos_title"), tr("nixos_no_flatpak_text"))
-                return
-            if not appimg.flathub_remote_present():
-                # Flatpak da, aber Flathub fehlt -> direkt anbieten einzurichten
-                reply = QMessageBox.question(
-                    self, tr("nixos_add_flathub_title"), tr("nixos_add_flathub_text"),
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if reply == QMessageBox.Yes:
-                    if appimg.add_flathub_remote():
-                        QMessageBox.information(self, tr("nixos_title"), tr("nixos_flathub_ok"))
-                        self._populate_install_method_combo()
-                        self._rebuild_package_rows()
-                        self.check_system_packages()
-                    else:
-                        QMessageBox.warning(self, tr("nixos_title"), tr("nixos_flathub_fail"))
-        except Exception as e:
-            print(f"[NixOS-Check] {e}")
+    def _show_ubuntu_install_guide(self):
+        """
+        Ubuntu/Debian: WiVRn liegt nicht in den Repos. Statt Flatpak zeigen wir
+        die native Bau-Anleitung (schlanker + bessere Performance) mit einem
+        Knopf, der die Befehle in die Zwischenablage legt.
+        """
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(tr("ubuntu_guide_title"))
+        box.setText(tr("ubuntu_guide_text"))
+        copy_btn = box.addButton(tr("ubuntu_guide_copy"), QMessageBox.AcceptRole)
+        docs_btn = box.addButton(tr("ubuntu_guide_docs"), QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Close)
+        box.exec()
+        if box.clickedButton() == copy_btn:
+            QApplication.clipboard().setText(UBUNTU_BUILD_COMMANDS)
+            self.ui.lbl_worker_status.setText(tr("ubuntu_guide_copied"))
+        elif box.clickedButton() == docs_btn:
+            webbrowser.open("https://github.com/WiVRn/WiVRn/blob/master/docs/building.md")
+
+    def _maybe_hint_fedora_xrizer(self):
+        """
+        Fedora: wivrn + opencomposite kommen aus den offiziellen Repos.
+        xrizer gibt es dort NICHT (envision-xrizer sind nur Build-Deps!) —
+        nur über COPR. Diesen Hinweis zeigen wir einmalig.
+        """
+        if getattr(self, "_fedora_xrizer_hinted", False):
+            return
+        self._fedora_xrizer_hinted = True
+        if venv.find_xrizer() and os.path.isdir(venv.find_xrizer()):
+            return   # xrizer ist schon da
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(tr("fedora_xrizer_title"))
+        box.setText(tr("fedora_xrizer_text").format(copr=FEDORA_XRIZER_COPR))
+        copy_btn = box.addButton(tr("ubuntu_guide_copy"), QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Close)
+        box.exec()
+        if box.clickedButton() == copy_btn:
+            QApplication.clipboard().setText(
+                f"sudo dnf copr enable {FEDORA_XRIZER_COPR}\nsudo dnf install xrizer")
 
     def _populate_install_method_combo(self):
-        """Füllt das Methoden-Dropdown des Installations-Tabs (yay/paru/flatpak)."""
+        """Füllt das Methoden-Dropdown des Installations-Tabs (yay/paru/dnf)."""
         combo = getattr(self.ui, "combo_install_method", None)
         methods = appimg.available_update_methods()
         self._install_methods = methods
         if combo is None:
             return
-        labels = {"yay": "yay", "paru": "paru", "flatpak": "Flatpak", "native": "Nativ"}
+        labels = {"yay": "yay", "paru": "paru", "dnf": "dnf (Fedora)", "native": "Nativ"}
         combo.blockSignals(True)
         combo.clear()
         for mthd in methods:
@@ -2275,11 +2439,32 @@ class VRApp(QMainWindow):
         combo.setVisible(len(methods) >= 2)
         self._update_update_button()
 
+    def _apply_distro_ui_rules(self):
+        """
+        Distro-abhängige Regeln für den Installations-Tab:
+          Ubuntu/Debian : Update-Knopf komplett ausblenden (WiVRn ist nicht in den
+                          Repos -> es gibt nichts, was wir aktualisieren könnten).
+          Fedora        : Update-Knopf heißt 'Über Fedora-Software aktualisieren'.
+          Arch          : unverändert.
+        """
+        try:
+            if appimg.is_debian_based():
+                self.ui.btn_update.setVisible(False)
+                self.ui.btn_install.setText(tr("install_btn_guide"))
+            elif appimg.is_fedora_based():
+                self.ui.btn_update.setVisible(True)
+                self.ui.btn_update.setText(tr("update_btn_fedora"))
+        except Exception as e:
+            print(f"[Distro-UI] {e}")
+
     def _update_update_button(self):
         """Aktualisieren-Knopf: aktiv nur, wenn es eine Methode gibt und sie NICHT 'native' ist."""
         methods = getattr(self, "_install_methods", None) or appimg.available_update_methods()
         enable = bool(methods) and self._install_method() != "native"
         self.ui.btn_update.setEnabled(enable)
+        # Ubuntu/Debian: Knopf bleibt unsichtbar, egal was der Status sagt
+        if appimg.is_debian_based():
+            self.ui.btn_update.setVisible(False)
 
     def _install_method(self):
         """Aktuell gewählte Methode des Installations-Tabs."""
@@ -2291,14 +2476,43 @@ class VRApp(QMainWindow):
                 return data
         return appimg.default_update_method(methods)
 
+    def _open_fedora_software(self):
+        """
+        Öffnet das Fedora-Software-Center (GNOME Software / KDE Discover).
+        True, wenn eines gestartet werden konnte.
+        """
+        for cmd in (["gnome-software", "--mode=updates"], ["plasma-discover", "--mode", "update"],
+                    ["dnfdragora"]):
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.Popen(cmd)
+                    return True
+                except Exception:
+                    continue
+        return False
+
     def start_system_update(self):
         """Update-Knopf: führt ein Ökosystem-Update über die gewählte Methode aus."""
         method = self._install_method()
+
+        # Ubuntu/Debian: Knopf ist ausgeblendet — falls doch jemand hier landet, abbrechen
+        if appimg.is_debian_based():
+            return
+
+        # Fedora: nicht selbst 'dnf upgrade' fahren, sondern das Software-Center öffnen.
+        # Das ist der Weg, den Fedora-Nutzer erwarten (und es braucht kein sudo im Terminal).
+        if method == "dnf":
+            if self._open_fedora_software():
+                self.ui.lbl_worker_status.setText(tr("fedora_update_opened"))
+            else:
+                QMessageBox.information(self, tr("update_btn"), tr("fedora_update_manual"))
+            return
+
         if method == "native":
             QMessageBox.information(self, tr("native_update_title"), tr("native_update_text"))
             return
         if not method:
-            self.ui.lbl_worker_status.setText("Keine Update-Methode verfügbar (yay/paru/flatpak).")
+            self.ui.lbl_worker_status.setText("Keine Update-Methode verfügbar (yay/paru/dnf).")
             return
         self.ui.btn_install.setEnabled(False)
         self.ui.btn_update.setEnabled(False)
@@ -2310,14 +2524,35 @@ class VRApp(QMainWindow):
     def start_package_installation(self):
         """Install-Knopf: installiert die WiVRn-Runtime über die gewählte Methode."""
         method = self._install_method()
+
+        # Ubuntu/Debian: kein Paket in den Repos -> Kurzanleitung zum nativen Bauen
+        if appimg.is_debian_based():
+            self._show_ubuntu_install_guide()
+            return
+
         if method == "native":
             QMessageBox.information(self, tr("native_install_title"), tr("native_install_text"))
             return
         if not method:
-            self.ui.lbl_worker_status.setText("Keine Installationsmethode verfügbar (yay/paru/flatpak).")
+            self.ui.lbl_worker_status.setText("Keine Installationsmethode verfügbar (yay/paru/dnf).")
             return
 
-        if method in ("yay", "paru"):
+        if method == "dnf":
+            # Fedora: nur die fehlenden Pakete aus den offiziellen Repos nachziehen
+            packages_to_process = []
+            for pkgs in INSTALL_DNF.values():
+                for pkg in pkgs:
+                    res = subprocess.run(["rpm", "-q", pkg],
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if res.returncode != 0:
+                        packages_to_process.append(pkg)
+            if not packages_to_process:
+                self.ui.lbl_worker_status.setText(tr("install_check_done"))
+                self._maybe_hint_fedora_xrizer()
+                return
+            worker_pkgs, helper = packages_to_process, "dnf"
+
+        elif method in ("yay", "paru"):
             # nur fehlende AUR-Pakete installieren
             packages_to_process = []
             for prog_name, pkgs in self.required_packages.items():
@@ -2330,8 +2565,9 @@ class VRApp(QMainWindow):
                 self.ui.lbl_worker_status.setText(tr("install_check_done"))
                 return
             worker_pkgs, helper = packages_to_process, method
-        else:  # flatpak
-            worker_pkgs, helper = list(INSTALL_FLATPAK), "flatpak"
+        else:
+            self.ui.lbl_worker_status.setText("Keine Installationsmethode verfügbar (yay/paru/dnf).")
+            return
 
         self.ui.btn_install.setEnabled(False)
         self.ui.btn_update.setEnabled(False)
@@ -2345,31 +2581,14 @@ class VRApp(QMainWindow):
     def on_installation_finished(self, success):
         self.ui.btn_install.setEnabled(True)
         self._update_update_button()
-        # Methode der Runtime-Installation in der Config merken (für flatpak-Pfade)
+        # Methode der Runtime-Installation in der Config merken
         m = getattr(self, "_last_install_method", "")
         if success and m:
             venv.set_runtime_method(m)
-            # Flatpak: Ordner (config/openxr/openvr) entstehen erst beim ersten Start
-            if m == "flatpak":
-                self._offer_wivrn_first_run()
+            if m == "dnf":
+                self._maybe_hint_fedora_xrizer()
         self.check_system_packages()
         if not self.are_critical_packages_missing(): self.ui.sidebar.setCurrentRow(1)
-
-    def _offer_wivrn_first_run(self):
-        """Nach Flatpak-Installation: Hinweis + Angebot, WiVRn einmal zu starten."""
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Information)
-        box.setWindowTitle(tr("flatpak_firstrun_title"))
-        box.setText(tr("flatpak_firstrun_text"))
-        launch_btn = box.addButton(tr("flatpak_firstrun_launch"), QMessageBox.AcceptRole)
-        box.addButton(tr("flatpak_firstrun_later"), QMessageBox.RejectRole)
-        box.exec()
-        if box.clickedButton() == launch_btn:
-            try:
-                subprocess.Popen(["flatpak", "run", venv.WIVRN_FLATPAK_ID])
-            except Exception as e:
-                QMessageBox.warning(self, tr("error"),
-                                    tr("flatpak_firstrun_launch_fail") + str(e))
 
     def open_port_9757_firewall(self):
         """
@@ -2985,6 +3204,16 @@ class VRApp(QMainWindow):
         self.ui.toggle_server.setChecked(running)
         self.ui.toggle_server.sync_offset()
         self._syncing_toggle = False
+
+    def closeEvent(self, event):
+        """Beim Schließen: laufenden Cover-Download sauber beenden."""
+        try:
+            if getattr(self, "_cover_worker", None) is not None and self._cover_worker.isRunning():
+                self._cover_worker.stop()
+                self._cover_worker.wait(2000)
+        except Exception:
+            pass
+        super().closeEvent(event)
 
     def manual_server_check(self):
         """Prüft auf Knopfdruck (oder beim Start) einmalig den echten Server-Zustand

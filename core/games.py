@@ -31,6 +31,7 @@ aus libraryfolders.vdf). Das Ergebnis wird in der App-Config gecacht
 werden muss — der "Spiele scannen"-Button erzwingt einen Neu-Scan.
 """
 
+import glob
 import os
 import re
 import json
@@ -195,6 +196,11 @@ GAMES = {
     "2800080": game("Thief VR: Legacy of Shadow", protons_valve_main()),
     "620980":  game("Beat Saber",                 protons_valve_main()),
 
+    # Unreal Engine 5. Laut Steam-Seite: SSD empfohlen, GPUs unter 10 GB VRAM
+    # können in schweren Szenen einbrechen -> gamemoderun hilft spürbar.
+    "2472940": game("Wanderer: The Fragments of Fate", protons_ge_main(),
+                    launch_params=all_gpus("gamemoderun %command%")),
+
     # Weitere VR-Spiele hier ergänzen ...
 }
 
@@ -248,11 +254,50 @@ _APPID_BLACKLIST = {
 # Dateien, an denen wir ein VR-Spiel erkennen (OpenVR-/OpenXR-Loader im
 # Installationsordner). Funktioniert komplett offline.
 _VR_MARKER_FILES = {
-    "openvr_api.dll", "libopenvr_api.so",
+    # OpenVR / SteamVR
+    "openvr_api.dll", "libopenvr_api.so", "openvr_api64.dll",
+    # OpenXR
     "openxr_loader.dll", "libopenxr_loader.so",
+    # Unity XR-Plugins (manche Spiele liefern nur diese aus)
+    "unityopenxr.dll", "libunityopenxr.so",
+    "openvr_api.dll.meta", "unityopenvr.dll",
+    # Oculus/Meta-Plugins (native Oculus-Spiele ohne OpenXR-Loader)
+    "libovrplatform.so", "ovrplugin.dll", "libovrplugin.so",
 }
-_VR_SCAN_MAX_DIRS = 400   # Sicherheitslimit pro Spiel (große Spiele!)
-_VR_SCAN_MAX_DEPTH = 4
+
+# Bekannte Ablageorte des Loaders — werden ZUERST direkt geprüft (ohne Walk).
+# Wichtig für Unreal Engine: dort liegt der Loader tief in Engine/Binaries/...,
+# was ein flacher Walk niemals findet.
+_VR_MARKER_GLOBS = [
+    # Unreal Engine 4/5
+    "Engine/Binaries/ThirdParty/OpenXR/*/openxr_loader.dll",
+    "Engine/Binaries/ThirdParty/OpenXR/*/*/openxr_loader.dll",
+    "Engine/Binaries/ThirdParty/OpenVR/*/*/openvr_api.dll",
+    "Engine/Plugins/Runtime/OpenXR/*",
+    "Engine/Plugins/Runtime/Oculus/*",
+    "*/Binaries/Win64/openxr_loader.dll",
+    "*/Plugins/*/Binaries/ThirdParty/OpenXR/*/openxr_loader.dll",
+    # Unity
+    "*_Data/Plugins/x86_64/openvr_api.dll",
+    "*_Data/Plugins/x86_64/UnityOpenXR.dll",
+    "*_Data/Plugins/x86_64/openxr_loader.dll",
+    "*_Data/Plugins/openvr_api.dll",
+    "*_Data/Plugins/x86_64/OVRPlugin.dll",
+    # Godot / sonstige, die den Loader neben die Binary legen
+    "openxr_loader.dll",
+    "openvr_api.dll",
+]
+
+# Ordner, die beim Walk übersprungen werden: dort liegen nie Loader-Dateien,
+# sie fressen aber das Scan-Budget auf (UE-'Content' hat gern 10.000+ Ordner).
+_VR_SCAN_SKIP_DIRS = {
+    "content", "contents", "saved", "intermediate", "derivedatacache",
+    "streamingassets", "movies", "videos", "audio", "sounds", "music",
+    "textures", "localization", "paks", "cache", "logs", "screenshots",
+}
+
+_VR_SCAN_MAX_DIRS = 6000   # großzügig: UE-Spiele haben sehr viele Ordner
+_VR_SCAN_MAX_DEPTH = 7     # UE: Engine/Binaries/ThirdParty/OpenXR/win64/... = 5+
 
 
 def _parse_acf(path):
@@ -276,23 +321,42 @@ def _parse_acf(path):
 def _looks_like_vr_game(steamapps_dir, installdir):
     """
     True, wenn der Installationsordner OpenVR-/OpenXR-Loader enthält.
-    Begrenzte Tiefensuche, damit der Scan auch bei riesigen Spielen
-    schnell bleibt.
+
+    Zwei Stufen:
+      1. Gezielte Prüfung bekannter Engine-Pfade (_VR_MARKER_GLOBS) — schnell
+         und findet vor allem Unreal-Engine-Spiele, bei denen der Loader tief
+         unter Engine/Binaries/ThirdParty/OpenXR/<platform>/ liegt.
+      2. Fallback: begrenzter Walk. Uninteressante Riesenordner (Content, Saved,
+         ...) werden übersprungen, damit das Budget für die Binaries reicht.
     """
     if not installdir:
         return False
     root = os.path.join(steamapps_dir, "common", installdir)
     if not os.path.isdir(root):
         return False
+
+    # --- Stufe 1: bekannte Engine-Pfade direkt abklopfen ------------------- #
+    for pattern in _VR_MARKER_GLOBS:
+        try:
+            if glob.glob(os.path.join(root, pattern)):
+                return True
+        except Exception:
+            pass
+
+    # --- Stufe 2: begrenzter Walk als Fallback ---------------------------- #
     root_depth = root.rstrip(os.sep).count(os.sep)
     visited = 0
     try:
         for cur, dirs, files in os.walk(root):
             visited += 1
             if visited > _VR_SCAN_MAX_DIRS:
-                return False
+                break          # Budget alle -> abbrechen, aber NICHT als "kein VR"
+                               # werten; Stufe 1 hat die üblichen Pfade schon geprüft.
             if cur.count(os.sep) - root_depth >= _VR_SCAN_MAX_DEPTH:
                 dirs[:] = []   # nicht tiefer absteigen
+            else:
+                # Content-/Asset-Ordner überspringen: dort liegen nie Loader.
+                dirs[:] = [d for d in dirs if d.lower() not in _VR_SCAN_SKIP_DIRS]
             for f in files:
                 if f.lower() in _VR_MARKER_FILES:
                     return True
@@ -512,6 +576,75 @@ def dynamic_protons():
 # --------------------------------------------------------------------------- #
 #  Spiel-Coverbild aus dem lokalen Steam-Cache
 # --------------------------------------------------------------------------- #
+# Steam-CDN: Bilder fuer JEDES Spiel, auch fuer nie gestartete/ungetestete.
+# <appid> wird eingesetzt. Reihenfolge = Vorliebe:
+#   library_600x900.jpg -> Hochkant, passt exakt in die Kachel
+#   header.jpg          -> Querformat, gibt es praktisch immer (Fallback)
+STEAM_CDN_BASE = "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps"
+STEAM_CDN_NAMES = ["library_600x900.jpg", "header.jpg"]
+
+COVER_CACHE_DIR = os.path.join(HOME, ".cache/yakuda-connect/covers")
+
+
+def cached_cover_path(appid):
+    """Pfad im lokalen Cover-Cache (existiert evtl. noch nicht)."""
+    return os.path.join(COVER_CACHE_DIR, f"{appid}.jpg")
+
+
+def download_cover(appid, timeout=8):
+    """
+    Laedt das Coverbild vom Steam-CDN in den lokalen Cache.
+    Probiert erst das Hochkant-Bild, dann header.jpg als Fallback.
+    Rueckgabe: Pfad oder None. Schlaegt NIE laut fehl (offline = None).
+    """
+    import urllib.request
+
+    dest = cached_cover_path(appid)
+    if os.path.isfile(dest) and os.path.getsize(dest) > 0:
+        return dest
+
+    os.makedirs(COVER_CACHE_DIR, exist_ok=True)
+    for name in STEAM_CDN_NAMES:
+        url = f"{STEAM_CDN_BASE}/{appid}/{name}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "yakuda-connect"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status != 200:
+                    continue
+                data = resp.read()
+            # Plausibilitaet: JPEG-Magic + nicht bloss eine Fehlerseite
+            if len(data) < 1024 or not data.startswith(b"\xff\xd8"):
+                continue
+            tmp = dest + ".part"
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, dest)      # atomar: nie eine halbe Datei im Cache
+            return dest
+        except Exception:
+            continue
+    return None
+
+
+def get_game_cover(appid, allow_download=True):
+    """
+    Coverbild fuer ein Spiel — die EINE Funktion, die die UI benutzen sollte.
+    Reihenfolge:
+      1. lokaler Steam-Cache (sofort da, kein Netz)
+      2. eigener Download-Cache (~/.cache/yakuda-connect/covers)
+      3. Download vom Steam-CDN (nur wenn allow_download=True)
+    Rueckgabe: Pfad oder None.
+    """
+    local = find_game_cover(appid)
+    if local:
+        return local
+    cached = cached_cover_path(appid)
+    if os.path.isfile(cached) and os.path.getsize(cached) > 0:
+        return cached
+    if allow_download:
+        return download_cover(appid)
+    return None
+
+
 def find_game_cover(appid):
     """
     Pfad zum vertikalen Coverbild (Library-Capsule 600x900) eines Spiels aus

@@ -33,6 +33,59 @@ def find_terminal():
     return None, None
 
 
+class RemoveWorker(QThread):
+    """
+    Entfernt Pakete per yay/paru im Terminal (Tools-Tab, 'Löschen'-Knopf).
+
+    Gleiches Muster wie InstallWorker: das Terminal öffnet sich, damit der
+    Nutzer das sudo-Passwort eingeben und die Paketliste sehen kann.
+    '-Rns' räumt dabei nicht mehr benötigte Abhängigkeiten und die
+    System-Konfiguration des Pakets mit weg (~/.config bleibt unberührt).
+    """
+    status_signal = Signal(str)
+    finished_signal = Signal(bool)
+
+    def __init__(self, packages, helper="yay"):
+        super().__init__()
+        self.packages = packages
+        self.helper = helper if helper in ("yay", "paru") else "yay"
+
+    def run(self):
+        if not self.packages:
+            self.finished_signal.emit(True)
+            return
+
+        terminal, exec_flags = find_terminal()
+        if terminal is None:
+            self.status_signal.emit("Fehler: Kein unterstütztes Terminal gefunden (konsole, kitty, foot, alacritty ...)!")
+            self.finished_signal.emit(False)
+            return
+
+        success = True
+        for pkg in self.packages:
+            self.status_signal.emit(f"Entferne Paket: {pkg}...")
+            bash_cmd = (
+                f"echo '=== Entferne {pkg} mit {self.helper} ==='; "
+                f"{self.helper} -Rns {pkg}; "
+                f"echo ''; "
+                f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
+                f"sleep 2"
+            )
+            cmd = [terminal] + exec_flags + ["bash", "-c", bash_cmd]
+            try:
+                process = subprocess.Popen(cmd)
+                process.wait()
+                if process.returncode != 0:
+                    print(f"Fehler oder Abbruch beim Entfernen von: {pkg} (Terminal: {terminal})")
+                    success = False
+            except Exception as e:
+                print(f"Fehler beim Öffnen von '{terminal}' für {pkg}: {e}")
+                success = False
+            time.sleep(0.5)
+
+        self.finished_signal.emit(success)
+
+
 class UpdateWorker(QThread):
     """Führt ein System-/Ökosystem-Update über die gewählte Methode im Terminal aus."""
     status_signal = Signal(str)
@@ -49,10 +102,22 @@ class UpdateWorker(QThread):
             self.finished_signal.emit(False)
             return
 
+        # Fedora-Paketliste aus programs.INSTALL_DNF ableiten, nicht fest
+        # verdrahten — sonst vergisst man beim Ergaenzen eines Pakets das Update.
+        try:
+            from programs import INSTALL_DNF
+            dnf_pkgs = " ".join(p for pkgs in INSTALL_DNF.values() for p in pkgs)
+        except Exception:
+            dnf_pkgs = "wivrn wivrn-dashboard opencomposite"
+
         cmds = {
-            "yay":     "yay -Syu",
-            "paru":    "paru -Syu",
-            "flatpak": "flatpak update",
+            "yay":  "yay -Syu",
+            "paru": "paru -Syu",
+            # Nur die VR-Pakete anfassen, kein volles Systemupdate.
+            # Wird normalerweise nicht erreicht: auf Fedora oeffnet der
+            # Update-Knopf das Software-Center. Dies ist der Rueckfall, wenn
+            # keines gefunden wird.
+            "dnf":  f"sudo dnf upgrade --refresh {dnf_pkgs}",
         }
         update_cmd = cmds.get(self.method, "yay -Syu")
         self.status_signal.emit(f"Update läuft ({self.method}) ...")
@@ -82,7 +147,9 @@ class InstallWorker(QThread):
     def __init__(self, packages, helper="yay"):
         super().__init__()
         self.packages = packages
-        self.helper = helper if helper in ("yay", "paru", "flatpak") else "yay"
+        # 'flatpak' ist hier nur noch für den TOOLS-Tab erlaubt (ProtonPlus etc.),
+        # die WiVRn-Runtime im Installations-Tab läuft ausschließlich nativ.
+        self.helper = helper if helper in ("yay", "paru", "dnf", "flatpak") else "yay"
 
     def run(self):
         if not self.packages:
@@ -105,6 +172,14 @@ class InstallWorker(QThread):
                 bash_cmd = (
                     f"echo '=== Installiere {pkg} (Flatpak) ==='; "
                     f"flatpak install -y flathub {pkg}; "
+                    f"echo ''; "
+                    f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
+                    f"sleep 2"
+                )
+            elif self.helper == "dnf":
+                bash_cmd = (
+                    f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit dnf ==='; "
+                    f"sudo dnf install -y {pkg}; "
                     f"echo ''; "
                     f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
                     f"sleep 2"
@@ -272,3 +347,41 @@ class AppUpdateWorker(QThread):
         if ok:
             self.status_signal.emit("Update abgeschlossen.")
         self.finished_signal.emit(ok)
+
+
+class CoverDownloadWorker(QThread):
+    """
+    Laedt fehlende Spiel-Cover im Hintergrund vom Steam-CDN.
+
+    Damit hat JEDES erkannte Spiel ein Bild — auch ungetestete und solche, die
+    nie gestartet wurden (fuer die Steam also gar kein lokales Cover hat).
+
+    Pro fertigem Cover kommt ein Signal, damit die Kachel sofort aktualisiert
+    wird, statt bis zum Ende zu warten.
+    """
+    cover_ready = Signal(str, str)   # (appid, pfad)
+    finished_signal = Signal(int)    # Anzahl geladener Cover
+
+    def __init__(self, appids):
+        super().__init__()
+        self.appids = list(appids)
+        self._stop = False
+
+    def stop(self):
+        self._stop = True
+
+    def run(self):
+        # Import hier, damit install_worker ohne games.py importierbar bleibt
+        import games as games_db
+        count = 0
+        for appid in self.appids:
+            if self._stop:
+                break
+            try:
+                path = games_db.download_cover(appid)
+            except Exception:
+                path = None
+            if path:
+                count += 1
+                self.cover_ready.emit(str(appid), path)
+        self.finished_signal.emit(count)

@@ -1,8 +1,18 @@
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 .env
 *.log
+
+# AppImage-Build
 AppDir/
 *.AppImage
 squashfs-root/
+
+# makepkg-Build-Ausgaben (duerfen NICHT ins Repo — sonst landen sie im AUR-Paket)
+pkg/
+src/
+*.pkg.tar.zst
+*.pkg.tar.xz
+*.src.tar.gz

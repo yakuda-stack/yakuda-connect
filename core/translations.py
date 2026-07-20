@@ -81,7 +81,7 @@ TRANSLATIONS = {
         "streaming_prio_on":      "✔ Enabled (CAP_SYS_NICE set)",
         "streaming_prio_off":     "Not enabled",
         "streaming_prio_missing": "wivrn-server not found",
-        "streaming_prio_unsupported": "Not applicable (Nix/Flatpak install)",
+        "streaming_prio_unsupported": "Not applicable (read-only install)",
         "streaming_prio_ok_title": "VR Priority enabled",
         "streaming_prio_ok_text": "wivrn-server now has high-priority permission. Restart the server for it to take effect.",
         "streaming_prio_err":     "Could not set VR priority:",
@@ -180,19 +180,29 @@ TRANSLATIONS = {
         "native_update_title":    "Manual update required",
         "native_update_text":     "WiVRn is installed natively (managed by you / your distro). yakuda-connect can't update it automatically.\n\nPlease update it the same way you installed it (your package manager or your build).",
         "native_install_title":   "Native installation",
-        "native_install_text":    "WiVRn is already installed natively and managed by you. There's nothing for yakuda-connect to install here.\n\nIf you'd rather use Flatpak, pick 'Flatpak' from the dropdown.",
-        "nixos_title":            "NixOS detected",
-        "nixos_no_flatpak_text":  "yakuda-connect installs apps via Flatpak or AppImage on NixOS.\n\nFlatpak isn't enabled yet. To enable it, add this to your configuration.nix:\n\n    services.flatpak.enable = true;\n\nthen run 'sudo nixos-rebuild switch' and add Flathub:\n\n    flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo\n\nAfter that, restart yakuda-connect.",
-        "nixos_add_flathub_title":"Set up Flathub?",
-        "nixos_add_flathub_text": "Flatpak is available, but the Flathub remote is missing.\n\nShould yakuda-connect add the Flathub remote now (per user, no root needed)?",
-        "nixos_flathub_ok":       "Flathub remote added successfully.",
-        "nixos_flathub_fail":     "Could not add the Flathub remote. Please add it manually.",
+        "native_install_text":    "WiVRn is already installed natively and managed by you. There's nothing for yakuda-connect to install here.",
+        # --- Ubuntu/Debian: native Bau-Anleitung (kein Flatpak mehr) ---
+        "app_update_pkg_managed": "yakuda-connect was installed from a package (AUR), so it's managed by your package manager.\n\nPlease update it the same way you installed it, for example:\n\n    yay -S yakuda-connect-git\n\nUpdating from inside the app would install a second copy outside your package manager's control.",
+        "install_btn_guide":      "How to install natively",
+        "ubuntu_guide_title":     "Ubuntu/Debian: install WiVRn natively",
+        "ubuntu_guide_text":      "WiVRn isn't in the Ubuntu/Debian repositories, so it has to be built once from source.\n\nA native build is leaner and performs better than a sandboxed one — it talks to your GPU and USB devices directly, with no sandbox overhead.\n\nClick 'Copy commands', paste them into a terminal and let it run (10–20 minutes). After that, restart yakuda-connect and everything else works as usual.\n\nAfterwards you'll have:\n  • wivrn-server in your PATH\n  • OpenComposite in /opt/opencomposite (for VRChat and other OpenVR games)",
+        "ubuntu_guide_copy":      "Copy commands",
+        "ubuntu_guide_docs":      "Open build docs",
+        "ubuntu_guide_copied":    "Commands copied — paste them into a terminal.",
+        # --- Fedora ---
+        "update_btn_fedora":      "Update via Fedora Software",
+        "fedora_update_opened":   "Fedora Software opened — updates are managed there.",
+        "fedora_update_manual":   "No software center found.\n\nPlease update manually in a terminal:\n\n    sudo dnf upgrade --refresh wivrn opencomposite",
+        "fedora_xrizer_title":    "xrizer on Fedora",
+        "fedora_xrizer_text":     "WiVRn and OpenComposite come from the official Fedora repositories — those are set up now.\n\nxrizer is NOT in the official repos. Careful: the 'envision-xrizer' package only contains build dependencies for Envision, not xrizer itself.\n\nIf you want xrizer, enable the COPR repository:\n\n    sudo dnf copr enable {copr}\n    sudo dnf install xrizer\n\nOpenComposite is already installed and works fine for VRChat, so this is optional.",
         "tools_no_method":        "⚠ Only on Arch (yay/paru)",
         "tools_native":           "⚠ Existing config found",
         "tools_delete_title":     "Removed",
         "tools_delete_text":      "{name} (AppImage), the launcher and the desktop entry were removed.\n\nNote: the config folder{path} was NOT deleted. If you also want to remove it, please do so manually.",
         "tools_delete_config_title": "Delete configuration?",
         "tools_delete_config_text":  "Do you also want to delete the configuration folder{path} of {name}?\n\nYes = remove it as well, No = keep it.",
+        "tools_pm_remove_title":  "Remove package?",
+        "tools_pm_remove_text":   "Remove {name} (package '{pkg}') with {helper}?\n\nA terminal will open running '{helper} -Rns {pkg}' — you may need to enter your sudo password there.",
         "tools_native_title":     "Existing configuration found",
         "tools_native_text":      "A config folder for {name} already exists{path}, so it may already be set up on this system.\n\nInstalling the AppImage on top can cause conflicts. Install the AppImage anyway?",
         "backup_title":           "VR Environment Backup & Restore",
@@ -223,8 +233,6 @@ TRANSLATIONS = {
         "openxr_path_title":     "File path (open this file):",
         "openxr_content_title":  "Paste this into the file:",
         "openxr_copy_btn":       "Copy",
-        "streaming_flatpak_launch_title": "Steam launch option (Flatpak)",
-        "streaming_flatpak_launch_desc":  "Because WiVRn runs as a Flatpak, Steam needs read/write access to the WiVRn Flatpak. Add this launch option to each VR game (Steam → game → Properties → Launch Options), then click Copy:",
         "openxr_copied":         "Copied!",
         "openxr_fix_done":       "OpenXR runtime fixed.\nWritten with absolute paths to:\n{path}",
         "openxr_fix_backup":     "Your previous file was backed up to:\n{backup}",
@@ -320,29 +328,33 @@ TRANSLATIONS = {
         "settings_touch_title":  "Controller Thumbstick Touch Disable",
         "settings_touch_desc":   "Disables thumbstick touch detection — useful if your controller falsely registers finger contact on the thumbstick (common with worn-out Quest/Pico controllers).",
         "settings_touch_coming": "⏳  Coming soon — waiting for WiVRn/Monado to expose this in their config API.\n    Track progress: github.com/WiVRn/WiVRn/issues/868",
-        "overlay_credits": (
-            "Built on the work of the WayVR community — please support the people behind it:<br>"
-            "• Base watch design: <a href='https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr'>cubee-cb / linux-vr-compat</a><br>"
-            "• SlimeVR buttons by <b>sapphire</b> (<b>#wayvr-custom</b> channel on Discord)<br>"
-            "• WayVR Discord: <a href='https://discord.gg/EHAYe3tTYa'>discord.gg/EHAYe3tTYa</a>"
-        ),
 
-        # Overlay (WayVR)
-        "overlay_group":         "WayVR Overlay (UI Design)",
-        "overlay_design_btn":    "Update WayVR Design",
-        "overlay_reset_btn":     "Reset WayVR to default",
-        "overlay_slimevr_btn":   "WayVR with SlimeVR (reset buttons)",
-        "overlay_installing":    "Installing design...",
-        "overlay_design_ok":     "WayVR design installed and the performance overlay was activated.",
-        "overlay_design_err":    "Could not install the WayVR design:",
-        "overlay_reset_confirm_title": "Reset WayVR?",
-        "overlay_reset_confirm_text":  "This removes the custom design and restores WayVR's standard look. A safety backup of the current state is created first. Continue?",
-        "overlay_reset_ok":      "WayVR was reset to its standard look.",
-        "overlay_reset_err":     "Could not reset WayVR:",
-        "overlay_slimevr_ok":    "SlimeVR reset buttons were added to the WayVR watch.",
-        "overlay_slimevr_off":   "SlimeVR reset buttons were removed from the WayVR watch.",
-        "overlay_slimevr_err":   "Could not change the SlimeVR UI:",
-        "overlay_need_design":   "Please run 'Update WayVR Design' first.",
+        # WayVR-Farbpalette
+
+        # Overlay (WayVR) — Design installieren / zurücksetzen
+        "wayvr_group":              "WayVR Design",
+        "wayvr_desc":               "Installs the WayVR design by cubee-cb 1:1 — exactly as it is in the "
+                                    "repository, without any modifications. "
+                                    "A backup of ~/.config/wayvr is created before every change.<br>"
+                                    "Design source: <a href=\"https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr\" "
+                                    "style=\"color:#88c0d0;\">github.com/cubee-cb/linux-vr-compat — dotfiles/wayvr</a>",
+        "wayvr_install_btn":        "Install cubee-cb design",
+        "wayvr_reset_btn":          "Delete custom design / config",
+        "wayvr_status_backup":      "Creating backup …",
+        "wayvr_status_download":    "Downloading design from GitHub …",
+        "wayvr_status_install":     "Installing design …",
+        "wayvr_installed_hint":     "✓ cubee-cb design is currently installed.",
+        "wayvr_install_ok":         "The cubee-cb design was copied 1:1 to ~/.config/wayvr.\n\n"
+                                    "Restart WayVR to see the new design.",
+        "wayvr_install_fail":       "Installing the design failed:\n\n{err}",
+        "wayvr_reset_confirm_title": "Delete WayVR design & config?",
+        "wayvr_reset_confirm_text":  "This deletes ~/.config/wayvr completely — the custom design "
+                                     "and all configs.\n\nWayVR recreates the folder with its factory "
+                                     "defaults on the next start. A backup is created first.\n\nContinue?",
+        "wayvr_reset_ok":            "~/.config/wayvr was deleted.\nWayVR will start with factory defaults next time.",
+        "wayvr_reset_backup_at":     "Backup saved at:\n{path}",
+        "wayvr_reset_fail":          "Reset failed:\n\n{err}",
+
         "overlay_popup_title":   "WayVR installed",
         "overlay_popup_text":    "For a nicer UI design and customization, head to Settings → WayVR Overlay. There you can apply the design and add the SlimeVR buttons at the push of a button.",
 
@@ -351,11 +363,6 @@ TRANSLATIONS = {
         "save":                  "Save",
         "cancel":                "Cancel",
         "error":                 "Error",
-        "flatpak_firstrun_title": "Almost done – start WiVRn once",
-        "flatpak_firstrun_text":  "WiVRn was installed via Flatpak.\n\nPlease start WiVRn once and click through the setup wizard, then you can close it again. Only the first launch creates all the needed folders (config, OpenXR, OpenVR) correctly.\n\nAfter that, yakuda-connect can write its settings properly.",
-        "flatpak_firstrun_launch":"Start WiVRn now",
-        "flatpak_firstrun_later": "I'll do it myself",
-        "flatpak_firstrun_launch_fail": "Could not start WiVRn: ",
         "success":               "Success",
     },
 
@@ -435,7 +442,7 @@ TRANSLATIONS = {
         "streaming_prio_on":      "✔ Aktiv (CAP_SYS_NICE gesetzt)",
         "streaming_prio_off":     "Nicht aktiv",
         "streaming_prio_missing": "wivrn-server nicht gefunden",
-        "streaming_prio_unsupported": "Nicht nötig/möglich (Nix-/Flatpak-Installation)",
+        "streaming_prio_unsupported": "Nicht nötig/möglich (schreibgeschützte Installation)",
         "streaming_prio_ok_title": "VR-Priorität aktiviert",
         "streaming_prio_ok_text": "wivrn-server hat jetzt die Hochprioritäts-Berechtigung. Starte den Server neu, damit es wirkt.",
         "streaming_prio_err":     "VR-Priorität konnte nicht gesetzt werden:",
@@ -534,19 +541,29 @@ TRANSLATIONS = {
         "native_update_title":    "Manuelles Update nötig",
         "native_update_text":     "WiVRn ist nativ installiert (von dir bzw. deiner Distribution verwaltet). yakuda-connect kann es nicht automatisch aktualisieren.\n\nBitte aktualisiere es auf demselben Weg, wie du es installiert hast (dein Paketmanager oder dein eigener Build).",
         "native_install_title":   "Native Installation",
-        "native_install_text":    "WiVRn ist bereits nativ installiert und wird von dir selbst verwaltet. yakuda-connect muss hier nichts installieren.\n\nWenn du lieber Flatpak nutzen möchtest, wähle im Dropdown 'Flatpak'.",
-        "nixos_title":            "NixOS erkannt",
-        "nixos_no_flatpak_text":  "yakuda-connect installiert Programme auf NixOS über Flatpak oder AppImage.\n\nFlatpak ist noch nicht aktiviert. Zum Aktivieren füge dies in deine configuration.nix ein:\n\n    services.flatpak.enable = true;\n\nführe dann 'sudo nixos-rebuild switch' aus und füge Flathub hinzu:\n\n    flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo\n\nStarte danach yakuda-connect neu.",
-        "nixos_add_flathub_title":"Flathub einrichten?",
-        "nixos_add_flathub_text": "Flatpak ist vorhanden, aber das Flathub-Remote fehlt.\n\nSoll yakuda-connect das Flathub-Remote jetzt hinzufügen (pro Benutzer, ohne root)?",
-        "nixos_flathub_ok":       "Flathub-Remote erfolgreich hinzugefügt.",
-        "nixos_flathub_fail":     "Flathub-Remote konnte nicht hinzugefügt werden. Bitte manuell hinzufügen.",
+        "native_install_text":    "WiVRn ist bereits nativ installiert und wird von dir selbst verwaltet. yakuda-connect muss hier nichts installieren.",
+        # --- Ubuntu/Debian: native Bau-Anleitung (kein Flatpak mehr) ---
+        "app_update_pkg_managed": "yakuda-connect wurde als Paket installiert (AUR) und wird von deiner Paketverwaltung verwaltet.\n\nBitte aktualisiere es auf demselben Weg, z. B. mit:\n\n    yay -S yakuda-connect-git\n\nEin Update aus der App heraus würde eine zweite Kopie an der Paketverwaltung vorbei anlegen.",
+        "install_btn_guide":      "Anleitung: nativ installieren",
+        "ubuntu_guide_title":     "Ubuntu/Debian: WiVRn nativ installieren",
+        "ubuntu_guide_text":      "WiVRn liegt nicht in den Ubuntu-/Debian-Repos und muss deshalb einmalig selbst gebaut werden.\n\nEin nativer Build ist schlanker und schneller als eine Sandbox-Installation — er spricht direkt mit GPU und USB-Geräten, ganz ohne Sandbox-Overhead.\n\nKlicke auf 'Befehle kopieren', füge sie in ein Terminal ein und lass es durchlaufen (10–20 Minuten). Danach yakuda-connect neu starten — der Rest funktioniert dann wie gewohnt.\n\nDanach hast du:\n  • wivrn-server im PATH\n  • OpenComposite unter /opt/opencomposite (für VRChat und andere OpenVR-Spiele)",
+        "ubuntu_guide_copy":      "Befehle kopieren",
+        "ubuntu_guide_docs":      "Bau-Anleitung öffnen",
+        "ubuntu_guide_copied":    "Befehle kopiert — jetzt in ein Terminal einfügen.",
+        # --- Fedora ---
+        "update_btn_fedora":      "Über Fedora-Software aktualisieren",
+        "fedora_update_opened":   "Fedora-Software geöffnet — Updates laufen dort.",
+        "fedora_update_manual":   "Kein Software-Center gefunden.\n\nBitte manuell im Terminal aktualisieren:\n\n    sudo dnf upgrade --refresh wivrn opencomposite",
+        "fedora_xrizer_title":    "xrizer unter Fedora",
+        "fedora_xrizer_text":     "WiVRn und OpenComposite kommen aus den offiziellen Fedora-Repos — die sind jetzt eingerichtet.\n\nxrizer liegt NICHT in den offiziellen Repos. Achtung: Das Paket 'envision-xrizer' enthält nur Build-Abhängigkeiten für Envision, nicht xrizer selbst.\n\nWenn du xrizer möchtest, aktiviere das COPR-Repo:\n\n    sudo dnf copr enable {copr}\n    sudo dnf install xrizer\n\nOpenComposite ist schon installiert und reicht für VRChat völlig — das hier ist also optional.",
         "tools_no_method":        "⚠ Nur auf Arch (yay/paru)",
         "tools_native":           "⚠ Konfiguration vorhanden",
         "tools_delete_title":     "Entfernt",
         "tools_delete_text":      "{name} (AppImage), der Startbefehl und der Desktop-Eintrag wurden entfernt.\n\nHinweis: Der Konfigurationsordner{path} wurde NICHT gelöscht. Wenn du ihn auch entfernen möchtest, musst du das selbst tun.",
         "tools_delete_config_title": "Konfiguration löschen?",
         "tools_delete_config_text":  "Möchtest du auch den Konfigurationsordner{path} von {name} löschen?\n\nJa = ebenfalls löschen, Nein = behalten.",
+        "tools_pm_remove_title":  "Paket entfernen?",
+        "tools_pm_remove_text":   "{name} (Paket '{pkg}') mit {helper} entfernen?\n\nEs öffnet sich ein Terminal mit '{helper} -Rns {pkg}' — dort musst du ggf. dein sudo-Passwort eingeben.",
         "tools_native_title":     "Konfiguration bereits vorhanden",
         "tools_native_text":      "Für {name} existiert bereits ein Konfigurationsordner{path} – das Programm ist also evtl. schon auf diesem System eingerichtet.\n\nDie AppImage zusätzlich zu installieren kann zu Konflikten führen. AppImage trotzdem installieren?",
         "backup_title":           "VR-Umgebung Sicherung & Wiederherstellung",
@@ -577,8 +594,6 @@ TRANSLATIONS = {
         "openxr_path_title":     "Dateipfad (diese Datei oeffnen):",
         "openxr_content_title":  "Das in die Datei eintragen:",
         "openxr_copy_btn":       "Kopieren",
-        "streaming_flatpak_launch_title": "Steam-Startoption (Flatpak)",
-        "streaming_flatpak_launch_desc":  "Da WiVRn als Flatpak läuft, braucht Steam Lese-/Schreibzugriff auf das WiVRn-Flatpak. Füge diese Startoption bei jedem VR-Spiel hinzu (Steam → Spiel → Eigenschaften → Startoptionen) und klicke dann auf Kopieren:",
         "openxr_copied":         "Kopiert!",
         "openxr_fix_done":       "OpenXR-Runtime repariert.\nMit absoluten Pfaden geschrieben nach:\n{path}",
         "openxr_fix_backup":     "Deine vorherige Datei wurde gesichert unter:\n{backup}",
@@ -676,29 +691,34 @@ TRANSLATIONS = {
         "settings_touch_title":  "Controller-Thumbstick-Touch deaktivieren",
         "settings_touch_desc":   "Deaktiviert die Touch-Erkennung des Thumbsticks — nützlich, wenn dein Controller fälschlicherweise Fingerkontakt am Thumbstick meldet (häufig bei abgenutzten Quest/Pico-Controllern).",
         "settings_touch_coming": "⏳  Demnächst — wartet darauf, dass WiVRn/Monado dies in der Config-API verfügbar macht.\n    Fortschritt verfolgen: github.com/WiVRn/WiVRn/issues/868",
-        "overlay_credits": (
-            "Basiert auf der Arbeit der WayVR-Community — bitte unterstütze die Leute dahinter:<br>"
-            "• Basis-Watch-Design: <a href='https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr'>cubee-cb / linux-vr-compat</a><br>"
-            "• SlimeVR-Buttons von <b>sapphire</b> (Channel <b>#wayvr-custom</b> auf Discord)<br>"
-            "• WayVR-Discord: <a href='https://discord.gg/EHAYe3tTYa'>discord.gg/EHAYe3tTYa</a>"
-        ),
 
-        # Overlay (WayVR)
-        "overlay_group":         "WayVR Overlay (UI-Design)",
-        "overlay_design_btn":    "WayVR-Design aktualisieren",
-        "overlay_reset_btn":     "WayVR auf Standard zurücksetzen",
-        "overlay_slimevr_btn":   "WayVR mit SlimeVR (Reset-Buttons)",
-        "overlay_installing":    "Design wird installiert...",
-        "overlay_design_ok":     "WayVR-Design installiert und das Performance-Overlay wurde aktiviert.",
-        "overlay_design_err":    "WayVR-Design konnte nicht installiert werden:",
-        "overlay_reset_confirm_title": "WayVR zurücksetzen?",
-        "overlay_reset_confirm_text":  "Dadurch wird das Custom-Design entfernt und WayVRs Standard-Aussehen wiederhergestellt. Vorher wird eine Sicherheitskopie des aktuellen Zustands angelegt. Fortfahren?",
-        "overlay_reset_ok":      "WayVR wurde auf das Standard-Aussehen zurückgesetzt.",
-        "overlay_reset_err":     "WayVR konnte nicht zurückgesetzt werden:",
-        "overlay_slimevr_ok":    "SlimeVR-Reset-Buttons wurden zur WayVR-Watch hinzugefügt.",
-        "overlay_slimevr_off":   "SlimeVR-Reset-Buttons wurden aus der WayVR-Watch entfernt.",
-        "overlay_slimevr_err":   "SlimeVR-UI konnte nicht geändert werden:",
-        "overlay_need_design":   "Bitte zuerst 'WayVR-Design aktualisieren' ausführen.",
+        # WayVR-Farbpalette
+
+        # Overlay (WayVR) — Design installieren / zurücksetzen
+        "wayvr_group":              "WayVR Design",
+        "wayvr_desc":               "Installiert das WayVR-Design von cubee-cb 1:1 — exakt so, wie es im "
+                                    "Repository liegt, ohne jede Veränderung. "
+                                    "Vor jeder Änderung wird ~/.config/wayvr gesichert.<br>"
+                                    "Design-Quelle: <a href=\"https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr\" "
+                                    "style=\"color:#88c0d0;\">github.com/cubee-cb/linux-vr-compat — dotfiles/wayvr</a>",
+        "wayvr_install_btn":        "Cubee-cb-Design installieren",
+        "wayvr_reset_btn":          "Custom-Design / Config löschen",
+        "wayvr_status_backup":      "Backup wird erstellt …",
+        "wayvr_status_download":    "Design wird von GitHub geladen …",
+        "wayvr_status_install":     "Design wird installiert …",
+        "wayvr_installed_hint":     "✓ Das cubee-cb-Design ist derzeit installiert.",
+        "wayvr_install_ok":         "Das cubee-cb-Design wurde 1:1 nach ~/.config/wayvr kopiert.\n\n"
+                                    "Starte WayVR neu, um das neue Design zu sehen.",
+        "wayvr_install_fail":       "Die Installation des Designs ist fehlgeschlagen:\n\n{err}",
+        "wayvr_reset_confirm_title": "WayVR-Design & Config löschen?",
+        "wayvr_reset_confirm_text":  "Das löscht ~/.config/wayvr komplett — das Custom-Design "
+                                     "und alle Configs.\n\nWayVR legt den Ordner beim nächsten Start "
+                                     "mit Werkseinstellungen neu an. Vorher wird ein Backup erstellt."
+                                     "\n\nFortfahren?",
+        "wayvr_reset_ok":            "~/.config/wayvr wurde gelöscht.\nWayVR startet beim nächsten Mal mit Werkseinstellungen.",
+        "wayvr_reset_backup_at":     "Backup liegt unter:\n{path}",
+        "wayvr_reset_fail":          "Zurücksetzen fehlgeschlagen:\n\n{err}",
+
         "overlay_popup_title":   "WayVR installiert",
         "overlay_popup_text":    "Für ein schöneres UI-Design und Anpassungen gehe zu Einstellungen → WayVR Overlay. Dort kannst du per Knopfdruck das Design anwenden und die SlimeVR-Buttons hinzufügen.",
 
@@ -707,11 +727,6 @@ TRANSLATIONS = {
         "save":                  "Speichern",
         "cancel":                "Abbrechen",
         "error":                 "Fehler",
-        "flatpak_firstrun_title": "Fast fertig – WiVRn einmal starten",
-        "flatpak_firstrun_text":  "WiVRn wurde per Flatpak installiert.\n\nBitte starte WiVRn einmal und klicke dich durch den Einrichtungs-Wizard, danach kannst du es wieder schließen. Erst durch den ersten Start werden alle nötigen Ordner (Config, OpenXR, OpenVR) korrekt angelegt.\n\nDanach kann yakuda-connect seine Einstellungen sauber schreiben.",
-        "flatpak_firstrun_launch":"WiVRn jetzt starten",
-        "flatpak_firstrun_later": "Mache ich selbst",
-        "flatpak_firstrun_launch_fail": "WiVRn konnte nicht gestartet werden: ",
         "success":               "Erfolg",
     }
 }

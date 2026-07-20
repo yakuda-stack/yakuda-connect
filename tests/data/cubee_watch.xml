@@ -1,30 +1,22 @@
 <layout>
   <theme>
-
-    <var key="user_config_path" value="/home/curin/.config" />
-
     <var key="clock0_size" value="46" />
     <var key="clock0_date_size" value="16" />
     <var key="clock0_dow_size" value="16" />
-    <var key="clock_alt1_color" value="#8bd5ca" />
-    <var key="clock_alt2_color" value="#b7bdf8" />
     <var key="clock_alt_size" value="24" />
     <var key="clock_alt_tz_size" value="14" />
   </theme>
 
   <macro name="decorative_rect"
-    padding="8" color="~color_bg"
-    border="2" border_color="~color_accent" round="8" />
+    padding="8" color="background_contrast"
+    border="2" border_color="outline" round="8" />
 
-  <macro name="button_style"
-    padding="8"
-    border_color="~color_accent_translucent" border="2" round="8" color="~color_accent_40" color2="~color_accent_10" gradient="vertical"
-    align_items="center" justify_content="center" />
+  <macro name="button_style" padding="8" border="2" round="8" align_items="center" justify_content="center" />
 
   <template name="Device">
     <rectangle macro="decorative_rect" padding_top="4" padding_bottom="4" align_items="center" gap="8">
-      <sprite width="32" height="32" src_builtin="${src}" />
-      <label _source="battery" _device="${idx}" size="24" weight="bold" />
+      <sprite width="32" height="32" src_builtin="${src}" color="on_background" />
+      <label _source="battery" _device="${idx}" size="24" weight="bold" _low_color="danger" _normal_color="primary" _charging_color="tertiary" />
     </rectangle>
   </template>
 
@@ -43,88 +35,79 @@
 
   <template name="Screen">
     <Button macro="button_style" id="overlay_${idx}" tooltip_str="${name}" _press="::OverlayToggle ${name}">
-      <sprite width="38" height="38" color="~color_text" src_builtin="edit/screen.svg" />
+      <sprite width="38" height="38" src_builtin="edit/screen.svg" />
       <div position="absolute" margin_top="-7" margin_left="-1">
-        <label text="${display}" size="18" color="~color_faded_20" weight="bold" />
+        <label text="${display}" size="18" weight="bold" parent_color="background" />
       </div>
     </Button>
   </template>
   <template name="Panel">
     <Button macro="button_style" id="overlay_${idx}" tooltip_str="${name}" _press="::OverlayToggle ${name}">
-      <sprite width="38" height="38" color="~color_text" src_builtin="edit/panel.svg" />
+      <sprite width="38" height="38" src_builtin="edit/panel.svg" />
     </Button>
   </template>
   <template name="Mirror">
-    <Button macro="button_style" id="overlay_${idx}" tooltip_str="${name}" tooltip_side="top" _press="::OverlayToggle ${name}">
-      <sprite width="38" height="38" color="~color_text" src_builtin="edit/mirror.svg" />
+    <Button macro="button_style" id="overlay_${idx}" tooltip_str="${name}" _press="::OverlayToggle ${name}">
+      <sprite width="38" height="38" src_builtin="edit/mirror.svg" />
       <div position="absolute" margin_top="5" margin_left="13">
-        <label text="${display}" size="20" color="~color_faded_20" weight="bold" />
+        <label text="${display}" size="20" weight="bold" parent_color="background" />
       </div>
     </Button>
   </template>
   <template name="App">
     <Button macro="button_style" id="overlay_${idx}" tooltip_str="${name}" _press="::OverlayToggle ${name}">  
-      <sprite width="38" height="38" color="~color_text" src_ext="${icon}" />
+      <sprite width="38" height="38" src_ext="${icon}" />
     </Button>
   </template>
     
   <template name="Set">
     <Button macro="button_style" id="set_${idx}" _press="::SetToggle ${idx}" tooltip="WATCH.SWITCH_TO_SET" tooltip_side="top">
-      <sprite width="40" height="40" color="~color_text" src_builtin="watch/set2.svg" />
+      <sprite width="38" height="38" src_builtin="watch/set2.svg" />
       <div position="absolute" margin_top="9">
-        <label text="${display}" size="24" color="#00050F" weight="bold" />
+        <label text="${display}" size="24" weight="bold" parent_color="background" />
       </div>
     </Button>
   </template>
 
   <template name="PanelButton">
     <Button macro="button_style" _press="${press_action}" tooltip_str="${tooltip}" tooltip_side="top">
-      <sprite color="~color_text" width="40" height="40" src_ext="${localglyph}" />
+      <sprite color="on_background_variant" width="40" height="40" src_ext="${localglyph}" />
     </Button>
   </template>
-
 
   <template name="BottomButton">
     <div gap="4">
       <Button id="${id}" macro="button_style" _press="${press_action}" tooltip="${tooltip}" tooltip_side="top">
-        <sprite color="~color_text" width="40" height="40" src_builtin="${internalglyph}" />
+        <sprite color="on_background_variant" width="40" height="40" src_builtin="${internalglyph}" />
       </Button>
     </div>
   </template>
 
-
   <template name="Clock">
     <div gap="12" flex_direction="column" padding="4">
       <div flex_direction="column" >
-        <label text="11:22 PM" _source="clock" _display="time" color="~color_text" size="~clock0_size" weight="bold" align="center" />
+        <label text="11:22 PM" _source="clock" _display="time" color="on_background" size="~clock0_size" weight="bold" align="center" />
         <div padding_left="2" gap="16" flex_direction="row" justify_content="center">
-          <label text="Tue" _source="clock" _display="dow_short" color="~color_text" size="~clock0_dow_size" weight="bold" />
-          <label text="22/2/2022" _source="clock" _display="date" color="~color_text" size="~clock0_date_size" weight="bold" />
+          <label text="Tue" _source="clock" _display="dow_short" color="on_background_variant" size="~clock0_dow_size" weight="bold" />
+          <label text="22/2/2022" _source="clock" _display="date" color="on_background_variant" size="~clock0_date_size" weight="bold" />
         </div>
       </div>
       <div flex_direction="row" gap="8" justify_content="space_around">
         <!-- Timezone names here are only placeholders. Set your timezones via ~/.config/wayvr/conf.d -->
         <div flex_direction="column">
-          <label text="Paris" _source="clock" _display="name" _timezone="0" color="~clock_alt1_color" size="~clock_alt_tz_size" weight="bold" align="center" />
-          <label text="23:59" _source="clock" _display="time" _timezone="0" color="~clock_alt1_color" size="~clock_alt_size" weight="bold" align="center" />
+          <label text="Paris" _source="clock" _display="name" _timezone="0" color="secondary" size="~clock_alt_tz_size" weight="bold" align="center" />
+          <label text="23:59" _source="clock" _display="time" _timezone="0" color="secondary" size="~clock_alt_size" weight="bold" align="center" />
         </div>
         <div flex_direction="column">
-          <label text="New York" _source="clock" _display="name" _timezone="1" color="~clock_alt2_color" size="~clock_alt_tz_size" weight="bold" align="center" />
-          <label text="23:59" _source="clock" _display="time" _timezone="1" color="~clock_alt2_color" size="~clock_alt_size" weight="bold" align="center" />
+          <label text="New York" _source="clock" _display="name" _timezone="1" color="tertiary" size="~clock_alt_tz_size" weight="bold" align="center" />
+          <label text="23:59" _source="clock" _display="time" _timezone="1" color="tertiary" size="~clock_alt_size" weight="bold" align="center" />
         </div>
       </div>
     </div>
   </template>
 
   <template name="VerticalSeparator">
-    <rectangle width="2" height="100%" color="~color_accent" />
-  </template>
-
-  <!-- YAKUDA_SLIMEVR: Reset-Button-Template (von sapphire) -->
-  <template name="SVRResetButton">
-    <Button id="btn_slimevr_reset_${type}" macro="button_style" _press="::ShellExec solarxr-cli reset ${type}" tooltip_str="${tooltip}" tooltip_side="top">
-      <sprite color="~color_text" width="38" height="38" src="$HOME/.config/wayvr/theme/assets/${type}-reset.svg" />
-    </Button>
+    <rectangle width="2" height="100%" color="outline" />
   </template>
 
   <elements>
@@ -156,8 +139,8 @@
               <PanelButton tooltip="Previous Track" press_action="::ShellExec playerctl previous" localglyph="watch/previous.svg" />
               <PanelButton tooltip="Play/Pause" press_action="::ShellExec playerctl play-pause" localglyph="watch/play_pause.svg" />
               <PanelButton tooltip="Next Track" press_action="::ShellExec playerctl next" localglyph="watch/next.svg" />
-
             </div>
+
             <div gap="8">
               <PanelButton tooltip="Volume Down" press_action="::ShellExec wpctl set-volume @DEFAULT_SINK@ .05-" localglyph="watch/volume_down.svg" />
               <PanelButton tooltip="Volume Up" press_action="::ShellExec wpctl set-volume @DEFAULT_SINK@ .05+" localglyph="watch/volume_up.svg" />
@@ -165,8 +148,8 @@
               <Button macro="button_style" _press="::OscSend /chatbox/input" _arg0="" _arg1="false" _arg2="false" tooltip_str="Open Chatbox" tooltip_side="top">
                 <sprite color="~color_text" width="40" height="40" src="watch/chat.svg" />
               </Button>
-
             </div>
+
           </div>
         </rectangle>
 
@@ -174,61 +157,28 @@
         <div flex_direction="row" gap="8">
 
           <BottomButton id="btn_dashboard" press_action="::DashToggle" tooltip="WATCH.DASHBOARD" internalglyph="watch/wayvr_dashboard_mono.svg" />
-          <BottomButton id="btn_keyboard" press_action="::OverlayToggle kbd" tooltip="EDIT_MODE.KEYBOARD" internalglyph="watch/keyboard.svg" />
-          <VerticalSeparator />
           <BottomButton id="btn_edit_mode" press_action="::EditToggle" tooltip="WATCH.EDIT_MODE" internalglyph="watch/edit.svg" />
 
-          <!-- edit mode
-          <div gap="4">
-            <Button id="btn_dashboard" macro="button_style" _press="::DashToggle" tooltip="WATCH.DASHBOARD" tooltip_side="top">
-              <sprite color="~color_text" width="40" height="40" src="watch/wayvr_dashboard_mono.svg" />
-            </Button>
-          </div>
+          <VerticalSeparator />
 
-          <div gap="4">
-            <Button id="btn_keyboard" macro="button_style" _press="::OverlayToggle kbd" tooltip="EDIT_MODE.KEYBOARD" tooltip_side="top">
-              <sprite color="~color_text" src_builtin="watch/keyboard.svg" width="40" height="40" />
-            </Button>
-          </div>
+          <BottomButton id="btn_keyboard" press_action="::OverlayToggle kbd" tooltip="EDIT_MODE.KEYBOARD" internalglyph="watch/keyboard.svg" />
 
           <VerticalSeparator />
 
-          <div gap="4">
-            <Button id="btn_edit_mode" macro="button_style" _press="::EditToggle" tooltip="WATCH.EDIT_MODE" tooltip_side="top">
-              <sprite color="~color_text" width="40" height="40" src="watch/edit.svg" />
-            </Button>
-          </div>
- -->
-          <VerticalSeparator />
-
-          <!-- working sets and/or panels -->
           <div id="sets_root" gap="4">
-            <!-- examples for uidev -->
+            <!-- Will populate tags at runtime -->
+            <!-- These are examples for uidev -->
             <Set idx="0" display="1" />
             <Set idx="1" display="2" />
           </div>
+
           <div id="panels_root" gap="4" display="none">
-            <!-- examples for uidev -->
+            <!-- Will populate tags at runtime -->
+            <!-- These are examples for uidev -->
             <Screen idx="0" display="H1" name="HDMI-A-1" />
             <Screen idx="1" display="D2" name="DP-2"/>
           </div>
 
-        </div>
-      
-        <!-- YAKUDA_SLIMEVR: SlimeVR-Reihe (von sapphire) - eine Reihe DARUNTER -->
-        <div flex_direction="row" gap="8">
-          <div gap="4">
-            <Button id="btn_eepyxr" macro="button_style" _press="::ShellExec eepyxr" tooltip_str="eepyxr" tooltip_side="top">
-              <sprite color="~color_text" width="40" height="40" src="$HOME/.config/wayvr/theme/assets/eepyxr.svg" />
-            </Button>
-          </div>
-          <VerticalSeparator />
-          <div id="slimevr_root" gap="4">
-            <SVRResetButton type="yaw" tooltip="Yaw Reset" />
-            <SVRResetButton type="full" tooltip="Full Reset" />
-            <SVRResetButton type="mounting" tooltip="Mounting Reset" />
-            <SVRResetButton type="mounting-feet" tooltip="Feet Mounting Reset" />
-          </div>
         </div>
       </div>
     </div>
