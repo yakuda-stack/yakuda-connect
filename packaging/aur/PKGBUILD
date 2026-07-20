@@ -18,7 +18,7 @@ arch=('any')
 url="https://github.com/yakuda-stack/yakuda-connect"
 license=('GPL-3.0-or-later')
 # Pflicht-Abhaengigkeiten -> werden automatisch mitinstalliert:
-depends=('python' 'pyside6')
+depends=('python' 'pyside6' 'python-setproctitle')
 # Optionale Laufzeit-Werkzeuge (das Tool ruft sie auf, falls vorhanden):
 optdepends=('iproute2: Headset-Verbindungserkennung (ss)'
             'libpulse: Headset-Verbindungserkennung (pactl)'
