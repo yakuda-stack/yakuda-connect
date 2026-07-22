@@ -190,6 +190,29 @@ TOOLS_APPS = [
 
 TOOLS_OSC = [
     {
+        "key":          "osc-dreamchatbox",
+        "name":         "OSC-DreamChatbox",
+        "pkg":          "osc-dreamchatbox",
+        # Vom Autor dieses Projekts (yakuda-stack) — daher hervorgehoben.
+        "desc":         ("Native Linux-Alternative zu MagicChatbox (VRCOSC) – VRChat-OSC-Chatbox-Begleiter: "
+                         "Status-Rotation, Now-Playing, Hardware-Monitor, Speech-to-Text und OSCQuery."),
+        "desc_eng":     ("Native Linux alternative to MagicChatbox (VRCOSC) — VRChat OSC chatbox companion "
+                         "(status, now-playing, hardware, speech-to-text, OSCQuery)."),
+        "start_cmd":    "osc-dreamchatbox",
+        "link":         "https://github.com/yakuda-stack/OSC-DreamChatbox",
+        # Karte optisch hervorheben (Akzent-Rahmen + ★-Badge) — siehe _build_tool_card.
+        "featured":     True,
+        # AppImage / yay / paru — Vorauswahl AppImage
+        "install_methods": ["appimage", "aur"],
+        "github_repo":  "yakuda-stack/OSC-DreamChatbox",
+        "asset_match":  "-x86_64.AppImage",
+        # Releases sind (noch) alpha-getaggt — Prereleases mitberücksichtigen,
+        # damit der Update-Check auch künftige Alpha-Builds findet.
+        "include_prerelease": True,
+        "icon_url":     "https://raw.githubusercontent.com/yakuda-stack/OSC-DreamChatbox/main/assets/icon.png",
+        "config_dirs":  ["OSC-DreamChatbox"],
+    },
+    {
         "key":          "oscleash",
         "name":         "OSC Leash",
         "pkg":          "oscleash",

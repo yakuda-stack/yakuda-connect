@@ -104,7 +104,8 @@ TRANSLATIONS = {
         "tools_subtitle":        "Install and launch useful VR companion apps directly from here.",
         "tools_check_btn":       "🔄 Check for Updates",
         "tools_apps":            "Applications",
-        "tools_osc":             "OSC",
+        "tools_osc":             "OSC Apps",
+        "tools_featured_tip":    "Made by Yakuda — the developer of this app",
         "tools_installed":       "✔ Installed",
         "tools_not_installed":   "Not installed",
         "tools_unknown":         "Unknown — please run update check",
@@ -166,6 +167,26 @@ TRANSLATIONS = {
         "killcmd_warn":           ("⚠ These commands are executed as a shell — only enter commands you trust. "
                                    "Missing entries are simply skipped."),
 
+        # --- Mikrofon / Audio source (default-source) ---
+        "mic_group":              "Microphone / Audio source",
+        "mic_desc":               ("Since <b>Proton 11</b> virtual microphones aren't passed through to games "
+                                   "cleanly anymore. If you route audio into VRChat with a virtual mic (e.g. via "
+                                   "<b>PipeWeaver</b> to send Spotify / YouTube Music into the game), pick the "
+                                   "recording source here and set it as the system default. "
+                                   "<b>Reset</b> restores the source that was active before."),
+        "mic_refresh_btn":        "⟳ Refresh",
+        "mic_refresh_tip":        "Re-scan audio sources (pactl list sources short)",
+        "mic_set_btn":            "Set microphone",
+        "mic_reset_btn":          "Reset",
+        "mic_status_current":     "Current default source: {name}",
+        "mic_status_none":        "No audio sources found.",
+        "mic_status_set":         "Default source set to: {name}",
+        "mic_status_reset":       "Default source restored: {name}",
+        "mic_status_nothing_saved":"Nothing to reset — no source was overridden yet.",
+        "mic_status_error":       "Error: {err}",
+        "mic_status_no_pactl":    "pactl not found — PipeWire/PulseAudio tools required.",
+        "mic_status_select":      "Please select a source from the list first.",
+
         "pkg_incomplete":         "⚠ Not fully installed",
         "tools_installing":       "Installing...",
         "tools_install_error":    "Installation error",
@@ -209,9 +230,15 @@ TRANSLATIONS = {
         "backup_btn":             "Create / Restore Backup",
         "backup_create_btn":      "Create XR/VR Environment Backup",
         "backup_restore_btn":     "Restore XR/VR Environment",
+        "backup_sync_github_btn": "GitHub Sync",
+        "backup_sync_github_tip": "Downloads the clean reference backup from GitHub (yakuda-stack) into your local backup folder. Afterwards just click Restore to apply it. Requires internet.",
 
         # Settings Tab
         "settings_title":        "Settings",
+        "settings_sub_general":  "General & Updates",
+        "settings_sub_vr":       "VR & OpenXR",
+        "settings_sub_audio":    "Audio",
+        "settings_sub_advanced": "Advanced / System",
         "settings_general":      "General",
         "settings_vrchat_title": "VRChat Picture Folder Fix",
         "settings_vrchat_desc":  "Creates a symlink from the VRChat screenshot folder inside Proton to your Linux Pictures folder.\nAfter this, VRChat screenshots will appear directly in ~/Pictures/VRChat.",
@@ -465,7 +492,8 @@ TRANSLATIONS = {
         "tools_subtitle":        "Installiere und starte nützliche VR-Begleitprogramme direkt von hier.",
         "tools_check_btn":       "🔄 Updates prüfen",
         "tools_apps":            "Anwendungen",
-        "tools_osc":             "OSC",
+        "tools_osc":             "OSC-Apps",
+        "tools_featured_tip":    "Von Yakuda – dem Entwickler dieser App",
         "tools_installed":       "✔ Installiert",
         "tools_not_installed":   "Nicht installiert",
         "tools_unknown":         "Unbekannt — bitte Update-Check starten",
@@ -527,6 +555,26 @@ TRANSLATIONS = {
         "killcmd_warn":           ("⚠ Die Befehle werden als Shell ausgeführt — nur eingeben, was du dir "
                                    "vertraust. Leere Einträge werden einfach übersprungen."),
 
+        # --- Mikrofon / Audio-Quelle (default-source) ---
+        "mic_group":              "Mikrofon / Audio-Quelle",
+        "mic_desc":               ("Seit <b>Proton 11</b> werden virtuelle Mikrofone nicht mehr sauber an Spiele "
+                                   "durchgereicht. Wer Ton über ein virtuelles Mikrofon an VRChat gibt (z. B. per "
+                                   "<b>PipeWeaver</b>, um Spotify / YouTube Music ins Spiel zu schicken), wählt "
+                                   "hier die Aufnahmequelle und setzt sie als System-Standard. "
+                                   "<b>Zurücksetzen</b> stellt die vorher aktive Quelle wieder her."),
+        "mic_refresh_btn":        "⟳ Aktualisieren",
+        "mic_refresh_tip":        "Audio-Quellen neu einlesen (pactl list sources short)",
+        "mic_set_btn":            "Mikrofon setzen",
+        "mic_reset_btn":          "Zurücksetzen",
+        "mic_status_current":     "Aktuelle Standard-Quelle: {name}",
+        "mic_status_none":        "Keine Audio-Quellen gefunden.",
+        "mic_status_set":         "Standard-Quelle gesetzt auf: {name}",
+        "mic_status_reset":       "Standard-Quelle wiederhergestellt: {name}",
+        "mic_status_nothing_saved":"Nichts zum Zurücksetzen — es wurde noch keine Quelle geändert.",
+        "mic_status_error":       "Fehler: {err}",
+        "mic_status_no_pactl":    "pactl nicht gefunden — PipeWire/PulseAudio-Tools nötig.",
+        "mic_status_select":      "Bitte zuerst eine Quelle aus der Liste wählen.",
+
         "pkg_incomplete":         "⚠ Nicht vollständig im System",
         "tools_installing":       "Wird installiert...",
         "tools_install_error":    "Fehler bei Installation",
@@ -570,9 +618,15 @@ TRANSLATIONS = {
         "backup_btn":             "Backup erstellen / Wiederherstellen",
         "backup_create_btn":      "XR/VR Umgebung backup machen",
         "backup_restore_btn":     "XR/VR Umgebung wiederherstellen",
+        "backup_sync_github_btn": "GitHub-Sync",
+        "backup_sync_github_tip": "Lädt das saubere Referenz-Backup von GitHub (yakuda-stack) in dein lokales Backup-Verzeichnis. Danach einfach auf Wiederherstellen klicken. Benötigt Internet.",
 
         # Settings Tab
         "settings_title":        "Einstellungen",
+        "settings_sub_general":  "Allgemein & Updates",
+        "settings_sub_vr":       "VR & OpenXR",
+        "settings_sub_audio":    "Audio",
+        "settings_sub_advanced": "Erweitert / System",
         "settings_general":      "Allgemein",
         "settings_vrchat_title": "VRChat Bilderordner-Fix",
         "settings_vrchat_desc":  "Erstellt einen Symlink vom VRChat-Screenshot-Ordner in Proton zu deinem Linux-Bilderordner.\nDanach erscheinen VRChat-Screenshots direkt in ~/Pictures/VRChat.",

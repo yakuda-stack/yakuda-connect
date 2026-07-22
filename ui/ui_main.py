@@ -4,8 +4,10 @@ import sys
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QListWidget,
                                QStackedWidget, QLabel, QPushButton, QCheckBox,
                                QComboBox, QLineEdit, QGroupBox, QFormLayout,
-                               QSlider, QTextEdit, QFrame, QGridLayout)
-from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF
+                               QSlider, QTextEdit, QFrame, QGridLayout,
+                               QTabWidget, QToolButton, QToolTip, QPlainTextEdit,
+                               QScrollArea, QSizePolicy)
+from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF, QPoint
 from PySide6.QtGui import QPainter, QColor
 
 
@@ -279,8 +281,18 @@ class Ui_MainWindow(object):
         self.btn_remove_headset.setText(tr("dashboard_remove_btn"))
         self.btn_disconnect_headset.setText(tr("dashboard_disconnect"))
 
-        # --- Settings-Tab ---
+        # --- Settings-Tab (Sub-Tabs + Info-Icons) ---
         self.lbl_settings_title.setText(tr("settings_title"))
+        if hasattr(self, "settings_subtabs"):
+            self.settings_subtabs.setTabText(0, tr("settings_sub_general"))
+            self.settings_subtabs.setTabText(1, tr("settings_sub_vr"))
+            self.settings_subtabs.setTabText(2, tr("settings_sub_audio"))
+            self.settings_subtabs.setTabText(3, tr("settings_sub_advanced"))
+        # Sektionsköpfe + Info-Tooltips (lange Texte liegen im Tooltip)
+        for _lbl, _key in getattr(self, "_settings_headers", []):
+            _lbl.setText(tr(_key))
+        for _info, _fn in getattr(self, "_settings_info", []):
+            _info.setToolTip(_fn())
         # --- Games-Tab ---
         self.lbl_games_title.setText(tr("games_title"))
         self.lbl_games_subtitle.setText(tr("games_subtitle"))
@@ -297,13 +309,14 @@ class Ui_MainWindow(object):
         self.apk_info_lbl.setText(tr("dashboard_apk_info"))
         self.btn_apk_install.setText(tr("dashboard_apk_btn"))
         self.btn_apk_cancel.setText(tr("dashboard_apk_cancel"))
-        self.backup_group.setTitle(tr("backup_title"))
+        # Backup
         self.btn_vr_backup.setText(tr("backup_create_btn"))
         self.btn_vr_restore.setText(tr("backup_restore_btn"))
-        self.openxr_group.setTitle(tr("openxr_group"))
+        self.btn_vr_restore_github.setText(tr("backup_sync_github_btn"))
+        self.btn_vr_restore_github.setToolTip(tr("backup_sync_github_tip"))
         if hasattr(self, "oscquery_widget"):
             self.oscquery_widget.retranslate()
-        self.lbl_openxr_desc.setText(tr("openxr_desc"))
+        # OpenXR (Buttons + ausklappbarer manueller Bereich)
         self.lbl_openxr_path_title.setText(tr("openxr_path_title"))
         self.lbl_openxr_content_title.setText(tr("openxr_content_title"))
         self.btn_openxr_copy_path.setText(tr("openxr_copy_btn"))
@@ -313,28 +326,23 @@ class Ui_MainWindow(object):
         self.btn_openxr_manual_toggle.setText(
             tr("openxr_manual_hide") if self.openxr_manual_widget.isVisible()
             else tr("openxr_manual_show"))
-
-        # --- Community & Updates ---
-        self.community_group.setTitle(tr("community_group"))
+        # Community & Updates
         self.btn_community_check.setText(tr("community_check_btn"))
         self.btn_community_discord.setText(tr("community_discord_btn"))
         self.btn_community_donate.setText(tr("community_donate_btn"))
-
-        # --- WayVR Design ---
-        self.wayvr_group.setTitle(tr("wayvr_group"))
-        self.lbl_wayvr_desc.setText(tr("wayvr_desc"))
+        # WayVR Design
         self.btn_wayvr_install.setText(tr("wayvr_install_btn"))
         self.btn_wayvr_reset.setText(tr("wayvr_reset_btn"))
-
-        # --- Custom Kill Commands ---
-        self.killcmd_group.setTitle(tr("killcmd_group"))
-        self.lbl_killcmd_desc.setText(tr("killcmd_desc"))
-        self.lbl_killcmd_warn.setText(tr("killcmd_warn"))
+        # Mikrofon / Audio-Quelle
+        self.btn_mic_refresh.setText(tr("mic_refresh_btn"))
+        self.btn_mic_refresh.setToolTip(tr("mic_refresh_tip"))
+        self.btn_mic_set.setText(tr("mic_set_btn"))
+        self.btn_mic_reset.setText(tr("mic_reset_btn"))
+        # Custom Kill Commands (kompakte Liste)
         self._killcmd_head_label.setText(tr("killcmd_col_label"))
         self._killcmd_head_cmd.setText(tr("killcmd_col_command"))
         self.btn_killcmd_add.setText(tr("killcmd_add_btn"))
         self.btn_killcmd_save.setText(tr("killcmd_save_btn"))
-        # Platzhalter der bestehenden Zeilen mitübersetzen
         for row in getattr(self, "killcmd_rows", []):
             row["input_label"].setPlaceholderText(tr("killcmd_placeholder_lbl"))
             row["input_cmd"].setPlaceholderText(tr("killcmd_placeholder_cmd"))
@@ -344,8 +352,9 @@ class Ui_MainWindow(object):
         self.lbl_tools_title.setText(tr("tools_title"))
         self.lbl_tools_subtitle.setText(tr("tools_subtitle"))
         self.btn_tools_check.setText(tr("tools_check_btn"))
-        self.apps_group.setTitle(tr("tools_apps"))
-        self.osc_group.setTitle(tr("tools_osc"))
+        if hasattr(self, "tools_subtabs"):
+            self.tools_subtabs.setTabText(0, tr("tools_apps"))
+            self.tools_subtabs.setTabText(1, tr("tools_osc"))
         for card in self.tool_cards.values():
             if "btn_copy" in card:
                 card["btn_copy"].setText(tr("tools_copy"))
@@ -826,215 +835,225 @@ class Ui_MainWindow(object):
 
         layout.addStretch()
 
-    def setup_settings_tab(self):
-        from PySide6.QtWidgets import QScrollArea
+    # ==================================================================
+    #  Settings-Tab — kompaktes Dashboard mit Sub-Tabs
+    #
+    #  Aufbau nach UI/UX-Überarbeitung:
+    #    * Sub-Tab-Navigation (QTabWidget) statt einer langen Scroll-Liste:
+    #        General & Updates | VR & OpenXR | Audio | Advanced / System
+    #    * Lange Erklärungstexte liegen NICHT mehr dauerhaft im Layout, sondern
+    #      hinter einem (ⓘ)-Info-Icon neben der Sektionsüberschrift
+    #      (Tooltip beim Hovern, Popover beim Klicken).
+    #    * 2-Spalten-Zeilen: Titel + Info links, Action-Buttons rechts.
+    #    * Kurze Statuszeilen (Status: OK …) bleiben sichtbar.
+    #
+    #  WICHTIG: Die konkreten Widget-Namen (btn_*, lbl_*_status, combo_mic_source,
+    #  killcmd_rows/-container, openxr_manual_widget, txt_openxr_*) bleiben exakt
+    #  erhalten — die gesamte Logik in main.py hängt daran und bleibt unverändert.
+    # ==================================================================
 
-        scroll = QScrollArea(self.tab_settings)
+    # ---- Wiederverwendbare Button-Styles (Nord) ----
+    _CSS_PRIMARY = ("QPushButton { background-color:#5e81ac; color:white; border:none;"
+                    " font-weight:bold; padding:8px 16px; border-radius:6px; font-size:12px; }"
+                    " QPushButton:hover { background-color:#81a1c1; }"
+                    " QPushButton:disabled { background-color:#3b4252; color:#7b88a1; }")
+    _CSS_SECONDARY = ("QPushButton { background-color:#2e3440; color:#eceff4; border:1px solid #4c566a;"
+                      " font-weight:bold; padding:8px 16px; border-radius:6px; font-size:12px; }"
+                      " QPushButton:hover { background-color:#3b4252; border-color:#5e81ac; }"
+                      " QPushButton:disabled { background-color:#3b4252; color:#7b88a1; }")
+    _CSS_DANGER = ("QPushButton { background-color:#2e3440; color:#eceff4; border:1px solid #4c566a;"
+                   " font-weight:bold; padding:8px 16px; border-radius:6px; font-size:12px; }"
+                   " QPushButton:hover { background-color:#bf616a; border-color:#bf616a; color:white; }"
+                   " QPushButton:disabled { background-color:#3b4252; color:#7b88a1; }")
+
+    def _settings_card(self):
+        """Eine Karte (QFrame) im Nord-Card-Look. Gibt (frame, vbox) zurück."""
+        card = QFrame()
+        card.setStyleSheet("QFrame { background-color:#21252b; border-radius:10px; }")
+        v = QVBoxLayout(card)
+        v.setContentsMargins(16, 14, 16, 14)
+        v.setSpacing(10)
+        return card, v
+
+    def _settings_header(self, title_key, tooltip_fn=None):
+        """Sektionskopf: fetter Titel + optionales (ⓘ)-Info-Icon.
+
+        Der lange Erklärungstext steckt NUR im Tooltip/Popover, nicht im Layout.
+        Rückgabe: (row_layout, title_label, info_button_or_None). Der Aufrufer
+        kann Action-Widgets an row_layout anhängen — sie landen rechts (2-Spalten).
+        """
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        lbl = QLabel(tr(title_key))
+        lbl.setStyleSheet("color:#eceff4; font-size:13px; font-weight:bold;")
+        row.addWidget(lbl)
+
+        info = None
+        if tooltip_fn is not None:
+            info = QToolButton()
+            info.setText("\u24d8")  # ⓘ
+            info.setCursor(Qt.PointingHandCursor)
+            info.setToolTip(tooltip_fn())
+            info.setStyleSheet(
+                "QToolButton { color:#7b88a1; background:transparent; border:none;"
+                " font-size:14px; padding:0 2px; }"
+                " QToolButton:hover { color:#88c0d0; }")
+            # Klick zeigt denselben Text als Popover (für Touch-/Klick-Nutzer)
+            info.clicked.connect(
+                lambda _=False, b=info: QToolTip.showText(
+                    b.mapToGlobal(QPoint(0, b.height())), b.toolTip(), b))
+            row.addWidget(info)
+            self._settings_info.append((info, tooltip_fn))
+
+        row.addStretch()
+        self._settings_headers.append((lbl, title_key))
+        return row, lbl, info
+
+    def _settings_new_page(self):
+        """Scrollbare Sub-Tab-Seite. Gibt (scrollarea, content_vbox) zurück."""
+        scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        outer = QVBoxLayout(self.tab_settings)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
+        scroll.setStyleSheet("QScrollArea { border:none; background:transparent; }")
+        page = QWidget()
+        scroll.setWidget(page)
+        v = QVBoxLayout(page)
+        v.setContentsMargins(2, 6, 6, 6)
+        v.setSpacing(14)
+        return scroll, v
 
-        container = QWidget()
-        scroll.setWidget(container)
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+    def setup_settings_tab(self):
+        # Merklisten fürs Retranslaten (Sektionsköpfe + Info-Tooltips)
+        self._settings_headers = []   # [(QLabel, title_key), ...]
+        self._settings_info = []      # [(QToolButton, tooltip_fn), ...]
+
+        outer = QVBoxLayout(self.tab_settings)
+        outer.setContentsMargins(20, 20, 20, 10)
+        outer.setSpacing(12)
 
         self.lbl_settings_title = QLabel(tr("settings_title"))
-        self.lbl_settings_title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 5px;")
-        layout.addWidget(self.lbl_settings_title)
+        self.lbl_settings_title.setStyleSheet("font-size:18px; font-weight:bold; margin-bottom:2px;")
+        outer.addWidget(self.lbl_settings_title)
 
-        # --- COMMUNITY & UPDATES (ganz oben) ---
-        # Update-Prüfung per Klick, Discord-Server und Spendenlink — Layout wie
-        # im Referenz-Screenshot: 3 Buttons nebeneinander, Version darunter.
-        self.community_group = QGroupBox(tr("community_group"))
-        community_layout = QVBoxLayout(self.community_group)
-        community_layout.setSpacing(8)
+        # ---- Sub-Tab-Navigation ----
+        self.settings_subtabs = QTabWidget()
+        self.settings_subtabs.setStyleSheet("""
+            QTabWidget::pane { border:none; background:transparent; top:-1px; }
+            QTabBar { qproperty-drawBase:0; }
+            QTabBar::tab {
+                background:#21252b; color:#7b88a1; padding:8px 18px;
+                border-radius:6px; margin-right:6px; font-size:12px; font-weight:bold;
+            }
+            QTabBar::tab:selected { background:#5e81ac; color:white; }
+            QTabBar::tab:hover:!selected { background:#2e3440; color:#d8dee9; }
+        """)
+        outer.addWidget(self.settings_subtabs)
 
-        community_btn_row = QHBoxLayout()
-        community_btn_row.setSpacing(10)
+        # ==============================================================
+        #  SEITE 1 — General & Updates
+        # ==============================================================
+        page_gen, gen_v = self._settings_new_page()
 
+        # -- Community & Updates --
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("community_group")
         self.btn_community_check = QPushButton(tr("community_check_btn"))
         self.btn_community_check.setCursor(Qt.PointingHandCursor)
-        self.btn_community_check.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
-            QPushButton:hover { background-color: #81a1c1; }
-            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-        """)
-        community_btn_row.addWidget(self.btn_community_check)
-
+        self.btn_community_check.setStyleSheet(self._CSS_PRIMARY)
         self.btn_community_discord = QPushButton(tr("community_discord_btn"))
         self.btn_community_discord.setCursor(Qt.PointingHandCursor)
-        self.btn_community_discord.setStyleSheet("""
-            QPushButton { background-color: #2e3440; color: #eceff4; border: 1px solid #4c566a;
-                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
-            QPushButton:hover { background-color: #3b4252; border-color: #5e81ac; }
-        """)
-        community_btn_row.addWidget(self.btn_community_discord)
-
+        self.btn_community_discord.setStyleSheet(self._CSS_SECONDARY)
         self.btn_community_donate = QPushButton(tr("community_donate_btn"))
         self.btn_community_donate.setCursor(Qt.PointingHandCursor)
-        self.btn_community_donate.setStyleSheet("""
-            QPushButton { background-color: #2e3440; color: #eceff4; border: 1px solid #4c566a;
-                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
-            QPushButton:hover { background-color: #3b4252; border-color: #bf616a; }
-        """)
-        community_btn_row.addWidget(self.btn_community_donate)
-        community_btn_row.addStretch()
-        community_layout.addLayout(community_btn_row)
-
-        # "Current version: vX.Y.Z" — wird von main.py aus APP_VERSION gesetzt.
+        self.btn_community_donate.setStyleSheet(self._CSS_DANGER)
+        head.addWidget(self.btn_community_check)
+        head.addWidget(self.btn_community_discord)
+        head.addWidget(self.btn_community_donate)
+        cv.addLayout(head)
         self.lbl_community_version = QLabel("")
-        self.lbl_community_version.setStyleSheet("color: #7b88a1; font-size: 11px;")
-        community_layout.addWidget(self.lbl_community_version)
+        self.lbl_community_version.setStyleSheet("color:#7b88a1; font-size:11px;")
+        cv.addWidget(self.lbl_community_version)
+        gen_v.addWidget(card)
 
-        layout.addWidget(self.community_group)
+        # -- Backup --
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("backup_title")
+        self.btn_vr_backup = QPushButton(tr("backup_create_btn"))
+        self.btn_vr_backup.setCursor(Qt.PointingHandCursor)
+        self.btn_vr_backup.setStyleSheet(self._CSS_PRIMARY)
+        self.btn_vr_restore = QPushButton(tr("backup_restore_btn"))
+        self.btn_vr_restore.setCursor(Qt.PointingHandCursor)
+        self.btn_vr_restore.setStyleSheet(self._CSS_SECONDARY)
+        self.btn_vr_restore_github = QPushButton(tr("backup_sync_github_btn"))
+        self.btn_vr_restore_github.setCursor(Qt.PointingHandCursor)
+        self.btn_vr_restore_github.setToolTip(tr("backup_sync_github_tip"))
+        self.btn_vr_restore_github.setStyleSheet(self._CSS_SECONDARY)
+        head.addWidget(self.btn_vr_backup)
+        head.addWidget(self.btn_vr_restore)
+        head.addWidget(self.btn_vr_restore_github)
+        cv.addLayout(head)
+        gen_v.addWidget(card)
 
-        # --- WAYVR DESIGN (cubee-cb Overlay-Design) ---
-        # Zwei Knöpfe: Design von cubee-cb (linux-vr-compat) installieren und
-        # WayVR komplett zurücksetzen (~/.config/wayvr löschen, Backup vorher).
-        # Logik liegt in core/overlay_manager.py — hier nur die Oberfläche.
-        self.wayvr_group = QGroupBox(tr("wayvr_group"))
-        wayvr_layout = QVBoxLayout(self.wayvr_group)
-        wayvr_layout.setSpacing(8)
+        gen_v.addStretch()
+        self.settings_subtabs.addTab(page_gen, tr("settings_sub_general"))
 
-        self.lbl_wayvr_desc = QLabel(tr("wayvr_desc"))
-        self.lbl_wayvr_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
-        self.lbl_wayvr_desc.setWordWrap(True)
-        # Link zum Design-Repo klickbar machen (öffnet im Browser)
-        self.lbl_wayvr_desc.setTextFormat(Qt.RichText)
-        self.lbl_wayvr_desc.setOpenExternalLinks(True)
-        wayvr_layout.addWidget(self.lbl_wayvr_desc)
+        # ==============================================================
+        #  SEITE 2 — VR & OpenXR
+        # ==============================================================
+        page_vr, vr_v = self._settings_new_page()
 
-        wayvr_btn_row = QHBoxLayout()
-        wayvr_btn_row.setSpacing(10)
-
+        # -- WayVR Design --
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("wayvr_group", lambda: tr("wayvr_desc"))
         self.btn_wayvr_install = QPushButton(tr("wayvr_install_btn"))
         self.btn_wayvr_install.setCursor(Qt.PointingHandCursor)
-        self.btn_wayvr_install.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
-            QPushButton:hover { background-color: #81a1c1; }
-            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-        """)
-        wayvr_btn_row.addWidget(self.btn_wayvr_install)
-
+        self.btn_wayvr_install.setStyleSheet(self._CSS_PRIMARY)
         self.btn_wayvr_reset = QPushButton(tr("wayvr_reset_btn"))
         self.btn_wayvr_reset.setCursor(Qt.PointingHandCursor)
-        self.btn_wayvr_reset.setStyleSheet("""
-            QPushButton { background-color: #2e3440; color: #eceff4; border: 1px solid #4c566a;
-                          font-weight: bold; padding: 8px 16px; border-radius: 6px; font-size: 12px; }
-            QPushButton:hover { background-color: #bf616a; border-color: #bf616a; color: white; }
-            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-        """)
-        wayvr_btn_row.addWidget(self.btn_wayvr_reset)
-        wayvr_btn_row.addStretch()
-        wayvr_layout.addLayout(wayvr_btn_row)
-
-        # Status-Zeile (Download/Installation/installiert) — setzt main.py.
+        self.btn_wayvr_reset.setStyleSheet(self._CSS_DANGER)
+        head.addWidget(self.btn_wayvr_install)
+        head.addWidget(self.btn_wayvr_reset)
+        cv.addLayout(head)
         self.lbl_wayvr_status = QLabel("")
-        self.lbl_wayvr_status.setStyleSheet("color: #7b88a1; font-size: 11px;")
+        self.lbl_wayvr_status.setStyleSheet("color:#7b88a1; font-size:11px;")
         self.lbl_wayvr_status.setWordWrap(True)
-        wayvr_layout.addWidget(self.lbl_wayvr_status)
+        cv.addWidget(self.lbl_wayvr_status)
+        vr_v.addWidget(card)
 
-        layout.addWidget(self.wayvr_group)
-
-
-        # --- BACKUP (jetzt oben, beide Buttons nebeneinander) ---
-        self.backup_group = QGroupBox(tr("backup_title"))
-        backup_layout = QVBoxLayout(self.backup_group)
-        backup_layout.setSpacing(10)
-
-        backup_btn_row = QHBoxLayout()
-        backup_btn_row.setSpacing(10)
-
-        self.btn_vr_backup = QPushButton(tr("backup_create_btn"))
-        self.btn_vr_backup.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
-        backup_btn_row.addWidget(self.btn_vr_backup)
-
-        self.btn_vr_restore = QPushButton(tr("backup_restore_btn"))
-        self.btn_vr_restore.setStyleSheet("""
-            QPushButton { background-color: #4c566a; color: #eceff4; border: none;
-                          font-weight: bold; padding: 10px; border-radius: 4px; font-size: 13px; }
-            QPushButton:hover { background-color: #d08770; color: white; }
-        """)
-        backup_btn_row.addWidget(self.btn_vr_restore)
-
-        backup_layout.addLayout(backup_btn_row)
-
-        # Backup-Box zwischen WayVR-Overlay und OpenXR-Runtime einordnen
-        layout.addWidget(self.backup_group)
-
-        # --- OPENXR RUNTIME (Steam-Fix) ---
-        # Hinweis: Die Performance-/Latenz-Optionen (CAP_SYS_NICE) leben im
-        # Streaming-Tab ("VR-Priorität") — hier NICHT doppelt einbauen!
-        self.openxr_group = QGroupBox(tr("openxr_group"))
-        openxr_layout = QVBoxLayout(self.openxr_group)
-        openxr_layout.setSpacing(8)
-
-        self.lbl_openxr_desc = QLabel(tr("openxr_desc"))
-        self.lbl_openxr_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
-        self.lbl_openxr_desc.setWordWrap(True)
-        openxr_layout.addWidget(self.lbl_openxr_desc)
-
-        # Status-Zeile (ok / broken / missing) — wird von main.py gesetzt.
-        self.lbl_openxr_status = QLabel("")
-        self.lbl_openxr_status.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold;")
-        self.lbl_openxr_status.setWordWrap(True)
-        openxr_layout.addWidget(self.lbl_openxr_status)
-
-        # Buttons: automatischer Fix + Umschalter für den manuellen Bereich
-        openxr_btn_row = QHBoxLayout()
-        openxr_btn_row.setSpacing(10)
-
+        # -- OpenXR Runtime (Steam-Fix) --
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("openxr_group", lambda: tr("openxr_desc"))
         self.btn_openxr_fix = QPushButton(tr("openxr_fix_btn"))
         self.btn_openxr_fix.setCursor(Qt.PointingHandCursor)
-        self.btn_openxr_fix.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 8px 14px; border-radius: 4px; font-size: 12px; }
-            QPushButton:hover { background-color: #81a1c1; }
-            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-        """)
-        openxr_btn_row.addWidget(self.btn_openxr_fix)
-
+        self.btn_openxr_fix.setStyleSheet(self._CSS_PRIMARY)
         self.btn_openxr_manual_toggle = QPushButton(tr("openxr_manual_show"))
         self.btn_openxr_manual_toggle.setCursor(Qt.PointingHandCursor)
-        self.btn_openxr_manual_toggle.setStyleSheet("""
-            QPushButton { background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a;
-                          font-weight: bold; padding: 8px 14px; border-radius: 4px; font-size: 12px; }
-            QPushButton:hover { background-color: #3b4252; border-color: #5e81ac; }
-        """)
-        openxr_btn_row.addWidget(self.btn_openxr_manual_toggle)
-        openxr_btn_row.addStretch()
-        openxr_layout.addLayout(openxr_btn_row)
+        self.btn_openxr_manual_toggle.setStyleSheet(self._CSS_SECONDARY)
+        head.addWidget(self.btn_openxr_fix)
+        head.addWidget(self.btn_openxr_manual_toggle)
+        cv.addLayout(head)
+        # Kurze Statuszeile bleibt sichtbar
+        self.lbl_openxr_status = QLabel("")
+        self.lbl_openxr_status.setStyleSheet("color:#7b88a1; font-size:11px; font-weight:bold;")
+        self.lbl_openxr_status.setWordWrap(True)
+        cv.addWidget(self.lbl_openxr_status)
 
-        # ---------- Ausklappbarer manueller Bereich ----------
-        from PySide6.QtWidgets import QPlainTextEdit
-        _copy_css = ("QPushButton { background-color: #5e81ac; color: white; border: none; "
-                     "font-weight: bold; padding: 6px 10px; border-radius: 4px; font-size: 12px; }"
-                     "QPushButton:hover { background-color: #81a1c1; }")
-
+        # Ausklappbarer manueller Bereich (Pfad + Datei-Inhalt, kopierbar)
+        _copy_css = ("QPushButton { background-color:#5e81ac; color:white; border:none;"
+                     " font-weight:bold; padding:6px 10px; border-radius:4px; font-size:12px; }"
+                     " QPushButton:hover { background-color:#81a1c1; }")
         self.openxr_manual_widget = QWidget()
         manual_layout = QVBoxLayout(self.openxr_manual_widget)
         manual_layout.setContentsMargins(0, 4, 0, 0)
         manual_layout.setSpacing(8)
 
         self.lbl_openxr_manual_hint = QLabel(tr("openxr_manual_hint"))
-        self.lbl_openxr_manual_hint.setStyleSheet("color: #ebcb8b; font-size: 11px; font-style: italic;")
+        self.lbl_openxr_manual_hint.setStyleSheet("color:#ebcb8b; font-size:11px; font-style:italic;")
         self.lbl_openxr_manual_hint.setWordWrap(True)
         manual_layout.addWidget(self.lbl_openxr_manual_hint)
 
-        # Pfad der Datei (kopierbar)
         self.lbl_openxr_path_title = QLabel(tr("openxr_path_title"))
         self.lbl_openxr_path_title.setStyleSheet(
-            "color: #eceff4; font-size: 11px; font-weight: bold; padding-top: 4px;")
+            "color:#eceff4; font-size:11px; font-weight:bold; padding-top:4px;")
         manual_layout.addWidget(self.lbl_openxr_path_title)
 
         openxr_path_row = QHBoxLayout()
@@ -1046,177 +1065,191 @@ class Ui_MainWindow(object):
         openxr_path_row.addWidget(self.btn_openxr_copy_path)
         manual_layout.addLayout(openxr_path_row)
 
-        # Inhalt für die Datei (kopierbar)
         self.lbl_openxr_content_title = QLabel(tr("openxr_content_title"))
         self.lbl_openxr_content_title.setStyleSheet(
-            "color: #eceff4; font-size: 11px; font-weight: bold; padding-top: 6px;")
+            "color:#eceff4; font-size:11px; font-weight:bold; padding-top:6px;")
         manual_layout.addWidget(self.lbl_openxr_content_title)
 
         self.txt_openxr_content = QPlainTextEdit()
         self.txt_openxr_content.setReadOnly(True)
-        self.txt_openxr_content.setFixedHeight(150)
-        self.txt_openxr_content.setStyleSheet("font-family: monospace; font-size: 11px;")
+        self.txt_openxr_content.setFixedHeight(140)
+        self.txt_openxr_content.setStyleSheet("font-family:monospace; font-size:11px;")
         manual_layout.addWidget(self.txt_openxr_content)
 
         self.btn_openxr_copy_content = QPushButton(tr("openxr_copy_btn"))
         self.btn_openxr_copy_content.setStyleSheet(_copy_css)
         manual_layout.addWidget(self.btn_openxr_copy_content)
 
-        # Standardmäßig eingeklappt — main.py schaltet per Toggle-Button um.
-        self.openxr_manual_widget.setVisible(False)
-        openxr_layout.addWidget(self.openxr_manual_widget)
+        self.openxr_manual_widget.setVisible(False)  # eingeklappt, main.py toggelt
+        cv.addWidget(self.openxr_manual_widget)
+        vr_v.addWidget(card)
 
-        layout.addWidget(self.openxr_group)
-
-        # --- QUICK OSC QUERY FIX ---
-        # Aktiviert OSCQuery in den Configs der unterstützten OSC-Programme
-        # (OSCLeash, OscGoesBrrr, ...) — hilft bei OSC-Bugs. Die Programmliste
-        # lebt in core/queryfix.py (PROGRAMS), das Widget in ui/queryfix_widget.py.
+        # -- Quick OSC Query Fix (eigenes Widget) --
         from ui.queryfix_widget import QueryFixWidget
         self.oscquery_widget = QueryFixWidget()
-        layout.addWidget(self.oscquery_widget)
+        vr_v.addWidget(self.oscquery_widget)
 
-        # --- CUSTOM KILL COMMANDS (ganz unten) ---
-        # Dynamische Liste von "Name → Befehl"-Paaren. Wird beim Klick auf
-        # "Apps schließen" (oder beim Server-Stopp) VOR dem normalen Kill
-        # ausgeführt. Für Sonderfälle wie VRCX (Electron -> mehrere Prozesse).
-        self.killcmd_group = QGroupBox(tr("killcmd_group"))
-        killcmd_layout = QVBoxLayout(self.killcmd_group)
-        killcmd_layout.setSpacing(8)
+        vr_v.addStretch()
+        self.settings_subtabs.addTab(page_vr, tr("settings_sub_vr"))
 
-        self.lbl_killcmd_desc = QLabel(tr("killcmd_desc"))
-        self.lbl_killcmd_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
-        self.lbl_killcmd_desc.setWordWrap(True)
-        self.lbl_killcmd_desc.setTextFormat(Qt.RichText)
-        killcmd_layout.addWidget(self.lbl_killcmd_desc)
+        # ==============================================================
+        #  SEITE 3 — Audio
+        # ==============================================================
+        page_audio, audio_v = self._settings_new_page()
 
-        self.lbl_killcmd_warn = QLabel(tr("killcmd_warn"))
-        self.lbl_killcmd_warn.setStyleSheet(
-            "color: #ebcb8b; font-size: 11px; font-style: italic;")
-        self.lbl_killcmd_warn.setWordWrap(True)
-        killcmd_layout.addWidget(self.lbl_killcmd_warn)
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("mic_group", lambda: tr("mic_desc"))
+        cv.addLayout(head)
 
-        # Kopfzeile für die Tabelle (nur Beschriftung, kein echtes QTableWidget —
-        # eine einfache VBox mit HBox-Zeilen ist flexibler zum dynamischen Hinzufügen).
+        # Control-Zeile: Dropdown (links, dehnt) + [Refresh][Set][Reset] (rechts)
+        mic_row = QHBoxLayout()
+        mic_row.setSpacing(10)
+        self.combo_mic_source = QComboBox()
+        self.combo_mic_source.setStyleSheet("""
+            QComboBox { background-color:#3b4252; color:#d8dee9; border:1px solid #4c566a;
+                        border-radius:4px; padding:6px 8px; font-size:12px; }
+            QComboBox:hover { border-color:#5e81ac; }
+            QComboBox::drop-down { border:none; }
+            QComboBox QAbstractItemView { background-color:#2e3440; color:#d8dee9;
+                        selection-background-color:#5e81ac; }
+        """)
+        mic_row.addWidget(self.combo_mic_source, 1)
+
+        self.btn_mic_refresh = QPushButton(tr("mic_refresh_btn"))
+        self.btn_mic_refresh.setCursor(Qt.PointingHandCursor)
+        self.btn_mic_refresh.setToolTip(tr("mic_refresh_tip"))
+        self.btn_mic_refresh.setStyleSheet(self._CSS_SECONDARY)
+        mic_row.addWidget(self.btn_mic_refresh)
+
+        self.btn_mic_set = QPushButton(tr("mic_set_btn"))
+        self.btn_mic_set.setCursor(Qt.PointingHandCursor)
+        self.btn_mic_set.setStyleSheet(self._CSS_PRIMARY)
+        mic_row.addWidget(self.btn_mic_set)
+
+        self.btn_mic_reset = QPushButton(tr("mic_reset_btn"))
+        self.btn_mic_reset.setCursor(Qt.PointingHandCursor)
+        self.btn_mic_reset.setStyleSheet(self._CSS_DANGER)
+        mic_row.addWidget(self.btn_mic_reset)
+        cv.addLayout(mic_row)
+
+        self.lbl_mic_status = QLabel("")
+        self.lbl_mic_status.setStyleSheet("color:#7b88a1; font-size:11px;")
+        self.lbl_mic_status.setWordWrap(True)
+        cv.addWidget(self.lbl_mic_status)
+        audio_v.addWidget(card)
+
+        audio_v.addStretch()
+        self.settings_subtabs.addTab(page_audio, tr("settings_sub_audio"))
+
+        # ==============================================================
+        #  SEITE 4 — Advanced / System
+        # ==============================================================
+        page_adv, adv_v = self._settings_new_page()
+
+        # -- Eigene Kill-Befehle (kompakte Liste) --
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header(
+            "killcmd_group",
+            lambda: tr("killcmd_desc") + "<br><br>" + tr("killcmd_warn"))
+        self.btn_killcmd_add = QPushButton(tr("killcmd_add_btn"))
+        self.btn_killcmd_add.setCursor(Qt.PointingHandCursor)
+        self.btn_killcmd_add.setStyleSheet(
+            "QPushButton { background-color:#2e3440; color:#eceff4; border:1px solid #4c566a;"
+            " font-weight:bold; padding:6px 12px; border-radius:4px; font-size:12px; }"
+            " QPushButton:hover { background-color:#3b4252; border-color:#a3be8c; }")
+        self.btn_killcmd_save = QPushButton(tr("killcmd_save_btn"))
+        self.btn_killcmd_save.setCursor(Qt.PointingHandCursor)
+        self.btn_killcmd_save.setStyleSheet(
+            "QPushButton { background-color:#5e81ac; color:white; border:none;"
+            " font-weight:bold; padding:6px 14px; border-radius:4px; font-size:12px; }"
+            " QPushButton:hover { background-color:#81a1c1; }")
+        head.addWidget(self.btn_killcmd_add)
+        head.addWidget(self.btn_killcmd_save)
+        cv.addLayout(head)
+
+        # Kompakte Spaltenüberschrift
         killcmd_head = QHBoxLayout()
+        killcmd_head.setSpacing(6)
         head_label = QLabel(tr("killcmd_col_label"))
-        head_label.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold;")
+        head_label.setStyleSheet("color:#7b88a1; font-size:10px; font-weight:bold;")
         head_label.setFixedWidth(180)
         killcmd_head.addWidget(head_label)
         head_cmd = QLabel(tr("killcmd_col_command"))
-        head_cmd.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold;")
+        head_cmd.setStyleSheet("color:#7b88a1; font-size:10px; font-weight:bold;")
         killcmd_head.addWidget(head_cmd, 1)
         head_spacer = QLabel("")
         head_spacer.setFixedWidth(30)
         killcmd_head.addWidget(head_spacer)
-        killcmd_layout.addLayout(killcmd_head)
-        # Merken, um die Kopfzeilen-Labels beim Sprachwechsel neu setzen zu können.
+        cv.addLayout(killcmd_head)
         self._killcmd_head_label = head_label
         self._killcmd_head_cmd = head_cmd
 
-        # Container für die eigentlichen Zeilen — main.py füllt ihn beim Start
-        # und beim Hinzufügen/Löschen. Die einzelnen Zeilen werden in
-        # self.killcmd_rows (Liste von Dicts) verwaltet.
+        # Container für die dynamischen Zeilen (main.py füllt ihn)
         self.killcmd_rows_container = QVBoxLayout()
         self.killcmd_rows_container.setSpacing(6)
-        killcmd_layout.addLayout(self.killcmd_rows_container)
-        self.killcmd_rows = []  # Liste von {"input_label": QLineEdit, "input_cmd": QLineEdit, "row_widget": QWidget}
+        cv.addLayout(self.killcmd_rows_container)
+        self.killcmd_rows = []
+        adv_v.addWidget(card)
 
-        # Buttons unten: Hinzufügen + Speichern
-        killcmd_btns = QHBoxLayout()
-        self.btn_killcmd_add = QPushButton(tr("killcmd_add_btn"))
-        self.btn_killcmd_add.setCursor(Qt.PointingHandCursor)
-        self.btn_killcmd_add.setStyleSheet("""
-            QPushButton { background-color: #2e3440; color: #eceff4; border: 1px solid #4c566a;
-                          font-weight: bold; padding: 6px 12px; border-radius: 4px; font-size: 12px; }
-            QPushButton:hover { background-color: #3b4252; border-color: #a3be8c; }
-        """)
-        killcmd_btns.addWidget(self.btn_killcmd_add)
-
-        self.btn_killcmd_save = QPushButton(tr("killcmd_save_btn"))
-        self.btn_killcmd_save.setCursor(Qt.PointingHandCursor)
-        self.btn_killcmd_save.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 6px 14px; border-radius: 4px; font-size: 12px; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
-        killcmd_btns.addWidget(self.btn_killcmd_save)
-        killcmd_btns.addStretch()
-        killcmd_layout.addLayout(killcmd_btns)
-
-        layout.addWidget(self.killcmd_group)
-
-        layout.addStretch()
+        adv_v.addStretch()
+        self.settings_subtabs.addTab(page_adv, tr("settings_sub_advanced"))
 
     def setup_tools_tab(self):
-        from PySide6.QtWidgets import QScrollArea
-
         outer = QVBoxLayout(self.tab_tools)
-        outer.setContentsMargins(0, 0, 0, 0)
-
-        # Scroll-Container
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        outer.addWidget(scroll)
-
-        container = QWidget()
-        scroll.setWidget(container)
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        outer.setContentsMargins(20, 20, 20, 10)
+        outer.setSpacing(10)
 
         self.lbl_tools_title = QLabel(tr("tools_title"))
-        self.lbl_tools_title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 5px;")
-        layout.addWidget(self.lbl_tools_title)
+        self.lbl_tools_title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 2px;")
+        outer.addWidget(self.lbl_tools_title)
 
+        # Untertitel + Update-Check-Button in einer Zeile (kompakt)
+        sub_row = QHBoxLayout()
         self.lbl_tools_subtitle = QLabel(tr("tools_subtitle"))
-        self.lbl_tools_subtitle.setStyleSheet("color: #7b88a1; font-style: italic; margin-bottom: 10px;")
-        layout.addWidget(self.lbl_tools_subtitle)
-
-        # Update-Check Button oben
-        header_row = QHBoxLayout()
-        header_row.addStretch()
+        self.lbl_tools_subtitle.setStyleSheet("color: #7b88a1; font-style: italic;")
+        self.lbl_tools_subtitle.setWordWrap(True)
+        sub_row.addWidget(self.lbl_tools_subtitle, 1)
         self.btn_tools_check = QPushButton(tr("tools_check_btn"))
         self.btn_tools_check.setFixedHeight(28)
+        self.btn_tools_check.setCursor(Qt.PointingHandCursor)
         self.btn_tools_check.setStyleSheet("""
             QPushButton { background-color: #3b4252; color: #88c0d0; font-size: 11px;
                           padding: 0px 12px; border-radius: 4px; border: none; }
             QPushButton:hover { background-color: #4c566a; }
             QPushButton:disabled { background-color: #2e3440; color: #4c566a; }
         """)
-        header_row.addWidget(self.btn_tools_check)
-        layout.addLayout(header_row)
+        sub_row.addWidget(self.btn_tools_check, 0, Qt.AlignTop)
+        outer.addLayout(sub_row)
 
         self.tool_cards = {}
 
-        # ---- ZWEI SPALTEN NEBENEINANDER ----
-        columns_layout = QHBoxLayout()
-        columns_layout.setSpacing(16)
-        columns_layout.setAlignment(Qt.AlignTop)
+        # ---- Sub-Tab-Navigation (wie im Settings-Tab) ----
+        self.tools_subtabs = QTabWidget()
+        self.tools_subtabs.setStyleSheet("""
+            QTabWidget::pane { border:none; background:transparent; top:-1px; }
+            QTabBar { qproperty-drawBase:0; }
+            QTabBar::tab {
+                background:#21252b; color:#7b88a1; padding:8px 18px;
+                border-radius:6px; margin-right:6px; font-size:12px; font-weight:bold;
+            }
+            QTabBar::tab:selected { background:#5e81ac; color:white; }
+            QTabBar::tab:hover:!selected { background:#2e3440; color:#d8dee9; }
+        """)
+        outer.addWidget(self.tools_subtabs)
 
-        # Linke Spalte: Anwendungen
-        self.apps_group = QGroupBox(tr("tools_apps"))
-        apps_layout = QVBoxLayout(self.apps_group)
-        apps_layout.setSpacing(8)
-        apps_layout.setAlignment(Qt.AlignTop)
+        # Seite 1: Anwendungen
+        page_apps, apps_v = self._settings_new_page()
         for tool in TOOLS_APPS:
-            apps_layout.addWidget(self._build_tool_card(tool))
-        apps_layout.addStretch()
+            apps_v.addWidget(self._build_tool_card(tool))
+        apps_v.addStretch()
+        self.tools_subtabs.addTab(page_apps, tr("tools_apps"))
 
-        # Rechte Spalte: OSC
-        self.osc_group = QGroupBox(tr("tools_osc"))
-        osc_layout = QVBoxLayout(self.osc_group)
-        osc_layout.setSpacing(8)
-        osc_layout.setAlignment(Qt.AlignTop)
+        # Seite 2: OSC-Apps
+        page_osc, osc_v = self._settings_new_page()
         for tool in TOOLS_OSC:
-            osc_layout.addWidget(self._build_tool_card(tool))
-        osc_layout.addStretch()
-
-        columns_layout.addWidget(self.apps_group)
-        columns_layout.addWidget(self.osc_group)
-        layout.addLayout(columns_layout)
-        layout.addStretch()
+            osc_v.addWidget(self._build_tool_card(tool))
+        osc_v.addStretch()
+        self.tools_subtabs.addTab(page_osc, tr("tools_osc"))
 
     def _build_tool_card(self, tool):
         """Baut eine einzelne Tool-Karte — kompaktes Design."""
@@ -1224,13 +1257,25 @@ class Ui_MainWindow(object):
         import subprocess
 
         card = QFrame()
-        card.setStyleSheet("""
-            QFrame {
-                background-color: #21252b;
-                border-radius: 6px;
-                border: 1px solid #2e3440;
-            }
-        """)
+        featured = bool(tool.get("featured"))
+        if featured:
+            # Hervorgehobene Karte: kräftigerer Rahmen + leicht abgesetzter
+            # Hintergrund in der Nord-Frost-Akzentfarbe.
+            card.setStyleSheet("""
+                QFrame {
+                    background-color: #252b34;
+                    border-radius: 6px;
+                    border: 1px solid #88c0d0;
+                }
+            """)
+        else:
+            card.setStyleSheet("""
+                QFrame {
+                    background-color: #21252b;
+                    border-radius: 6px;
+                    border: 1px solid #2e3440;
+                }
+            """)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(8, 6, 8, 6)
         card_layout.setSpacing(3)
@@ -1242,6 +1287,13 @@ class Ui_MainWindow(object):
         lbl_name = QLabel(tool["name"])
         lbl_name.setStyleSheet("font-size: 12px; font-weight: bold; color: #eceff4;")
         top_row.addWidget(lbl_name)
+
+        # ★-Badge für hervorgehobene (eigene) Tools direkt hinter dem Namen.
+        if featured:
+            lbl_badge = QLabel("★")
+            lbl_badge.setToolTip(tr("tools_featured_tip"))
+            lbl_badge.setStyleSheet("color: #ebcb8b; font-size: 12px; font-weight: bold;")
+            top_row.addWidget(lbl_badge)
 
         lbl_version = QLabel("")
         lbl_version.setStyleSheet("color: #4c566a; font-size: 10px; font-family: monospace;")

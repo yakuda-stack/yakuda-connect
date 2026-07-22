@@ -61,6 +61,7 @@ import vr_environment as venv
 from config_manager import load_saved_settings, save_all_settings
 from streaming_tab import StreamingTab
 from backup_manager import (create_vr_backup, restore_vr_environment,
+                            sync_backup_from_github,
                             auto_backup_on_start)
 from programs import (INSTALL_PACKAGES, INSTALL_DNF, FEDORA_XRIZER_COPR,
                       TOOLS_APPS, TOOLS_OSC)
@@ -288,7 +289,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.1.1"
+        self.APP_VERSION = "v1.1.2"
         self.server_process = None
         self.pairing_process = None
 
@@ -711,6 +712,7 @@ class VRApp(QMainWindow):
         QTimer.singleShot(400, self._apply_distro_ui_rules)
         self.ui.btn_vr_backup.clicked.connect(self.trigger_vr_backup)
         self.ui.btn_vr_restore.clicked.connect(self.trigger_vr_restore)
+        self.ui.btn_vr_restore_github.clicked.connect(self.trigger_vr_restore_github)
         self.ui.btn_openxr_copy_path.clicked.connect(self.copy_openxr_path)
         self.ui.btn_openxr_copy_content.clicked.connect(self.copy_openxr_content)
         # OpenXR: automatischer Fix + Ein-/Ausklappen des manuellen Bereichs
@@ -734,6 +736,13 @@ class VRApp(QMainWindow):
         self.ui.btn_killcmd_add.clicked.connect(lambda: self._killcmd_add_row("", ""))
         self.ui.btn_killcmd_save.clicked.connect(self._killcmd_save)
         self._killcmd_load_from_config()
+
+        # Mikrofon / Audio-Quelle (Settings): Standard-Source setzen/zurücksetzen.
+        # Beim Start einmal die Quellen einlesen und den aktuellen Zustand zeigen.
+        self.ui.btn_mic_refresh.clicked.connect(self.refresh_mic_sources)
+        self.ui.btn_mic_set.clicked.connect(self.apply_mic_source)
+        self.ui.btn_mic_reset.clicked.connect(self.reset_mic_source)
+        self.refresh_mic_sources()
 
         # Dashboard Steuerung — Schiebeschalter statt Start/Stop-Buttons
         self.ui.toggle_server.toggled.connect(self.on_server_toggled)
@@ -2293,6 +2302,11 @@ class VRApp(QMainWindow):
         # FIX: 'self' übergeben, da die Funktion das Parent-Fenster für die Dialoge braucht
         restore_vr_environment(self)
 
+    def trigger_vr_restore_github(self):
+        """Lädt das saubere Referenz-Backup von GitHub ins lokale Backup-
+        Verzeichnis. Danach kann normal per 'Wiederherstellen' angewendet werden."""
+        sync_backup_from_github(self)
+
     def _package_groups_for(self, method):
         """Welche Status-Zeilen je Methode?"""
         if method == "dnf":
@@ -3061,6 +3075,174 @@ class VRApp(QMainWindow):
         self.ui.btn_killcmd_save.setText(tr("killcmd_saved"))
         QTimer.singleShot(1500,
             lambda: self.ui.btn_killcmd_save.setText(tr("killcmd_save_btn")))
+
+    # ------------------------------------------------------------------
+    #  Mikrofon / Audio-Quelle (Settings): Standard-Source umstellen
+    #
+    #  Hintergrund: Seit Proton 11 werden virtuelle Mikrofone nicht mehr
+    #  sauber an Spiele durchgereicht. Wer per PipeWeaver o.ä. ein virtuelles
+    #  Mikrofon baut (z. B. um Spotify/YouTube-Music-Ton an VRChat zu geben),
+    #  stellt hier die System-Standard-Aufnahmequelle (default-source) um.
+    #  "Setzen"  -> pactl set-default-source <name>
+    #  "Zurücksetzen" -> stellt die zuvor gemerkte Original-Quelle wieder her.
+    # ------------------------------------------------------------------
+    def _mic_state_path(self):
+        """Kleine, eigene State-Datei — getrennt von der Haupt-Config, damit
+        save_all_settings() sie nicht überschreiben/verlieren kann."""
+        from config_manager import CONFIG_DIR
+        return os.path.join(CONFIG_DIR, "mic_state.json")
+
+    def _mic_load_original(self):
+        """Liefert die gemerkte Original-Default-Source (oder None)."""
+        try:
+            import json as _json
+            with open(self._mic_state_path(), "r") as f:
+                return (_json.load(f) or {}).get("original_default_source") or None
+        except Exception:
+            return None
+
+    def _mic_save_original(self, name):
+        """Merkt sich die Original-Default-Source — aber nur EINMAL, damit
+        wiederholtes Setzen nicht die echte Ausgangsquelle überschreibt."""
+        if self._mic_load_original():
+            return  # schon gemerkt, nicht überschreiben
+        try:
+            import json as _json
+            from config_manager import CONFIG_DIR
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(self._mic_state_path(), "w") as f:
+                _json.dump({"original_default_source": name}, f, indent=4)
+        except Exception:
+            pass
+
+    def _mic_clear_original(self):
+        """Löscht die gemerkte Original-Quelle (nach dem Zurücksetzen)."""
+        try:
+            os.remove(self._mic_state_path())
+        except Exception:
+            pass
+
+    def _pactl_available(self):
+        from shutil import which
+        return which("pactl") is not None
+
+    def _current_default_source(self):
+        """Aktuelle Standard-Aufnahmequelle über `pactl get-default-source`."""
+        try:
+            res = subprocess.run(["pactl", "get-default-source"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, timeout=3)
+            return res.stdout.strip() or None
+        except Exception:
+            return None
+
+    def refresh_mic_sources(self):
+        """Liest `pactl list sources short` und füllt das Dropdown. Die aktuell
+        aktive Standard-Quelle wird mit ● markiert und vorausgewählt."""
+        combo = self.ui.combo_mic_source
+        combo.clear()
+
+        if not self._pactl_available():
+            self.ui.lbl_mic_status.setText(tr("mic_status_no_pactl"))
+            self.ui.btn_mic_set.setEnabled(False)
+            self.ui.btn_mic_reset.setEnabled(False)
+            return
+
+        self.ui.btn_mic_set.setEnabled(True)
+        self.ui.btn_mic_reset.setEnabled(True)
+
+        try:
+            res = subprocess.run(["pactl", "list", "sources", "short"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, timeout=3)
+        except Exception as e:
+            self.ui.lbl_mic_status.setText(tr("mic_status_error").format(err=e))
+            return
+
+        current = self._current_default_source()
+        sources = []
+        for line in res.stdout.splitlines():
+            parts = line.split("\t")
+            # Format: index \t name \t driver \t sample-spec \t state
+            if len(parts) >= 2 and parts[1].strip():
+                sources.append(parts[1].strip())
+
+        if not sources:
+            self.ui.lbl_mic_status.setText(tr("mic_status_none"))
+            return
+
+        select_index = 0
+        for i, name in enumerate(sources):
+            label = ("● " + name) if name == current else name
+            combo.addItem(label, name)  # echter Name als userData
+            if name == current:
+                select_index = i
+        combo.setCurrentIndex(select_index)
+
+        if current:
+            self.ui.lbl_mic_status.setText(tr("mic_status_current").format(name=current))
+        else:
+            self.ui.lbl_mic_status.setText("")
+
+    def apply_mic_source(self):
+        """Setzt die im Dropdown gewählte Quelle als System-Standard."""
+        if not self._pactl_available():
+            self.ui.lbl_mic_status.setText(tr("mic_status_no_pactl"))
+            return
+
+        name = self.ui.combo_mic_source.currentData()
+        if not name:
+            self.ui.lbl_mic_status.setText(tr("mic_status_select"))
+            return
+
+        # Vor der Umstellung die aktuelle Default-Source als Original merken
+        # (nur beim ersten Mal — siehe _mic_save_original).
+        current = self._current_default_source()
+        if current and current != name:
+            self._mic_save_original(current)
+
+        try:
+            res = subprocess.run(["pactl", "set-default-source", name],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, timeout=3)
+            if res.returncode != 0:
+                err = (res.stderr or "").strip() or f"exit {res.returncode}"
+                self.ui.lbl_mic_status.setText(tr("mic_status_error").format(err=err))
+                return
+        except Exception as e:
+            self.ui.lbl_mic_status.setText(tr("mic_status_error").format(err=e))
+            return
+
+        self.ui.lbl_mic_status.setText(tr("mic_status_set").format(name=name))
+        # Markierung (●) im Dropdown aktualisieren.
+        self.refresh_mic_sources()
+
+    def reset_mic_source(self):
+        """Stellt die zuvor gemerkte Original-Default-Source wieder her."""
+        if not self._pactl_available():
+            self.ui.lbl_mic_status.setText(tr("mic_status_no_pactl"))
+            return
+
+        original = self._mic_load_original()
+        if not original:
+            self.ui.lbl_mic_status.setText(tr("mic_status_nothing_saved"))
+            return
+
+        try:
+            res = subprocess.run(["pactl", "set-default-source", original],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, timeout=3)
+            if res.returncode != 0:
+                err = (res.stderr or "").strip() or f"exit {res.returncode}"
+                self.ui.lbl_mic_status.setText(tr("mic_status_error").format(err=err))
+                return
+        except Exception as e:
+            self.ui.lbl_mic_status.setText(tr("mic_status_error").format(err=e))
+            return
+
+        self._mic_clear_original()
+        self.ui.lbl_mic_status.setText(tr("mic_status_reset").format(name=original))
+        self.refresh_mic_sources()
 
     def _run_custom_kill_commands(self):
         """Führt die hinterlegten Zusatz-Kill-Befehle als Shell aus (best effort)."""
