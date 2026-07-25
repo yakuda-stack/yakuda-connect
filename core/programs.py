@@ -33,6 +33,10 @@ Installationsmethoden (distro-abhängig automatisch gefiltert):
                      (z. B. VRCX: "--no-install --no-desktop").
   remove_entries   : Vom Programm selbst angelegte .desktop-/Autostart-Dateien,
                      die bei Installation/Deinstallation entfernt werden (Pfade mit ~).
+  note / note_eng  : Optionaler Hinweis (klein, kursiv, gelb) unter der
+                     Beschreibung — z. B. Installations-Hinweise für Nutzer,
+                     denen keine Methode zur Verfügung steht (kein AppImage
+                     auf Nicht-Arch-Systemen o. Ä.).
 
 Hinweis zur Distro-Logik:
   Es gibt bewusst KEINE getrennten Listen pro Distro. Stattdessen entscheidet
@@ -242,5 +246,52 @@ TOOLS_OSC = [
         "include_prerelease": True,
         "config_dirs":  ["OscGoesBrrr"],
         "icon_url":     "https://raw.githubusercontent.com/OscToys/OscGoesBrrr/main/src/icons/ogb-logo.png",
+    },
+    {
+        "key":          "vrcft-avalonia",
+        "name":         "VRCFaceTracking (Avalonia)",
+        # AUR-Paket (openlfreak): "extracted AppImage version". Stellt den
+        # Befehl `vrcft` bereit — deshalb ist start_cmd auch für die AppImage-
+        # Methode "vrcft" (der Starter unter ~/.local/bin/vrcft).
+        "pkg":          "vrcft-avalonia-bin",
+        "desc":         ("Cross-Plattform-Port von VRCFaceTracking (Avalonia/.NET) — die Brücke zwischen "
+                         "Face-/Eye-Tracking-Hardware und VRChat. Für Project Babble hier das "
+                         "VRCFT-Babble-Modul installieren."),
+        "desc_eng":     ("Cross-platform port of VRCFaceTracking (Avalonia/.NET) — the bridge between "
+                         "face/eye-tracking hardware and VRChat. For Project Babble, install the "
+                         "VRCFT-Babble module inside it."),
+        "start_cmd":    "vrcft",
+        "link":         "https://github.com/dfgHiatus/VRCFaceTracking.Avalonia",
+        # AppImage (aus dem Release) / yay / paru — Vorauswahl AppImage.
+        "install_methods": ["appimage", "aur"],
+        "github_repo":  "dfgHiatus/VRCFaceTracking.Avalonia",
+        # Release enthält genau ein Linux-AppImage -> ".AppImage" trifft eindeutig.
+        "asset_match":  ".AppImage",
+        "include_prerelease": False,
+        "config_dirs":  ["VRCFaceTracking"],
+    },
+    {
+        "key":          "baballonia",
+        "name":         "Project Babble (Baballonia)",
+        # Nur AUR: Baballonia (Avalonia/.NET) liefert offiziell KEIN AppImage
+        # und kein Flatpak, sondern nur ein Release-Tarball bzw. Nix-Flake.
+        # Für Arch/CachyOS ist das AUR-Paket der saubere Weg; Nicht-Arch-
+        # Nutzer bekommen den Hinweis unten (note).
+        "pkg":          "baballonia",
+        "desc":         ("Quelloffenes Eye-/Face-Tracking für Social VR (VRChat, Resonite, ChilloutVR). "
+                         "Füttert VRCFaceTracking über das VRCFT-Babble-Modul."),
+        "desc_eng":     ("Open-source eye/face tracking for social VR (VRChat, Resonite, ChilloutVR). "
+                         "Feeds VRCFaceTracking via the VRCFT-Babble module."),
+        "start_cmd":    "baballonia",
+        "link":         "https://github.com/Project-Babble/Baballonia",
+        # Bewusst NUR AUR — es gibt kein AppImage/Flatpak.
+        "install_methods": ["aur"],
+        "config_dirs":  ["Baballonia"],
+        # Nicht-Arch-Nutzer sehen sonst nur "keine Methode verfügbar" — dieser
+        # Hinweis nennt die offiziellen Alternativen (Release-Tarball / Nix).
+        "note":         ("Kein AppImage/Flatpak vorhanden. Nicht-Arch-Nutzer: Release-Tarball von GitHub "
+                         "entpacken und starten, oder per Nix:  nix run github:Project-Babble/Baballonia"),
+        "note_eng":     ("No AppImage/Flatpak available. Non-Arch users: download & extract the release "
+                         "tarball from GitHub, or run via Nix:  nix run github:Project-Babble/Baballonia"),
     },
 ]

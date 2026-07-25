@@ -54,7 +54,7 @@ from ui.ui_main import Ui_MainWindow
 # Interne Importe (liegen im selben Ordner 'core')
 from install_worker import (InstallWorker, UpdateWorker, RemoveWorker,
                             AppUpdateCheckWorker, AppUpdateWorker,
-                            CoverDownloadWorker)
+                            CoverDownloadWorker, GamesDbWorker)
 from appimage_installer import AppImageInstallWorker
 import appimage_installer as appimg
 import vr_environment as venv
@@ -289,7 +289,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.1.2"
+        self.APP_VERSION = "v1.1.3"
         self.server_process = None
         self.pairing_process = None
 
@@ -702,6 +702,10 @@ class VRApp(QMainWindow):
         # Games-Tab
         self.ui.btn_games_scan.clicked.connect(self.start_games_scan)
         self.ui.btn_games_info.clicked.connect(self.show_games_info)
+        self.ui.btn_games_db_update.clicked.connect(self.start_games_db_update)
+        self._refresh_games_db_version()
+        # Im Hintergrund prüfen, ob eine neuere Spiele-DB (games.json) vorliegt.
+        QTimer.singleShot(1500, self._check_games_db_update)
 
         # Installation / Update
         self.ui.btn_install.clicked.connect(self.start_package_installation)
@@ -891,6 +895,51 @@ class VRApp(QMainWindow):
             w = item.widget()
             if w:
                 w.deleteLater()
+
+    # ----- Spiele-Datenbank (config/games.json): Version + Update ----------- #
+    def _refresh_games_db_version(self):
+        """Setzt das Versions-Label der Spiele-DB (games.json)."""
+        try:
+            self.ui.lbl_games_db_ver.setText(
+                f"{tr('games_db_version_label')} {games_db.games_config_version()}")
+        except Exception:
+            pass
+
+    def _check_games_db_update(self):
+        """Hintergrund-Check, ob auf GitHub eine neuere games.json liegt."""
+        self._games_db_check_worker = GamesDbWorker(mode="check")
+        self._games_db_check_worker.check_result.connect(self._on_games_db_checked)
+        self._games_db_check_worker.start()
+
+    def _on_games_db_checked(self, available, remote_version):
+        self._games_db_remote_version = remote_version or ""
+        if available and remote_version:
+            self.ui.btn_games_db_update.setVisible(True)
+            self.ui.btn_games_db_update.setToolTip(
+                tr("games_db_update_available").format(version=remote_version))
+        else:
+            self.ui.btn_games_db_update.setVisible(False)
+
+    def start_games_db_update(self):
+        """Klick auf den Update-Button: neue games.json laden und neu einlesen."""
+        self.ui.btn_games_db_update.setEnabled(False)
+        self.ui.lbl_games_status.setText(tr("games_db_updating"))
+        self._games_db_dl_worker = GamesDbWorker(mode="download")
+        self._games_db_dl_worker.apply_result.connect(self._on_games_db_updated)
+        self._games_db_dl_worker.start()
+
+    def _on_games_db_updated(self, ok, new_version):
+        self.ui.btn_games_db_update.setEnabled(True)
+        if ok:
+            self.ui.btn_games_db_update.setVisible(False)
+            self._refresh_games_db_version()
+            self.ui.lbl_games_status.setText(
+                tr("games_db_updated").format(version=new_version))
+            # Kacheln mit der neuen DB neu aufbauen (nur wenn schon gescannt).
+            if getattr(self, "_games_tiles", None):
+                self.start_games_scan()
+        else:
+            self.ui.lbl_games_status.setText(tr("games_db_update_failed"))
 
     def render_games_cards(self, tested, untested):
         """
@@ -1207,7 +1256,8 @@ class VRApp(QMainWindow):
             return ""
         custom = self._detail_custom_edit.text() if self._detail_custom_edit else ""
         final = games_db.compose_launch_options(
-            self._detail_base_params, self._current_toggle_keys(), custom)
+            self._detail_base_params, self._current_toggle_keys(), custom,
+            extra_toggles=getattr(self, "_detail_game_toggles", None))
         self._detail_params_edit.setText(final)
         return final
 
@@ -1267,8 +1317,14 @@ class VRApp(QMainWindow):
             base = params.get(gpu) or params.get("amd") or next(iter(params.values()), "")
         else:
             base = ""
-        keys, custom = games_db.load_launch_toggles(appid)
-        return games_db.compose_launch_options(base, keys, custom)
+        game_toggles = game.get("toggles", [])
+        keys, custom = games_db.load_launch_toggles(appid, game_toggles)
+        # Noch nie gespeichert -> Spiel-Vorgaben anwenden (gleiche Logik wie im Panel),
+        # damit z. B. VRChat auch über den ▶-Knopf mit gamemoderun + HW-Dekodierung startet.
+        if not games_db.has_saved_launch_toggles(appid):
+            keys = list(game.get("default_on", [])) + \
+                   [t["key"] for t in game_toggles if t.get("default")]
+        return games_db.compose_launch_options(base, keys, custom, extra_toggles=game_toggles)
 
     def _launch_game(self, appid, game, params, status):
         """
@@ -1503,9 +1559,21 @@ class VRApp(QMainWindow):
         lbl_params.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_params)
 
-        saved_keys, saved_custom = games_db.load_launch_toggles(appid)
+        game_toggles = game.get("toggles", [])
+        self._detail_game_toggles = game_toggles
+        saved_keys, saved_custom = games_db.load_launch_toggles(appid, game_toggles)
 
-        # Toggle-Schalter (aus games_db.LAUNCH_TOGGLES — neue einfach dort ergänzen)
+        # Beim ERSTEN Öffnen (noch nichts gespeichert) greifen die Spiel-
+        # Vorgaben (z. B. gamemoderun + HW-Video-Dekodierung sind bei VRChat
+        # per Default an). Danach ist die gespeicherte Auswahl maßgeblich —
+        # der Nutzer kann die Vorgaben also ganz normal wieder abschalten.
+        if games_db.has_saved_launch_toggles(appid):
+            initial_keys = set(saved_keys)
+        else:
+            initial_keys = set(game.get("default_on", []))
+            initial_keys |= {t["key"] for t in game_toggles if t.get("default")}
+
+        # Toggle-Schalter: globale (LAUNCH_TOGGLES) + spiel-eigene (game['toggles'])
         lbl_toggles = QLabel(tr("games_toggles_section"))
         lbl_toggles.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_toggles)
@@ -1513,10 +1581,10 @@ class VRApp(QMainWindow):
         toggle_row = QHBoxLayout()
         toggle_row.setSpacing(16)
         self._detail_toggles = {}
-        for t in games_db.LAUNCH_TOGGLES:
+        for t in list(games_db.LAUNCH_TOGGLES) + list(game_toggles):
             cb = QCheckBox(tr(f"games_toggle_{t['key']}"))
             cb.setCursor(Qt.PointingHandCursor)
-            cb.setChecked(t["key"] in saved_keys)
+            cb.setChecked(t["key"] in initial_keys)
             cb.setToolTip(tr(f"games_toggle_{t['key']}_tip"))
             cb.setStyleSheet(
                 "QCheckBox { color: #d8dee9; font-size: 11px; font-family: monospace; border: none; }")
@@ -2179,6 +2247,9 @@ class VRApp(QMainWindow):
             if "lbl_desc" in card:
                 desc = tool.get("desc_eng", tool.get("desc", "")) if lang == "en" else tool.get("desc", "")
                 card["lbl_desc"].setText(desc)
+            if card.get("lbl_note") is not None:
+                note = tool.get("note_eng", tool.get("note", "")) if lang == "en" else tool.get("note", "")
+                card["lbl_note"].setText(note)
         self.check_tools_status()
 
     def _get_pictures_dir(self):

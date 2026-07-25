@@ -108,14 +108,34 @@ def proton(source, role, de="", en="", hide_on_cachyos=False, version=None):
     return entry
 
 
-def game(name, protons, launch_params=None, fixes=None):
-    """Ein Eintrag für die GAMES-Tabelle."""
+def game(name, protons, launch_params=None, fixes=None, toggles=None, default_on=None):
+    """Ein Eintrag für die GAMES-Tabelle.
+
+    toggles     : Spiel-eigene Zusatz-Schalter (zusätzlich zu den globalen
+                  LAUNCH_TOGGLES), z. B. VRChats --enable-hw-video-decoding.
+                  Jeder Eintrag über game_toggle(...) gebaut.
+    default_on  : Liste von Toggle-Keys (global ODER spiel-eigen), die beim
+                  ERSTEN Öffnen des Spiels vorausgewählt sind — solange der
+                  Nutzer nichts anderes gespeichert hat. Danach kann er sie
+                  ganz normal ab-/anschalten (z. B. gamemoderun bei VRChat).
+    """
     return {
         "name": name,
         "protons": protons,
         "launch_params": launch_params or {},
         "fixes": fixes or [],
+        "toggles": toggles or [],
+        "default_on": list(default_on or []),
     }
+
+
+def game_toggle(key, arg, position="after", default=False):
+    """Ein spiel-spezifischer Startparameter-Schalter (wie LAUNCH_TOGGLES).
+      position "before" -> Wrapper (vor %command%), "after" -> Spiel-Argument.
+      default           -> beim ersten Öffnen des Spiels bereits an.
+    Beschriftung/Tooltip kommen über tr("games_toggle_<key>") / _tip.
+    """
+    return {"key": key, "arg": arg, "position": position, "default": default}
 
 
 def all_gpus(params):
@@ -163,46 +183,197 @@ def protons_ge_main():
 # --------------------------------------------------------------------------- #
 #  Spieldatenbank (Schlüssel = Steam-AppID als String)
 # --------------------------------------------------------------------------- #
-GAMES = {
-    # VRChat pinnt bewusst konkrete Builds und hat eigene Beschreibungen.
-    "438100": game(
-        "VRChat",
-        protons=[
-            proton(P_RTSP, "main", version="proton-rtsp-11.0-20260609-1",
-                   de=("Alle Videoplayer funktionieren, aber Social-Liste und Invites "
-                       "sowie die Performance sind ein bisschen schlechter."),
-                   en=("All video players work, but the social list and invites "
-                       "as well as performance are slightly worse.")),
-            proton(P_CACHYOS, "main_cachyos", version="proton-cachyos-11.0-20260602",
-                   de=("Alle Videoplayer funktionieren außer dem alten Unity-Player. "
-                       "Maximale Performance/Latenz, Social-Liste und Invites funktionieren."),
-                   en=("All video players work except the old Unity player. "
-                       "Maximum performance/latency, social list and invites work.")),
-            # Auf CachyOS überflüssig (bricht dort nur die Videoplayer):
-            # proton-cachyos + proton-rtsp reichen völlig -> ausblenden.
-            proton(P_VALVE, "alternative", version="proton-11.0-1", hide_on_cachyos=True,
-                   de="Maximale Performance, aber keine Videoplayer funktionieren.",
-                   en="Maximum performance, but no video players work."),
-        ],
-        launch_params=all_gpus(
-            "gamemoderun %command% --enable-avpro-in-prose "
-            "--enable-hardware-decoding --fps=90 --disable-amd-stutter-workaround"),
-        fixes=["vrchat_pictures"],
-    ),
+# --------------------------------------------------------------------------- #
+#  Spiele-Datenbank aus config/games.json (JSON = Datenquelle)
+# --------------------------------------------------------------------------- #
+# Die getesteten Spiele stehen jetzt in config/games.json (leicht editier- und
+# per Update-Button aktualisierbar). Diese Datei wird eingelesen und in exakt
+# die interne Struktur übersetzt, die der Rest der App schon nutzt (protons-
+# Liste mit role/version/protonplus_runner/desc, launch_params amd/nvidia,
+# fixes, toggles, default_on) — die restliche UI-Logik bleibt unverändert.
+#
+# Reihenfolge der Quellen (höchste info.version gewinnt):
+#   1. ~/.config/yakuda-connect/config/games.json  (heruntergeladenes Update)
+#   2. <App-Ordner>/config/games.json              (mitgeliefert)
 
-    "1540210": game("Arizona Sunshine 2",         protons_valve_main()),
-    "2897700": game("Arizona Sunshine Remake",    protons_valve_main()),
-    "2669410": game("Metro Awakening",            protons_ge_main()),
-    "2800080": game("Thief VR: Legacy of Shadow", protons_valve_main()),
-    "620980":  game("Beat Saber",                 protons_valve_main()),
+APP_DIR             = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GAMES_JSON_BUNDLED  = os.path.join(APP_DIR, "config", "games.json")
+GAMES_JSON_USER     = os.path.join(HOME, ".config/yakuda-connect/config/games.json")
+GAMES_JSON_REMOTE   = ("https://raw.githubusercontent.com/yakuda-stack/"
+                       "yakuda-connect/main/config/games.json")
 
-    # Unreal Engine 5. Laut Steam-Seite: SSD empfohlen, GPUs unter 10 GB VRAM
-    # können in schweren Szenen einbrechen -> gamemoderun hilft spürbar.
-    "2472940": game("Wanderer: The Fragments of Fate", protons_ge_main(),
-                    launch_params=all_gpus("gamemoderun %command%")),
 
-    # Weitere VR-Spiele hier ergänzen ...
-}
+def _ver_tuple(v):
+    """'1.2.10' -> (1, 2, 10). Für Versionsvergleiche der games.json."""
+    parts = re.findall(r"\d+", str(v or "0"))
+    return tuple(int(x) for x in parts) if parts else (0,)
+
+
+def _read_json_file(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _infer_protonplus_runner(version):
+    """Leitet aus dem Versionsnamen den ProtonPlus-Runner ab (für Install/Use
+    per Klick). None = Steams eingebautes Proton (bringt Steam selbst mit)."""
+    s = (version or "").lower()
+    if "cachyos" in s:
+        return "proton-cachyos"
+    if "rtsp" in s:
+        return "proton-ge-rtsp"
+    if "ge" in s:                       # "Proton-GE"
+        return "proton-ge"
+    return None                          # Valve / "Proton 11"
+
+
+def _norm_desc(desc):
+    """desc darf String (für beide Sprachen) ODER {'de':..,'en':..} sein."""
+    if isinstance(desc, dict):
+        de = desc.get("de", "") or desc.get("en", "")
+        en = desc.get("en", "") or de
+        return {"de": de, "en": en}
+    return {"de": desc or "", "en": desc or ""}
+
+
+def _proton_entry(pv_map, pd_map, key, role, desc=None, cachyos_only=False):
+    version = pv_map.get(key, key)
+    # Beschreibung: per-Spiel-Override (desc) hat Vorrang, sonst die zentrale
+    # Standardbeschreibung der Proton-Version aus proton_descriptions.
+    if not desc:
+        desc = pd_map.get(key, "")
+    entry = {
+        "version": version,
+        "role": role,
+        "protonplus_runner": _infer_protonplus_runner(version),
+        "desc": _norm_desc(desc),
+    }
+    if cachyos_only:
+        # Nur auf CachyOS anzeigen (Nicht-CachyOS sieht nur Default + Alternative).
+        entry["cachyos_only"] = True
+    return entry
+
+
+def build_games_from_config(cfg):
+    """Übersetzt eine games.json in die interne GAMES-Struktur."""
+    if not isinstance(cfg, dict):
+        return {}
+    pv_raw = cfg.get("proton_versions", {}) or {}
+    pv = {k: (v if isinstance(v, str) else (v or {}).get("version", ""))
+          for k, v in pv_raw.items()}
+    # Zentrale Standardbeschreibungen der Proton-Versionen (per-Spiel überschreibbar).
+    pd = cfg.get("proton_descriptions", {}) or {}
+    # Zentrales Bild-Template ({appid} wird ersetzt); per-Spiel via "picture" überschreibbar.
+    pic_tmpl = cfg.get("picture_template", "") or ""
+
+    out = {}
+    for appid, g in (cfg.get("games", {}) or {}).items():
+        appid = str(appid)
+        p = g.get("proton", {}) or {}
+        protons = []
+        if p.get("cachyos"):
+            protons.append(_proton_entry(pv, pd, p["cachyos"], "main_cachyos",
+                                         p.get("cachyos_desc"), cachyos_only=True))
+        if p.get("default"):
+            protons.append(_proton_entry(pv, pd, p["default"], "main",
+                                         p.get("default_desc")))
+        if p.get("alternative"):
+            protons.append(_proton_entry(pv, pd, p["alternative"], "alternative",
+                                         p.get("alt_desc")))
+
+        launch = {}
+        if g.get("amd_start") or g.get("nvidia_start"):
+            amd = g.get("amd_start") or g.get("nvidia_start")
+            nv  = g.get("nvidia_start") or g.get("amd_start")
+            launch = {"amd": amd, "nvidia": nv}
+
+        toggles = []
+        if g.get("toggle_enable_hardware_decoding"):
+            toggles.append(game_toggle("vrc_hw_video_decoding",
+                                       "--enable-hw-video-decoding",
+                                       position="after", default=True))
+        default_on = []
+        if g.get("toggle_gamemoderun"):
+            default_on.append("gamemoderun")
+
+        picture = g.get("picture") or (pic_tmpl.format(appid=appid) if pic_tmpl else "")
+
+        out[appid] = {
+            "name": g.get("name", appid),
+            "picture": picture,
+            "protons": protons,
+            "launch_params": launch,
+            "fixes": g.get("fixes", []) or [],
+            "toggles": toggles,
+            "default_on": default_on,
+        }
+    return out
+
+
+def load_games_config():
+    """Liest die beste verfügbare games.json (höchste info.version gewinnt,
+    Gleichstand -> User-Kopie)."""
+    best = None
+    for path in (GAMES_JSON_BUNDLED, GAMES_JSON_USER):   # User zuletzt -> gewinnt Gleichstand
+        c = _read_json_file(path)
+        if not isinstance(c, dict):
+            continue
+        if (best is None or
+                _ver_tuple((c.get("info", {}) or {}).get("version")) >=
+                _ver_tuple((best.get("info", {}) or {}).get("version"))):
+            best = c
+    return best or {}
+
+
+GAMES_CONFIG = load_games_config()
+GAMES = build_games_from_config(GAMES_CONFIG)
+
+
+def reload_games_config():
+    """games.json neu einlesen und GAMES neu aufbauen (nach einem Update)."""
+    global GAMES_CONFIG, GAMES
+    GAMES_CONFIG = load_games_config()
+    GAMES = build_games_from_config(GAMES_CONFIG)
+    return GAMES
+
+
+def games_config_version():
+    """Version der aktuell geladenen games.json (z. B. '1.0.0')."""
+    return (GAMES_CONFIG.get("info", {}) or {}).get("version", "0.0.0")
+
+
+def fetch_remote_games_config(timeout=8):
+    """Lädt die entfernte games.json (Rohtext, geparste Config). Netzwerk!"""
+    import urllib.request
+    req = urllib.request.Request(GAMES_JSON_REMOTE,
+                                 headers={"User-Agent": "yakuda-connect"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read().decode("utf-8")
+    return raw, json.loads(raw)          # json.loads validiert gleich mit
+
+
+def remote_games_update_available(timeout=8):
+    """(update_verfügbar: bool, remote_version: str). Im Worker aufrufen."""
+    try:
+        _, cfg = fetch_remote_games_config(timeout)
+        rv = (cfg.get("info", {}) or {}).get("version", "0.0.0")
+        return (_ver_tuple(rv) > _ver_tuple(games_config_version()), rv)
+    except Exception:
+        return (False, "")
+
+
+def apply_remote_games_config(raw_text):
+    """Speichert eine (bereits geladene) games.json in den User-Config-Ordner
+    und lädt sie neu ein. Wirft bei ungültigem JSON. Rückgabe: neue Version."""
+    json.loads(raw_text)                 # muss valide sein
+    os.makedirs(os.path.dirname(GAMES_JSON_USER), exist_ok=True)
+    with open(GAMES_JSON_USER, "w", encoding="utf-8") as f:
+        f.write(raw_text)
+    reload_games_config()
+    return games_config_version()
 
 # --------------------------------------------------------------------------- #
 #  Steam-Bibliotheken finden + installierte Spiele scannen
@@ -250,6 +421,25 @@ _APPID_BLACKLIST = {
     "1391110",   # Steam Linux Runtime - Soldier
     "1628350",   # Steam Linux Runtime - Sniper
 }
+
+# Zusätzlicher Filter über den NAMEN — fängt alle Proton-Versionen (auch neue
+# wie "Proton 10.0", "Proton 9.0 (Beta)") und Steam-Runtimes ab, ohne dass man
+# jede appid einzeln pflegen muss. Proton-Installationen enthalten OpenVR-
+# Dateien und würden sonst als VR-"Spiel" im Games-Tab auftauchen.
+_TOOL_NAME_RE = re.compile(
+    r"^\s*("
+    r"proton\s+(experimental|hotfix|next|\d|easyanticheat|battleye)"
+    r"|steam\s+linux\s+runtime"
+    r"|steamworks\s+common"
+    r"|steamvr"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _is_steam_tool(name):
+    """True für Proton-Versionen/Steam-Runtimes (keine echten Spiele)."""
+    return bool(name and _TOOL_NAME_RE.match(name))
 
 # Dateien, an denen wir ein VR-Spiel erkennen (OpenVR-/OpenXR-Loader im
 # Installationsordner). Funktioniert komplett offline.
@@ -389,7 +579,7 @@ def scan_installed_games():
             if not info or not info["appid"]:
                 continue
             appid = info["appid"]
-            if appid in _APPID_BLACKLIST:
+            if appid in _APPID_BLACKLIST or _is_steam_tool(info["name"]):
                 continue
             if appid in GAMES:
                 tested.add(appid)          # kuratiertes Profil -> "getestet"
@@ -432,10 +622,13 @@ def load_cached_games():
         appid = str(g.get("appid", ""))
         if not appid:
             continue
+        name = g.get("name") or f"App {appid}"
+        if appid in _APPID_BLACKLIST or _is_steam_tool(name):
+            continue          # alte Caches mit "Proton 10.0" o. Ä. selbst heilen
         if appid in GAMES:
             tested.add(appid)   # inzwischen kuratiert -> hochstufen
         else:
-            untested.append({"appid": appid, "name": g.get("name") or f"App {appid}"})
+            untested.append({"appid": appid, "name": name})
     tested_list = sorted(tested, key=lambda a: GAMES[a]["name"].lower())
     untested.sort(key=lambda g: g["name"].lower())
     return tested_list, untested, True
@@ -514,7 +707,8 @@ def visible_protons(game):
     cachy = is_cachyos()
     rec = recommended_role()
     protons = [p for p in game.get("protons", [])
-               if not (cachy and p.get("hide_on_cachyos"))]
+               if not (cachy and p.get("hide_on_cachyos"))
+               and not ((not cachy) and p.get("cachyos_only"))]
     return sorted(protons, key=lambda p: 0 if p.get("role") == rec else 1)
 
 
@@ -1041,6 +1235,15 @@ LAUNCH_TOGGLES = [
         "position": "after",
     },
     {
+        # Feral GameMode-Wrapper. Wie mullvad-exclude ein Wrapper -> "before".
+        # Spiele, die gamemoderun schon in ihren Basis-Parametern haben (z. B.
+        # VRChat), bekommen es durch die Dublettenprüfung in
+        # compose_launch_options nicht doppelt.
+        "key": "gamemoderun",
+        "arg": "gamemoderun",
+        "position": "before",
+    },
+    {
         "key": "mullvad_exclude",
         "arg": "mullvad-exclude",
         "position": "before",
@@ -1059,12 +1262,14 @@ def _split_command(text):
     return prefix.split(), suffix.split()
 
 
-def compose_launch_options(base, enabled_keys, custom=""):
+def compose_launch_options(base, enabled_keys, custom="", extra_toggles=None):
     """
     Baut den finalen Steam-Startparameter-String aus:
-      base         : hinterlegte Parameter des Spiels (z. B. VRChat) oder ""
-      enabled_keys : Menge/Liste der aktiven Toggle-Keys
-      custom       : eigene Zusatz-Parameter des Nutzers
+      base          : hinterlegte Parameter des Spiels (z. B. VRChat) oder ""
+      enabled_keys  : Menge/Liste der aktiven Toggle-Keys
+      custom        : eigene Zusatz-Parameter des Nutzers
+      extra_toggles : spiel-eigene Toggle-Definitionen (game_toggle(...)),
+                      zusätzlich zu den globalen LAUNCH_TOGGLES
 
     Wrapper landen vor %command%, Spiel-Argumente dahinter — egal in welcher
     Reihenfolge sie zugeschaltet werden. Doppelte Parameter werden vermieden.
@@ -1074,7 +1279,7 @@ def compose_launch_options(base, enabled_keys, custom=""):
     enabled = set(enabled_keys or ())
     prefix, suffix = _split_command(base)
 
-    for t in LAUNCH_TOGGLES:
+    for t in list(LAUNCH_TOGGLES) + list(extra_toggles or ()):
         if t["key"] not in enabled:
             continue
         target = prefix if t["position"] == "before" else suffix
@@ -1094,17 +1299,27 @@ def compose_launch_options(base, enabled_keys, custom=""):
     return " ".join(prefix + [COMMAND_TOKEN] + suffix)
 
 
-def load_launch_toggles(appid):
+def has_saved_launch_toggles(appid):
+    """True, wenn für dieses Spiel schon einmal eine Toggle-Auswahl gespeichert
+    wurde. Solange False, greifen die Spiel-Vorgaben (game['default_on'] und
+    game_toggle(default=True))."""
+    data = _load_app_config().get("games_launch_toggles", {})
+    return isinstance(data, dict) and str(appid) in data
+
+
+def load_launch_toggles(appid, extra_toggles=None):
     """
     Gemerkte Einstellung eines Spiels.
     Rückgabe: (aktive_toggle_keys: list, custom: str)
+    extra_toggles: spiel-eigene Toggle-Defs, damit deren Keys nicht als
+                   unbekannt herausgefiltert werden.
     """
     data = _load_app_config().get("games_launch_toggles", {})
     entry = data.get(str(appid), {}) if isinstance(data, dict) else {}
     if not isinstance(entry, dict):
         return [], ""
-    keys = [k for k in entry.get("toggles", [])
-            if any(t["key"] == k for t in LAUNCH_TOGGLES)]
+    known = {t["key"] for t in LAUNCH_TOGGLES} | {t["key"] for t in (extra_toggles or ())}
+    keys = [k for k in entry.get("toggles", []) if k in known]
     return keys, entry.get("custom", "") or ""
 
 

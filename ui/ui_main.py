@@ -301,6 +301,13 @@ class Ui_MainWindow(object):
         self.lbl_games_untested_header.setText(tr("games_section_untested"))
         self.btn_games_scan.setText(tr("games_scan_btn"))
         self.btn_games_info.setToolTip(tr("games_info_tooltip"))
+        self.btn_games_db_update.setText(tr("games_db_update_btn"))
+        try:
+            import games as games_db
+            self.lbl_games_db_ver.setText(
+                f"{tr('games_db_version_label')} {games_db.games_config_version()}")
+        except Exception:
+            pass
         # General-Gruppe entfernt: APK-Installer lebt jetzt im Installation-Tab
         # (Widgets unten weiter übersetzt), der VRChat Picture Folder Fix als
         # dynamischer Button im ausgeklappten VRChat-Bereich des Games-Tabs
@@ -755,6 +762,23 @@ class Ui_MainWindow(object):
         self.lbl_games_title.setStyleSheet("font-size: 18px; font-weight: bold;")
         head_row.addWidget(self.lbl_games_title)
         head_row.addStretch()
+
+        # games.json-Version + Update-Button (Button nur sichtbar, wenn eine
+        # neuere Spiele-DB auf GitHub liegt — main.py prüft das im Hintergrund).
+        self.lbl_games_db_ver = QLabel("")
+        self.lbl_games_db_ver.setStyleSheet("color: #7b88a1; font-size: 11px;")
+        head_row.addWidget(self.lbl_games_db_ver)
+
+        self.btn_games_db_update = QPushButton(tr("games_db_update_btn"))
+        self.btn_games_db_update.setCursor(Qt.PointingHandCursor)
+        self.btn_games_db_update.setVisible(False)
+        self.btn_games_db_update.setStyleSheet("""
+            QPushButton { background-color: #a3be8c; color: #2e3440; border: none;
+                          font-weight: bold; padding: 6px 12px; border-radius: 6px; font-size: 11px; }
+            QPushButton:hover { background-color: #b6d0a0; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """)
+        head_row.addWidget(self.btn_games_db_update)
 
         self.btn_games_scan = QPushButton(tr("games_scan_btn"))
         self.btn_games_scan.setCursor(Qt.PointingHandCursor)
@@ -1330,6 +1354,17 @@ class Ui_MainWindow(object):
         lbl_desc.setMinimumWidth(0)
         card_layout.addWidget(lbl_desc)
 
+        # Zeile 2b: Optionaler Hinweis (z. B. Installations-Info für Nicht-Arch-
+        # Nutzer bei Tools ohne AppImage/Flatpak) — klein, kursiv, gelb.
+        lbl_note = None
+        if tool.get("note"):
+            lbl_note = QLabel(tool["note"])
+            lbl_note.setStyleSheet("color: #ebcb8b; font-size: 10px; font-style: italic;")
+            lbl_note.setWordWrap(True)
+            lbl_note.setMinimumWidth(0)
+            lbl_note.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            card_layout.addWidget(lbl_note)
+
         # Zeile 3: Startbefehl (nur wenn installiert)
         cmd_row = QHBoxLayout()
         cmd_row.setSpacing(4)
@@ -1394,6 +1429,7 @@ class Ui_MainWindow(object):
             "lbl_version":  lbl_version,
             "lbl_update":   lbl_update,
             "lbl_desc":     lbl_desc,
+            "lbl_note":     lbl_note,
             "btn_install":  btn_install,
             "btn_copy":     btn_copy,
             "cmd_widget":   cmd_widget,

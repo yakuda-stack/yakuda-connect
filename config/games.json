@@ -1,0 +1,111 @@
+{
+  "info": {
+    "version": "1.0.0",
+    "last_updated": "2026-07-25"
+  },
+  "picture_template": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg",
+  "proton_versions": {
+    "Pro11": "Proton 11",
+    "Pro11GE": "Proton-GE",
+    "Pro11GERTSP": "proton-rtsp-11.0-20260703",
+    "CachyOSPro11": "proton-cachyos-11.0-20260703"
+  },
+  "proton_descriptions": {
+    "Pro11": {
+      "de": "Steams eingebautes Proton — maximale Kompatibilität, aber ohne zusätzliche Media-/Video-Codecs.",
+      "en": "Steam's built-in Proton — maximum compatibility, but without extra media/video codecs."
+    },
+    "Pro11GE": {
+      "de": "Proton-GE mit zusätzlichen Media- und Audio-Codecs — hilft bei Problemen mit In-Game-Videos oder Ton.",
+      "en": "Proton-GE with extra media and audio codecs — helps with in-game video or audio issues."
+    },
+    "Pro11GERTSP": {
+      "de": "GE-Proton mit RTSP-Patches — bringt alle Videoplayer zum Laufen (v. a. für VRChat).",
+      "en": "GE-Proton with RTSP patches — makes all video players work (mainly for VRChat)."
+    },
+    "CachyOSPro11": {
+      "de": "CachyOS-Proton-Build — beste Performance und Latenz auf CachyOS.",
+      "en": "CachyOS Proton build — best performance and latency on CachyOS."
+    }
+  },
+  "games": {
+    "438100": {
+      "name": "VRChat",
+      "toggle_enable_hardware_decoding": true,
+      "toggle_gamemoderun": true,
+      "fixes": ["vrchat_pictures"],
+      "proton": {
+        "cachyos": "CachyOSPro11",
+        "cachyos_desc": {
+          "de": "Alle Videoplayer funktionieren außer der alte Unity-Player. Maximale Performance/Latenz, Social-Liste und Einladungen funktionieren.",
+          "en": "All video players work except the old Unity player. Maximum performance/latency, social list and invites work."
+        },
+        "default": "Pro11GERTSP",
+        "default_desc": {
+          "de": "Alle Videoplayer funktionieren, aber Social-Liste, Einladungen und Performance sind etwas schlechter.",
+          "en": "All video players work, but social list, invites and performance are slightly worse."
+        },
+        "alternative": "Pro11",
+        "alt_desc": {
+          "de": "Maximale Performance, aber Videoplayer sind kaputt.",
+          "en": "Maximum performance, but video players are broken."
+        }
+      },
+      "amd_start": "%command% --enable-avpro-in-proton --disable-amd-stutter-workaround",
+      "nvidia_start": "%command% --enable-avpro-in-proton"
+    },
+    "1540210": {
+      "name": "Arizona Sunshine 2",
+      "proton": {
+        "cachyos": "CachyOSPro11",
+        "default": "Pro11",
+        "alternative": "Pro11GE"
+      }
+    },
+    "2897700": {
+      "name": "Arizona Sunshine Remake",
+      "proton": {
+        "cachyos": "CachyOSPro11",
+        "default": "Pro11",
+        "alternative": "Pro11GE"
+      }
+    },
+    "2669410": {
+      "name": "Metro Awakening",
+      "proton": {
+        "cachyos": "CachyOSPro11",
+        "default": "Pro11GE",
+        "alternative": "Pro11"
+      }
+    },
+    "2800080": {
+      "name": "Thief VR: Legacy of Shadow",
+      "proton": {
+        "cachyos": "CachyOSPro11",
+        "default": "Pro11",
+        "alternative": "Pro11GE"
+      }
+    },
+    "620980": {
+      "name": "Beat Saber",
+      "proton": {
+        "cachyos": "CachyOSPro11",
+        "default": "Pro11",
+        "alternative": "Pro11GE"
+      }
+    },
+    "2472940": {
+      "name": "Wanderer: The Fragments of Fate",
+      "toggle_gamemoderun": true,
+      "proton": {
+        "cachyos": "CachyOSPro11",
+        "default": "Pro11GE",
+        "default_desc": {
+          "de": "Proton-GE mit zusätzlichen Media-/Audio-Codecs. Unreal Engine 5 — GPUs unter 10 GB VRAM profitieren spürbar von gamemoderun.",
+          "en": "Proton-GE with extra media/audio codecs. Unreal Engine 5 — GPUs below 10 GB VRAM benefit noticeably from gamemoderun."
+        },
+        "alternative": "Pro11"
+      }
+    }
+  }
+}

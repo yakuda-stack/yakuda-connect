@@ -44,7 +44,7 @@ mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/256x256/apps"
 
 # 3. Programmdateien kopieren
 echo "[2/5] Kopiere Programmdateien..."
-cp -r assets core ui "$BUILD_DIR/usr/lib/yakuda-connect/"
+cp -r assets config core ui "$BUILD_DIR/usr/lib/yakuda-connect/"
 cp starter.py "$BUILD_DIR/usr/lib/yakuda-connect/"
 
 # Wrapper-Script in /usr/bin

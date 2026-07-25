@@ -278,6 +278,34 @@ class AppUpdateCheckWorker(QThread):
             self.result_signal.emit(False, "")
 
 
+class GamesDbWorker(QThread):
+    """
+    Prüft/aktualisiert die Spiele-Datenbank (config/games.json) im Hintergrund.
+      mode="check"    -> check_result(update_verfügbar: bool, remote_version: str)
+      mode="download" -> apply_result(ok: bool, neue_version: str)
+    Netzwerkzugriff läuft im Thread, damit die UI nicht einfriert.
+    """
+    check_result = Signal(bool, str)
+    apply_result = Signal(bool, str)
+
+    def __init__(self, mode="check"):
+        super().__init__()
+        self.mode = mode
+
+    def run(self):
+        import games as games_db
+        if self.mode == "check":
+            avail, remote = games_db.remote_games_update_available()
+            self.check_result.emit(avail, remote)
+            return
+        try:
+            raw, _ = games_db.fetch_remote_games_config()
+            new_version = games_db.apply_remote_games_config(raw)
+            self.apply_result.emit(True, new_version)
+        except Exception:
+            self.apply_result.emit(False, "")
+
+
 class AppUpdateWorker(QThread):
     """
     Führt das Selbst-Update im Terminal aus, indem es das vorhandene install.sh
