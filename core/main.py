@@ -289,7 +289,7 @@ class VRApp(QMainWindow):
         os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
         print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.1.3"
+        self.APP_VERSION = "v1.1.4"
         self.server_process = None
         self.pairing_process = None
 
@@ -390,6 +390,12 @@ class VRApp(QMainWindow):
         # (/opt/opencomposite & Co. können größer sein).
         self._auto_backup_worker = None
         QTimer.singleShot(2500, self._start_auto_backup_check)
+        # Steam-Schutz: System-OpenXR-Manifeste (/usr/share/openxr/1) pruefen.
+        # Ein Manifest mit falschem Bibliothekspfad laesst Steam gar nicht mehr
+        # starten (pressure-vessel: "invalid `Elf' handle").
+        self._oxr_health_worker = None
+        self._oxr_health_asked = False
+        QTimer.singleShot(4000, self._start_openxr_health_check)
 
     def _set_welcome_text(self):
         """Setzt den Willkommenstext je nach aktiver Sprache."""
@@ -586,6 +592,77 @@ class VRApp(QMainWindow):
             print("[Backup] Automatisches Erst-Backup der VR-Umgebung wurde angelegt.")
 
     # ------------------------------------------------------------------ #
+    #  Steam-Schutz: defekte System-OpenXR-Manifeste erkennen
+    # ------------------------------------------------------------------ #
+    def _start_openxr_health_check(self):
+        """Prueft im Hintergrund, ob ein Manifest in /usr/share/openxr/1 auf
+        eine fehlende oder falsch-bittige Bibliothek zeigt. Genau das bringt
+        Steams pressure-vessel beim Start zum Absturz."""
+        class _OxrHealthWorker(QThread):
+            done = QtSignal(list)
+
+            def run(self):
+                try:
+                    broken = oxr.broken_runtime_manifests()
+                except Exception as e:
+                    print(f"[OpenXR] Manifest-Check fehlgeschlagen: {e}")
+                    broken = []
+                self.done.emit(broken)
+
+        self._oxr_health_worker = _OxrHealthWorker()
+        self._oxr_health_worker.done.connect(self._on_openxr_health_done)
+        self._oxr_health_worker.start()
+
+    def _on_openxr_health_done(self, broken):
+        if not broken or self._oxr_health_asked:
+            return
+        self._oxr_health_asked = True
+        self.offer_manifest_repair(broken)
+
+    def offer_manifest_repair(self, broken=None):
+        """Zeigt die gefundenen defekten Manifeste und bietet die Reparatur an."""
+        if broken is None:
+            try:
+                broken = oxr.broken_runtime_manifests()
+            except Exception:
+                broken = []
+        if not broken:
+            return False
+
+        lines = []
+        for e in broken:
+            detail = {
+                "missing_lib": tr("oxr_doc_missing"),
+                "arch_mismatch": tr("oxr_doc_arch").format(
+                    expected=e["expected_bits"], found=e["found_bits"] or "?"),
+                "no_path": tr("oxr_doc_nopath"),
+                "unreadable": tr("oxr_doc_unreadable"),
+            }.get(e["state"], e["state"])
+            lines.append(f"• {e['path']}\n   {e['library_path'] or '—'}\n   {detail}")
+
+        reply = QMessageBox.question(
+            self, tr("oxr_doc_title"),
+            tr("oxr_doc_text").format(items="\n\n".join(lines)),
+            QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return False
+
+        ok, code, detail = oxr.repair_runtime_manifests(broken)
+        if ok and code == "ok":
+            QMessageBox.information(self, tr("oxr_doc_title"),
+                                    tr("oxr_doc_done").format(details=detail))
+        elif code == "nothing_to_do":
+            QMessageBox.information(self, tr("oxr_doc_title"), tr("oxr_doc_none"))
+        elif code == "cancelled":
+            QMessageBox.information(self, tr("oxr_doc_title"), tr("openxr_fix_cancelled"))
+        else:
+            QMessageBox.critical(self, tr("oxr_doc_title"),
+                                 f"{tr('oxr_doc_error')}\n{detail}")
+        self.refresh_openxr_status()
+        self.fill_openxr_fields()
+        return ok
+
+    # ------------------------------------------------------------------ #
     #  OpenXR-Runtime (Steam-Fix): automatischer Fix + manueller Bereich
     # ------------------------------------------------------------------ #
     def refresh_openxr_status(self):
@@ -611,6 +688,15 @@ class VRApp(QMainWindow):
         """Schreibt die korrekte active_runtime.json (mit automatischem Backup).
         Scheitert der normale Schreibzugriff (Rechteproblem), wird der Fix per
         pkexec mit Root-Passwortabfrage wiederholt."""
+        # Zuerst die System-Manifeste pruefen: solange dort ein Manifest auf
+        # eine fehlende/falsch-bittige .so zeigt, startet Steam gar nicht erst.
+        try:
+            broken = oxr.broken_runtime_manifests()
+        except Exception:
+            broken = []
+        if broken:
+            self.offer_manifest_repair(broken)
+
         ok, code, detail = oxr.apply_openxr_fix()
 
         # Rechteproblem? -> Root-Fallback anbieten (pkexec-Passwortdialog)

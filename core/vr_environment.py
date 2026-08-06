@@ -127,6 +127,32 @@ def find_wivrn_manifest():
     return "/usr/share/openxr/1/openxr_wivrn.json"
 
 
+# --------------------------------------------------------------------------- #
+#  ELF-Klasse einer .so bestimmen (32/64 Bit)
+# --------------------------------------------------------------------------- #
+def elf_class(path):
+    """
+    Liefert 32, 64 oder None (keine ELF-Datei / nicht lesbar).
+
+    Wichtig fuer Steam: pressure-vessel laesst 'capsule-capture-libs' ueber
+    JEDES Manifest in /usr/share/openxr/1 laufen. Zeigt ein 64-Bit-Manifest
+    auf eine 32-Bit-.so (oder umgekehrt), bricht Steam mit
+    "gelf_getehdr(...): invalid `Elf' handle" ab.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(5)
+        if head[:4] != b"\x7fELF":
+            return None
+        return 32 if head[4] == 1 else 64
+    except Exception:
+        return None
+
+
+def is_elf64(path):
+    return elf_class(path) == 64
+
+
 def find_wivrn_libs():
     """
     (libopenxr_wivrn.so, libmonado_wivrn.so) als absolute Pfade.
@@ -142,17 +168,23 @@ def find_wivrn_libs():
         mon = rt.get("MND_libmonado_path")
         lib_abs = os.path.normpath(os.path.join(base, lib)) if lib else None
         mon_abs = os.path.normpath(os.path.join(base, mon)) if mon else None
-        if lib_abs and os.path.exists(lib_abs):
-            if not (mon_abs and os.path.exists(mon_abs)):
+        # Nur uebernehmen, wenn es wirklich eine 64-Bit-.so ist. Ein aus einem
+        # fremden Backup stammendes Manifest kann auf eine 32-Bit-Bibliothek
+        # zeigen (z. B. Arch-Pfad /usr/lib/wivrn auf Fedora = 32 Bit) - das
+        # wuerde den Steam-Fix genau den Fehler schreiben, den er beheben soll.
+        if lib_abs and os.path.exists(lib_abs) and is_elf64(lib_abs):
+            if not (mon_abs and os.path.exists(mon_abs) and is_elf64(mon_abs)):
                 sib = os.path.join(os.path.dirname(lib_abs), "libmonado_wivrn.so")
                 mon_abs = sib if os.path.exists(sib) else None
             return lib_abs, mon_abs
     except Exception:
         pass
 
+    # Reihenfolge bewusst: lib64 zuerst (Fedora/openSUSE), dann Arch/Debian.
     lib_dirs = [
-        "/usr/lib/wivrn", "/usr/lib64/wivrn", "/usr/lib/x86_64-linux-gnu/wivrn",
-        "/usr/lib", "/usr/lib64",
+        "/usr/lib64/wivrn", "/usr/lib/wivrn", "/usr/lib/x86_64-linux-gnu/wivrn",
+        "/usr/lib64", "/usr/lib", "/usr/lib/x86_64-linux-gnu",
+        "/usr/local/lib64/wivrn", "/usr/local/lib/wivrn",
     ]
     openxr = monado = None
     for d in lib_dirs:
@@ -160,9 +192,34 @@ def find_wivrn_libs():
             continue
         co = os.path.join(d, "libopenxr_wivrn.so")
         cm = os.path.join(d, "libmonado_wivrn.so")
-        if openxr is None and os.path.exists(co):
+        if openxr is None and is_elf64(co):
             openxr = co
-        if monado is None and os.path.exists(cm):
+        if monado is None and is_elf64(cm):
+            monado = cm
+        if openxr and monado:
+            break
+    return openxr, monado
+
+
+def find_wivrn_libs32():
+    """
+    32-Bit-Gegenstuecke (fuer die *.i686.json-Manifeste). Arch legt sie nach
+    /usr/lib32/wivrn, Fedora nach /usr/lib/wivrn, Debian nach
+    /usr/lib/i386-linux-gnu/wivrn.
+    """
+    lib_dirs = [
+        "/usr/lib32/wivrn", "/usr/lib/wivrn", "/usr/lib/i386-linux-gnu/wivrn",
+        "/usr/lib32", "/usr/lib", "/usr/lib/i386-linux-gnu",
+    ]
+    openxr = monado = None
+    for d in lib_dirs:
+        if not os.path.isdir(d):
+            continue
+        co = os.path.join(d, "libopenxr_wivrn.so")
+        cm = os.path.join(d, "libmonado_wivrn.so")
+        if openxr is None and elf_class(co) == 32:
+            openxr = co
+        if monado is None and elf_class(cm) == 32:
             monado = cm
         if openxr and monado:
             break

@@ -279,3 +279,223 @@ def apply_openxr_fix_elevated():
 
     backup = ACTIVE_RUNTIME + f".bak.{stamp}" if os.path.exists(ACTIVE_RUNTIME + f".bak.{stamp}") else ""
     return True, "ok", backup
+
+
+# --------------------------------------------------------------------------- #
+#  Manifest-Doktor: System-Manifeste pruefen und reparieren
+# --------------------------------------------------------------------------- #
+#  Hintergrund (GitHub-Issue "Steam startet nicht mehr", Nobara 44):
+#  Steam startet seine Prozesse in einem pressure-vessel-Container und laesst
+#  dabei 'capsule-capture-libs' ueber JEDES Runtime-Manifest in
+#  /usr/share/openxr/1/ laufen. Zeigt dort ein Manifest auf eine Bibliothek,
+#  die nicht existiert oder die falsche Bitness hat, bricht der Start ab:
+#      x86_64-linux-gnu-capsule-capture-libs: error: code 0:
+#      gelf_getehdr(...): invalid `Elf' handle
+#      pressure-vessel-wrap: E: Child process exited with code 1
+#  -> steamwebhelper-Endlosschleife, Steam laesst sich nicht mehr starten.
+#
+#  Typischer Ausloeser: ein auf Arch erstelltes Manifest landet auf Fedora.
+#  Dort ist /usr/lib/wivrn 32-Bit (64-Bit liegt in /usr/lib64), und
+#  /usr/lib32 gibt es gar nicht. Die Pfade "passen" also syntaktisch,
+#  zeigen aber auf die falsche Architektur.
+# --------------------------------------------------------------------------- #
+
+MANIFEST_DIRS = [
+    "/usr/share/openxr/1",
+    "/usr/local/share/openxr/1",
+    os.path.join(HOME, ".local/share/openxr/1"),
+    "/etc/xdg/openxr/1",
+]
+
+
+def _expected_bits(filename):
+    """32, wenn der Dateiname ein 32-Bit-Manifest kennzeichnet, sonst 64."""
+    low = os.path.basename(filename).lower()
+    for marker in (".i686.", ".i386.", ".x86.", ".32.", "_i686", "_i386", "_32", "32bit"):
+        if marker in low:
+            return 32
+    return 64
+
+
+def _resolve_lib(manifest_path, lib_value):
+    """Relativen library_path relativ zum Manifest-Ordner absolut machen."""
+    if not lib_value:
+        return None
+    if os.path.isabs(lib_value):
+        return os.path.normpath(lib_value)
+    return os.path.normpath(os.path.join(os.path.dirname(manifest_path), lib_value))
+
+
+def scan_runtime_manifests():
+    """
+    Prueft alle OpenXR-Runtime-Manifeste in den bekannten System-Ordnern.
+
+    Rueckgabe: Liste von dicts
+        {path, library_path, resolved, expected_bits, found_bits, state}
+    state:
+        'ok'            -> Bibliothek existiert und hat die richtige Bitness
+        'missing_lib'   -> Datei hinter library_path existiert nicht
+        'arch_mismatch' -> existiert, aber falsche Bitness (Steam-Killer!)
+        'no_path'       -> Manifest ohne library_path
+        'unreadable'    -> JSON kaputt
+    """
+    results = []
+    for d in MANIFEST_DIRS:
+        if not os.path.isdir(d):
+            continue
+        try:
+            names = sorted(os.listdir(d))
+        except Exception:
+            continue
+        for name in names:
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(d, name)
+            if not os.path.isfile(path):
+                continue
+            entry = {"path": path, "library_path": "", "resolved": "",
+                     "expected_bits": _expected_bits(name), "found_bits": None,
+                     "state": "ok"}
+            try:
+                with open(path, "r") as f:
+                    data = json.load(f)
+            except Exception:
+                entry["state"] = "unreadable"
+                results.append(entry)
+                continue
+
+            rt = data.get("runtime")
+            if not isinstance(rt, dict):
+                # api_layer-Dateien u. a. -> keine Runtime, nicht unser Thema
+                continue
+
+            lib = rt.get("library_path", "")
+            entry["library_path"] = lib
+            resolved = _resolve_lib(path, lib)
+            entry["resolved"] = resolved or ""
+            if not resolved:
+                entry["state"] = "no_path"
+            elif not os.path.exists(resolved):
+                entry["state"] = "missing_lib"
+            else:
+                bits = venv.elf_class(resolved)
+                entry["found_bits"] = bits
+                if bits != entry["expected_bits"]:
+                    entry["state"] = "arch_mismatch"
+            results.append(entry)
+    return results
+
+
+def broken_runtime_manifests():
+    """Nur die Manifeste, die Steam zum Absturz bringen koennen."""
+    return [m for m in scan_runtime_manifests() if m["state"] != "ok"]
+
+
+def _replacement_libs(bits):
+    """(openxr_so, monado_so) passend zur gewuenschten Bitness — oder (None, None)."""
+    if bits == 32:
+        return venv.find_wivrn_libs32()
+    o, m = venv.find_wivrn_libs()
+    return o, m
+
+
+def plan_manifest_repair(entries=None):
+    """
+    Legt fuer jedes defekte Manifest fest, was passieren soll:
+      ('rewrite', entry, runtime_dict) -> Pfade auf die lokal gefundenen .so umbiegen
+      ('disable', entry, None)         -> nach '<name>.disabled' umbenennen,
+                                          damit Steam es nicht mehr einliest
+    Rueckgabe: (actions, needs_root)
+    """
+    if entries is None:
+        entries = broken_runtime_manifests()
+
+    actions = []
+    needs_root = False
+    for e in entries:
+        so, mon = _replacement_libs(e["expected_bits"])
+        if so:
+            runtime = {"file_format_version": "1.0.0",
+                       "runtime": {"name": "Monado", "library_path": so}}
+            if mon:
+                runtime["runtime"]["MND_libmonado_path"] = mon
+            actions.append(("rewrite", e, runtime))
+        else:
+            actions.append(("disable", e, None))
+        if not os.access(os.path.dirname(e["path"]), os.W_OK):
+            needs_root = True
+    return actions, needs_root
+
+
+def repair_runtime_manifests(entries=None, use_root=None):
+    """
+    Fuehrt den Reparaturplan aus. Vorhandene Dateien werden vorher mit
+    Zeitstempel gesichert (<datei>.bak.JJJJMMTT_HHMMSS), es geht nichts verloren.
+
+    Rueckgabe: (erfolg, code, detail)
+      code: 'ok' | 'nothing_to_do' | 'cancelled' | 'write_failed'
+      detail: kurze Zusammenfassung der geaenderten Dateien
+    """
+    import tempfile
+    import subprocess
+
+    actions, needs_root = plan_manifest_repair(entries)
+    if not actions:
+        return True, "nothing_to_do", ""
+
+    if use_root is None:
+        use_root = needs_root
+
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    changed = []
+
+    if not use_root:
+        try:
+            for kind, e, runtime in actions:
+                target = e["path"]
+                shutil.copy2(target, f"{target}.bak.{stamp}")
+                if kind == "rewrite":
+                    with open(target, "w") as f:
+                        json.dump(runtime, f, indent=4)
+                    changed.append(f"{target} -> {runtime['runtime']['library_path']}")
+                else:
+                    shutil.move(target, f"{target}.disabled")
+                    changed.append(f"{target} (deaktiviert)")
+        except Exception as ex:
+            return False, "write_failed", str(ex)
+        return True, "ok", "\n".join(changed)
+
+    # --- Root-Weg: alles in EINEM pkexec-Aufruf ---------------------------- #
+    tmpdir = tempfile.mkdtemp(prefix="yakuda-oxr-")
+    parts = []
+    try:
+        for idx, (kind, e, runtime) in enumerate(actions):
+            target = e["path"]
+            parts.append(f"cp -a '{target}' '{target}.bak.{stamp}'")
+            if kind == "rewrite":
+                tmp_file = os.path.join(tmpdir, f"m{idx}.json")
+                with open(tmp_file, "w") as f:
+                    json.dump(runtime, f, indent=4)
+                os.chmod(tmp_file, 0o644)
+                parts.append(f"cp '{tmp_file}' '{target}'")
+                parts.append(f"chmod 644 '{target}'")
+                changed.append(f"{target} -> {runtime['runtime']['library_path']}")
+            else:
+                parts.append(f"mv '{target}' '{target}.disabled'")
+                changed.append(f"{target} (deaktiviert)")
+
+        script = " && ".join(parts)
+        result = subprocess.run(["pkexec", "bash", "-c", script],
+                                capture_output=True, text=True, timeout=180)
+    except Exception as ex:
+        return False, "write_failed", str(ex)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()
+        if result.returncode in (126, 127):
+            return False, "cancelled", err
+        return False, "write_failed", err
+
+    return True, "ok", "\n".join(changed)

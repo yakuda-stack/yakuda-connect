@@ -269,6 +269,24 @@ TRANSLATIONS = {
         "openxr_status_ok":      "Status: OK — absolute paths, ready for Steam.",
         "openxr_status_broken":  "Status: broken — fix recommended (current file has a wrong/relative path).",
         "openxr_status_missing": "Status: no custom runtime file — using system default (relative paths; may fail under Steam).",
+        # --- Manifest doctor (Steam won't start / pressure-vessel) ---------
+        "oxr_doc_title":         "OpenXR runtime files — problem found",
+        "oxr_doc_text":          ("One or more OpenXR runtime manifests on this system point to a library "
+                                  "that does not exist or has the wrong architecture (32 vs 64 bit).\n\n"
+                                  "Steam reads every one of these files at startup inside its container. "
+                                  "A bad entry makes steamwebhelper crash in a loop with "
+                                  "\"invalid `Elf' handle\" — Steam then won't start at all.\n\n"
+                                  "{items}\n\n"
+                                  "Repair now? The affected files are backed up with a timestamp first; "
+                                  "paths are corrected where possible, otherwise the file is disabled "
+                                  "(renamed to .disabled). Administrator rights may be requested."),
+        "oxr_doc_missing":       "→ the referenced library does not exist.",
+        "oxr_doc_arch":          "→ wrong architecture: {expected}-bit expected, {found}-bit found.",
+        "oxr_doc_nopath":        "→ the manifest has no library_path.",
+        "oxr_doc_unreadable":    "→ the file is not valid JSON.",
+        "oxr_doc_done":          "OpenXR runtime files repaired. Steam should start normally again.\n\n{details}",
+        "oxr_doc_none":          "All OpenXR runtime files are fine — nothing to repair.",
+        "oxr_doc_error":         "The runtime files could not be repaired:",
         "oscquery_group":         "Quick OSC Query Fix",
         "oscquery_desc":          ("If OSC bugs occur (parameters not arriving, tools not reacting), this enables OSCQuery "
                                    "directly in the config of every supported program — all other settings in the file stay "
@@ -667,6 +685,26 @@ TRANSLATIONS = {
         "openxr_status_ok":      "Status: OK — absolute Pfade, bereit für Steam.",
         "openxr_status_broken":  "Status: defekt — Reparatur empfohlen (aktuelle Datei hat einen falschen/relativen Pfad).",
         "openxr_status_missing": "Status: keine eigene Runtime-Datei — System-Standard aktiv (relative Pfade; kann unter Steam scheitern).",
+        # --- Manifest-Doktor (Steam startet nicht / pressure-vessel) -------
+        "oxr_doc_title":         "OpenXR-Runtime-Dateien — Problem gefunden",
+        "oxr_doc_text":          ("Eine oder mehrere OpenXR-Runtime-Dateien auf diesem System zeigen auf eine "
+                                  "Bibliothek, die es nicht gibt oder die die falsche Architektur hat "
+                                  "(32 statt 64 Bit).\n\n"
+                                  "Steam liest beim Start jede dieser Dateien in seinem Container ein. Ein "
+                                  "fehlerhafter Eintrag lässt steamwebhelper in einer Endlosschleife mit "
+                                  "\"invalid `Elf' handle\" abstürzen — Steam startet dann gar nicht mehr.\n\n"
+                                  "{items}\n\n"
+                                  "Jetzt reparieren? Die betroffenen Dateien werden vorher mit Zeitstempel "
+                                  "gesichert; Pfade werden korrigiert, wo möglich, sonst wird die Datei "
+                                  "deaktiviert (Umbenennung nach .disabled). Es kann eine Administrator-"
+                                  "Abfrage erscheinen."),
+        "oxr_doc_missing":       "→ Die angegebene Bibliothek existiert nicht.",
+        "oxr_doc_arch":          "→ Falsche Architektur: {expected} Bit erwartet, {found} Bit gefunden.",
+        "oxr_doc_nopath":        "→ Die Datei enthält keinen library_path.",
+        "oxr_doc_unreadable":    "→ Die Datei ist kein gültiges JSON.",
+        "oxr_doc_done":          "OpenXR-Runtime-Dateien repariert. Steam sollte wieder normal starten.\n\n{details}",
+        "oxr_doc_none":          "Alle OpenXR-Runtime-Dateien sind in Ordnung — nichts zu reparieren.",
+        "oxr_doc_error":         "Die Runtime-Dateien konnten nicht repariert werden:",
         "oscquery_group":         "Quick OSC Query Fix",
         "oscquery_desc":          ("Falls OSC-Bugs auftreten (Parameter kommen nicht an, Tools reagieren nicht), aktiviert das "
                                    "OSCQuery direkt in der Config jedes unterstützten Programms — alle anderen Einstellungen "
