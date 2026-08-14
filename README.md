@@ -115,20 +115,19 @@ bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/mai
 
 #### Option B: Manual AppImage (No Installation Required)
 1. Navigate to the **Releases** section on GitHub.
-2. Download the AppImage that matches your system:
-
-   | File | For |
-   |---|---|
-   | `yakuda-connect-<version>-x86_64.AppImage` | **Most systems.** Arch, CachyOS, Fedora 40+, Ubuntu 24.04+, Bazzite, SteamOS. Needs no `libfuse2`. |
-   | `yakuda-connect-<version>-x86_64-legacy-fuse2.AppImage` | **Older systems.** Ubuntu 22.04 and earlier, Debian 11/12. |
-
+2. Download `yakuda-connect-<version>-x86_64.AppImage`. One file for every
+   system: it works with **FUSE 3** (Arch, CachyOS, Fedora 40+, Ubuntu 24.04+,
+   Bazzite, SteamOS) **and FUSE 2** (Ubuntu 22.04 and earlier, Debian 11/12).
+   `libfuse2` does **not** need to be installed — libfuse3 is linked statically
+   into the file.
 3. Make the file executable:
    - **Via GUI:** Right-click the file -> Properties -> Permissions -> Enable "Allow executing file as program".
    - **Via Terminal:** `chmod +x yakuda-connect-*.AppImage`
 4. Double-click the file to launch the dashboard!
 
-> **If it won't start** with an error mentioning `libfuse` or `fusermount`, run it
-> unpacked instead — this works on every system, it is just slightly slower to start:
+> **If it won't start** with an error mentioning `fusermount` or `/dev/fuse`
+> (containers, hardened kernels, FUSE disabled), run it unpacked instead — this
+> works on every system, it is just slightly slower to start:
 > ```bash
 > ./yakuda-connect-*.AppImage --appimage-extract-and-run
 > ```

@@ -118,23 +118,25 @@ TEIL B: UPDATE (bei neuer Version, z.B. 1.1.1 -> 1.3.0)
 
 ## 1b. AppImage bauen (optional, fürs GitHub-Release)
 
-    bash build_appimage.sh          # baut BEIDE Varianten
+    bash build_appimage.sh
 
-  Ergebnis sind zwei Dateien — beide ans Release anhängen:
+  Ergebnis ist EINE Datei, die ans Release gehängt wird:
 
     yakuda-connect-<ver>-x86_64.AppImage
-        Standard. Neuerer Runtime mit statisch gelinktem libfuse3,
-        braucht kein libfuse2-Paket. Arch, CachyOS, Fedora 40+,
-        Ubuntu 24.04+, Bazzite, SteamOS.
 
-    yakuda-connect-<ver>-x86_64-legacy-fuse2.AppImage
-        Für ältere Systeme (Ubuntu 22.04 und älter, Debian 11/12),
-        wo libfuse2 vorhanden ist, fusermount3 aber oft nicht.
+  Sie läuft auf fuse3- wie auf fuse2-Systemen. Der verwendete
+  type2-runtime hat libfuse3 statisch eingebaut (kein libfuse2-Paket
+  nötig) und sucht sich sein Mount-Hilfsprogramm selbst aus dem $PATH:
+  er nimmt das erste setuid-root-Binary, dessen Name mit "fusermount"
+  beginnt — also "fusermount3" (fuse3) genauso wie "fusermount" (fuse2).
+  Deshalb gibt es seit v1.1.6 keine legacy-fuse2-Datei mehr.
 
-  Läuft eine der beiden beim Nutzer nicht, hilft immer:
+  Das Skript prüft nach dem Bauen selbst nach, dass wirklich dieser
+  Runtime in der Datei steckt (Merkmal "FUSERMOUNT_PROG" im Kopf, kein
+  "libfuse.so.2"). Bricht es dort ab: nicht ausliefern.
+
+  Fehlt FUSE beim Nutzer komplett (Container, kein /dev/fuse):
         ./yakuda-connect-<ver>-x86_64.AppImage --appimage-extract-and-run
-
-  Nur eine Variante bauen: bash build_appimage.sh fuse3   (bzw. fuse2)
 
 ## 2. AUR aktualisieren (ZUERST muss der GitHub-Tag online sein!)
     cd ~/aur/yakuda-connect

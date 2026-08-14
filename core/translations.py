@@ -112,3 +112,18 @@ def tr(key: str) -> str:
     if key in lang_dict:
         return lang_dict[key]
     return TRANSLATIONS[DEFAULT_LANG].get(key, key)
+
+
+def tr_amp(key: str) -> str:
+    """Wie tr(), aber fuer Widgets, die '&' als Tastenkuerzel deuten.
+
+    QPushButton, QCheckBox, QGroupBox-Titel und Reiterbeschriftungen
+    verschlucken ein einzelnes '&' und unterstreichen stattdessen den
+    folgenden Buchstaben. Aus "Tracking & Display & Connect Options" wurde
+    so sichtbar "Tracking  Display Options" — der Text war schlicht weg.
+    Verdoppeln ist die von Qt vorgesehene Schreibweise fuer ein echtes '&'.
+
+    Bewusst NICHT in tr() selbst: QLabel und Meldungsfenster deuten '&'
+    nicht, dort wuerde ein verdoppeltes Zeichen als "&&" dastehen.
+    """
+    return tr(key).replace("&", "&&")

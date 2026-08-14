@@ -121,8 +121,13 @@ def sync_with_wivrn(config_data):
         log.warning("WiVRn-config.json enthält kein Objekt — wird neu aufgebaut.")
         wivrn_data = {}
 
-    # --- hand_tracking (bool) ---
-    wivrn_data["hand_tracking"] = config_data.get("hand_tracking", False)
+    # --- hand_tracking: wird bewusst NICHT mehr geschrieben --------------
+    # Seit v1.1.6 gibt es dafuer keinen Schalter mehr im Dashboard (Hand- und
+    # Full-Body-Tracking muessen im Headset selbst aktiviert werden). Wuerden
+    # wir den Wert trotzdem weiter bei jedem Speichern in WiVRns config.json
+    # schreiben, wuerden wir eine Einstellung ueberschreiben, die der Nutzer
+    # nur noch in WiVRn selbst setzen kann. Der Schluessel bleibt in UNSERER
+    # Config erhalten, damit alte Konfigurationen unveraendert bleiben.
 
     # --- refresh_rate (int, 0 = auto) ---
     refresh_rate = config_data.get("refresh_rate", "Auto")

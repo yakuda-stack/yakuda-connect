@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QMessageBox
 import vr_environment as venv
 
 from logging_setup import get_logger
+from translations import tr
 from jsonio import write_json_atomic
 import proc
 
@@ -247,19 +248,15 @@ def restore_vr_environment(parent_window):
     if not os.path.exists(BACKUP_DIR) or not os.listdir(BACKUP_DIR):
         log.info("[Backup] Kein Backup gefunden. Erstelle ersten System-Wiederherstellungspunkt...")
         if create_vr_backup():
-            QMessageBox.information(parent_window, "Backup erstellt",
-                                    "Es wurde erfolgreich ein erster sauberer System-Wiederherstellungspunkt deiner VR-Laufumgebung angelegt!")
+            QMessageBox.information(parent_window, tr("bak_created_title"),
+                                    tr("bak_created_text"))
         else:
-            QMessageBox.critical(parent_window, "Fehler", "Der Wiederherstellungspunkt konnte nicht angelegt werden.")
+            QMessageBox.critical(parent_window, tr("error"), tr("bak_create_fail"))
         return
 
     # Wenn ein Backup existiert -> Normale Wiederherstellungsabfrage
     reply = QMessageBox.question(
-        parent_window, "Laufumgebung wiederherstellen",
-        "Möchtest du alle VR/XR Konfigurationen und Runtimes aus deinem gespeicherten Backup wiederherstellen?<br><br>"
-        "<i>Hinweis: Aktuelle Änderungen werden dabei überschrieben.</i><br>"
-        "<i>System-Ordner (/usr/share/openxr) werden nur angefasst, wenn das "
-        "Backup von genau diesem System stammt.</i>",
+        parent_window, tr("bak_restore_title"), tr("bak_restore_ask"),
         QMessageBox.Yes | QMessageBox.No
     )
 
@@ -268,13 +265,14 @@ def restore_vr_environment(parent_window):
 
     try:
         notes = _apply_restore(BACKUP_DIR)
-        msg = "Deine VR-Laufumgebung wurde wiederhergestellt!"
+        msg = tr("bak_restore_ok")
         if notes:
-            msg += "<br><br><b>Hinweise:</b><br>" + "<br>".join(
+            msg += "<br><br><b>" + tr("bak_notes_head") + "</b><br>" + "<br>".join(
                 f"&bull; {n}" for n in notes)
-        QMessageBox.information(parent_window, "Erfolg", msg)
+        QMessageBox.information(parent_window, tr("success"), msg)
     except Exception as e:
-        QMessageBox.critical(parent_window, "Fehler", f"Wiederherstellung fehlgeschlagen: {e}")
+        QMessageBox.critical(parent_window, tr("error"),
+                             tr("bak_restore_fail").format(err=e))
 
 
 def _apply_restore(root):
@@ -326,16 +324,12 @@ def _apply_restore(root):
     #    (pressure-vessel: "invalid `Elf' handle").
     allowed, reason = _may_restore_system_dirs(root)
     if not allowed:
-        notes.append({
-            "no_meta": "System-Ordner uebersprungen: Backup ohne Herkunftsangabe.",
-            "foreign_origin": "System-Ordner uebersprungen: Das Backup stammt nicht "
-                              "von diesem Rechner (z. B. GitHub-Referenz-Backup). "
-                              "/usr/share/openxr bleibt unangetastet.",
-            "distro_mismatch": "System-Ordner uebersprungen: Das Backup stammt von "
-                               "einer anderen Distribution.",
-            "layout_mismatch": "System-Ordner uebersprungen: Anderes Bibliotheks-"
-                               "Layout (lib/lib64/multiarch).",
-        }.get(reason, "System-Ordner uebersprungen."))
+        notes.append(tr({
+            "no_meta": "bak_note_no_meta",
+            "foreign_origin": "bak_note_foreign",
+            "distro_mismatch": "bak_note_distro",
+            "layout_mismatch": "bak_note_layout",
+        }.get(reason, "bak_note_generic")))
         return notes
 
     # 2b. System-Ordner wiederherstellen via pkexec - aber NICHT mehr per
@@ -378,8 +372,7 @@ def _heal_user_manifests():
         if lib and os.path.exists(abs_lib) and venv.is_elf64(abs_lib):
             continue                      # passt bereits
         if not openxr_so:
-            notes.append(f"{target}: Pfad passt nicht zu diesem System, und es "
-                         f"wurde keine lokale WiVRn-Bibliothek gefunden.")
+            notes.append(tr("bak_note_no_lib").format(target=target))
             continue
         runtime = {"file_format_version": "1.0.0",
                    "runtime": {"name": "Monado", "library_path": openxr_so}}
@@ -388,10 +381,9 @@ def _heal_user_manifests():
         try:
             with open(target, "w") as f:
                 json.dump(runtime, f, indent=4)
-            notes.append(f"{target}: Bibliothekspfad auf dieses System angepasst "
-                         f"({openxr_so}).")
+            notes.append(tr("bak_note_path_fixed").format(target=target, lib=openxr_so))
         except Exception as e:
-            notes.append(f"{target}: konnte nicht angepasst werden ({e}).")
+            notes.append(tr("bak_note_fix_failed").format(target=target, err=e))
     return notes
 
 
@@ -414,8 +406,7 @@ def _restore_system_openxr(usr_src):
                 src_file = os.path.join(base, name)
                 rel = os.path.normpath(os.path.join(rel_dir, name))
                 if name.endswith(".json") and not _manifest_is_usable(src_file, name):
-                    notes.append(f"Uebersprungen (Pfad passt nicht zu diesem "
-                                 f"System): /usr/share/openxr/{rel}")
+                    notes.append(tr("bak_note_skipped").format(rel=rel))
                     continue
                 dest_file = os.path.join(staging, rel)
                 os.makedirs(os.path.dirname(dest_file), exist_ok=True)
@@ -423,7 +414,7 @@ def _restore_system_openxr(usr_src):
                 copied_any = True
 
         if not copied_any:
-            notes.append("Keine gueltigen Dateien fuer /usr/share/openxr im Backup.")
+            notes.append(tr("bak_note_none_valid"))
             return notes
 
         script = (
@@ -436,8 +427,8 @@ def _restore_system_openxr(usr_src):
                              capture_output=True, text=True, timeout=180)
         if res.returncode != 0:
             raise RuntimeError((res.stderr or res.stdout or "").strip())
-        notes.append(f"/usr/share/openxr aktualisiert (Sicherung: "
-                     f"/usr/share/openxr.bak.{stamp}).")
+        notes.append(tr("bak_note_usr_updated").format(
+            path=f"/usr/share/openxr.bak.{stamp}"))
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return notes
@@ -489,19 +480,13 @@ def sync_backup_from_github(parent_window):
 
     had_backup = os.path.isdir(BACKUP_DIR) and bool(os.listdir(BACKUP_DIR))
     if had_backup:
-        msg = ("Du hast bereits ein lokales Backup. Möchtest du es mit dem sauberen "
-               "Referenz-Backup von GitHub <b>überschreiben</b>?")
+        msg = tr("bak_gh_overwrite")
     else:
-        msg = ("Es wird das saubere Referenz-Backup von GitHub in dein lokales "
-               "Backup-Verzeichnis geladen.")
+        msg = tr("bak_gh_download")
 
     reply = QMessageBox.question(
-        parent_window, "Backup von GitHub holen",
-        f"{msg}<br><br>"
-        "Danach kannst du wie gewohnt auf <b>XR/VR Umgebung wiederherstellen</b> "
-        "klicken, um es anzuwenden.<br><br>"
-        f"<i>Quelle: {GITHUB_BACKUP_REPO}</i><br>"
-        "<i>Es wird eine Internetverbindung benötigt.</i>",
+        parent_window, tr("bak_gh_title"),
+        tr("bak_gh_body").format(msg=msg, repo=GITHUB_BACKUP_REPO),
         QMessageBox.Yes | QMessageBox.No
     )
     if reply == QMessageBox.No:
@@ -524,7 +509,7 @@ def sync_backup_from_github(parent_window):
         roots = [d for d in os.listdir(tmp)
                  if os.path.isdir(os.path.join(tmp, d)) and d != "__MACOSX"]
         if not roots:
-            raise RuntimeError("Heruntergeladenes Backup ist leer oder unlesbar.")
+            raise RuntimeError(tr("bak_gh_empty"))
         root = os.path.join(tmp, roots[0])
 
         # 4. Die Ordner config/ usr/ opt/ 1:1 ins lokale Backup-Verzeichnis legen.
@@ -542,8 +527,7 @@ def sync_backup_from_github(parent_window):
                 copied += 1
 
         if copied == 0:
-            raise RuntimeError("Im heruntergeladenen Backup wurden keine bekannten "
-                               "Ordner (config/usr/opt) gefunden.")
+            raise RuntimeError(tr("bak_gh_no_dirs"))
 
         # Herkunft festhalten: Referenz-Backup, erstellt auf einem Arch-System.
         # Dadurch spielt das Restore daraus KEINE System-Ordner zurueck - die
@@ -559,17 +543,9 @@ def sync_backup_from_github(parent_window):
         mark_backup_created()
 
         QMessageBox.information(
-            parent_window, "Fertig",
-            "Das GitHub-Referenz-Backup liegt jetzt in deinem lokalen "
-            "Backup-Verzeichnis.<br><br>"
-            "Klicke auf <b>XR/VR Umgebung wiederherstellen</b>, um es anzuwenden.<br><br>"
-            "<i>Hinweis: Aus dem Referenz-Backup werden nur deine Benutzer-Configs "
-            "zurückgespielt und dabei automatisch an dein System angepasst. "
-            "System-Ordner wie /usr/share/openxr bleiben unangetastet — die gehören "
-            "deiner Paketverwaltung.</i>")
+            parent_window, tr("bak_gh_done_title"), tr("bak_gh_done_text"))
     except Exception as e:
         QMessageBox.critical(
-            parent_window, "Fehler",
-            f"GitHub-Sync fehlgeschlagen: {e}")
+            parent_window, tr("error"), tr("bak_gh_fail").format(err=e))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

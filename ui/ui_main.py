@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QListWidget,
                                QComboBox, QLineEdit, QGroupBox, QFormLayout,
                                QTextEdit, QFrame, QGridLayout,
                                QTabWidget, QToolButton, QToolTip, QPlainTextEdit,
-                               QScrollArea, QSizePolicy)
+                               QScrollArea, QSizePolicy, QApplication)
 from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF, QPoint
 from PySide6.QtGui import QPainter, QColor
 
@@ -74,7 +74,7 @@ class ToggleSwitch(QCheckBox):
 # Programme aus zentraler Datei laden
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
 from programs import TOOLS_APPS, TOOLS_OSC
-from translations import tr
+from translations import tr, tr_amp
 
 from logging_setup import get_logger
 
@@ -95,7 +95,20 @@ class Ui_MainWindow:
         main_window.setMinimumSize(800, 600)
 
         # --- ZENTRALES STYLESHEET FÜR EIN MODERNES DESIGN ---
-        main_window.setStyleSheet("""
+        #
+        # WICHTIG: Das Stylesheet haengt an der QApplication, nicht am Fenster.
+        #
+        # Warum: Es setzt fuer alle Widgets eine helle Schriftfarbe (#d8dee9),
+        # weil die App durchgehend dunkel ist. Dialoge (QMessageBox &Co.) sind
+        # eigene Fenster; ihre HINTERGRUNDfarbe kam bisher vom System-Theme.
+        # Wer eine helle Desktop-Umgebung nutzt (z. B. KDE Breeze Light), sah
+        # deshalb hellgraue Schrift auf hellem Grund — lesbar erst nach dem
+        # Markieren des Textes (gemeldet auf GitHub). Deshalb werden unten
+        # Dialoge, Menues, Tooltips und Listen-Popups AUSDRUECKLICH mit
+        # Hintergrund UND Schriftfarbe belegt, statt sich auf das Systemtheme
+        # zu verlassen. Am QApplication-Objekt greift das auch fuer Dialoge
+        # ohne Eltern-Fenster.
+        _stylesheet = """
             QMainWindow {
                 background-color: #181a1f;
             }
@@ -161,7 +174,95 @@ class Ui_MainWindow:
             /* Scrollbars verstecken/minimalisieren */
             QScrollBar:vertical { width: 10px; background: transparent; }
             QScrollBar::handle:vertical { background: #434c5e; border-radius: 5px; }
-        """)
+
+            /* Flaechen, die bisher ihre Farbe vom System-Theme holten:
+               Seitenstapel, Scrollbereiche und deren Inhalts-Widgets. Auf
+               einem hellen Desktop-Theme leuchteten sie sonst weiss auf. */
+            QStackedWidget { background-color: #181a1f; }
+            QScrollArea { background: transparent; }
+            QScrollArea > QWidget > QWidget { background: transparent; }
+
+            /* ---------------------------------------------------------------
+               Dialoge, Popups und Menues: eigener Hintergrund statt System-Theme.
+               Ohne diesen Block steht helle Schrift auf hellem Grund, sobald
+               der Desktop ein helles Theme benutzt.
+               --------------------------------------------------------------- */
+            QDialog, QMessageBox, QInputDialog, QFileDialog, QProgressDialog {
+                background-color: #21252b;
+            }
+            QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel,
+            QFileDialog QLabel, QProgressDialog QLabel {
+                color: #eceff4;
+                background: transparent;
+            }
+            QMessageBox QPushButton, QDialog QPushButton {
+                min-width: 84px;
+            }
+            /* Detailansicht/Listen innerhalb von Dialogen */
+            QDialog QTextEdit, QDialog QPlainTextEdit, QMessageBox QTextEdit,
+            QDialog QListView, QDialog QTreeView, QDialog QTableView {
+                background-color: #1e222a;
+                color: #d8dee9;
+                border: 1px solid #3b4252;
+            }
+            QHeaderView::section {
+                background-color: #2e3440;
+                color: #d8dee9;
+                border: none;
+                padding: 4px;
+            }
+            QDialog QToolButton, QFileDialog QToolButton {
+                color: #d8dee9;
+                background-color: #3b4252;
+                border: 1px solid #434c5e;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QDialog QToolButton:hover, QFileDialog QToolButton:hover {
+                background-color: #4c566a;
+            }
+
+            /* Aufklapplisten (QComboBox-Popup) und Kontextmenues */
+            QComboBox QAbstractItemView {
+                background-color: #2e3440;
+                color: #d8dee9;
+                selection-background-color: #5e81ac;
+                selection-color: #eceff4;
+                border: 1px solid #4c566a;
+            }
+            QMenu {
+                background-color: #2e3440;
+                color: #d8dee9;
+                border: 1px solid #434c5e;
+            }
+            QMenu::item:selected { background-color: #5e81ac; color: #eceff4; }
+            QMenu::separator { height: 1px; background: #434c5e; margin: 4px 8px; }
+
+            /* Tooltips holten ihren Hintergrund ebenfalls vom System-Theme */
+            QToolTip {
+                background-color: #2e3440;
+                color: #eceff4;
+                border: 1px solid #4c566a;
+                padding: 4px;
+            }
+
+            /* Fortschrittsbalken (z. B. APK-Installation) */
+            QProgressBar {
+                background-color: #1e222a;
+                border: 1px solid #3b4252;
+                border-radius: 4px;
+                color: #eceff4;
+                text-align: center;
+            }
+            QProgressBar::chunk { background-color: #5e81ac; border-radius: 3px; }
+        """
+        # An der QApplication statt am Fenster: so bekommen auch Dialoge ohne
+        # Eltern-Fenster dieselben Farben.
+        _app = QApplication.instance()
+        if _app is not None:
+            _app.setStyleSheet(_stylesheet)
+        else:
+            main_window.setStyleSheet(_stylesheet)
 
         self.central_widget = QWidget()
         main_window.setCentralWidget(self.central_widget)
@@ -259,18 +360,18 @@ class Ui_MainWindow:
         self.pkg_group.setTitle(tr("install_deps_title"))
         self.btn_install.setText(tr("install_btn"))
         self.btn_update.setText(tr("update_btn"))
-        self.info_group.setTitle(tr("install_hints_title"))
+        self.info_group.setTitle(tr_amp("install_hints_title"))
 
         # --- Dashboard-Tab ---
         self.server_group.setTitle(tr("dashboard_server"))
         self.btn_server_check.setText(tr("dashboard_check"))
-        self.btn_port_status.setText(tr("dashboard_firewall"))
-        self.tracking_group.setTitle(tr("dashboard_tracking"))
+        self.btn_port_status.setText(tr_amp("dashboard_firewall"))
+        self.tracking_group.setTitle(tr_amp("dashboard_tracking"))
         self.check_usb_autoconnect.setText(tr("streaming_usb_autoconnect"))
         self.check_usb_autoconnect.setToolTip(tr("streaming_usb_autoconnect_tip"))
-        self.chk_hand_tracking.setText(tr("dashboard_hand"))
-        self.chk_fbt.setText(tr("dashboard_fbt"))
         self.chk_steamvr_tracker.setText(tr("dashboard_steam"))
+        self.btn_openxr_shortcut.setText(tr_amp("dashboard_openxr_btn"))
+        self.btn_openxr_shortcut.setToolTip(tr("dashboard_openxr_btn_tip"))
         self.lbl_tracker_note.setText(tr("dashboard_steam_hint"))
         self.lbl_refresh.setText(tr("dashboard_refresh"))
         self.pairing_group.setTitle(tr("dashboard_pairing"))
@@ -290,8 +391,8 @@ class Ui_MainWindow:
         # --- Settings-Tab (Sub-Tabs + Info-Icons) ---
         self.lbl_settings_title.setText(tr("settings_title"))
         if hasattr(self, "settings_subtabs"):
-            self.settings_subtabs.setTabText(0, tr("settings_sub_general"))
-            self.settings_subtabs.setTabText(1, tr("settings_sub_vr"))
+            self.settings_subtabs.setTabText(0, tr_amp("settings_sub_general"))
+            self.settings_subtabs.setTabText(1, tr_amp("settings_sub_vr"))
             self.settings_subtabs.setTabText(2, tr("settings_sub_audio"))
             self.settings_subtabs.setTabText(3, tr("settings_sub_advanced"))
         # Sektionsköpfe + Info-Tooltips (lange Texte liegen im Tooltip)
@@ -320,13 +421,15 @@ class Ui_MainWindow:
         # (Texte setzt main.py beim Bauen der Detail-Sektion).
         self.lbl_apk_title.setText(tr("dashboard_apk_title"))
         self.apk_info_lbl.setText(tr("dashboard_apk_info"))
-        self.btn_apk_install.setText(tr("dashboard_apk_btn"))
+        self.btn_apk_install.setText(tr_amp("dashboard_apk_btn"))
         self.btn_apk_cancel.setText(tr("dashboard_apk_cancel"))
         # Backup
         self.btn_vr_backup.setText(tr("backup_create_btn"))
         self.btn_vr_restore.setText(tr("backup_restore_btn"))
         self.btn_vr_restore_github.setText(tr("backup_sync_github_btn"))
         self.btn_vr_restore_github.setToolTip(tr("backup_sync_github_tip"))
+        if hasattr(self, "vr_runtime_widget"):
+            self.vr_runtime_widget.retranslate()
         if hasattr(self, "oscquery_widget"):
             self.oscquery_widget.retranslate()
         # OpenXR (Buttons + ausklappbarer manueller Bereich)
@@ -427,7 +530,7 @@ class Ui_MainWindow:
 
 # --- INFO-KASTEN (ERWEITERTE HÖHE FÜR VOLLSTÄNDIGEN TEXT) ---
 
-        self.info_group = QGroupBox(tr("install_hints_title"))
+        self.info_group = QGroupBox(tr_amp("install_hints_title"))
         info_layout = QVBoxLayout(self.info_group)
         info_layout.setSpacing(10)
 
@@ -488,7 +591,7 @@ class Ui_MainWindow:
         apk_box.addWidget(self.apk_info_lbl)
 
         apk_btn_row = QHBoxLayout()
-        self.btn_apk_install = QPushButton(tr("dashboard_apk_btn"))
+        self.btn_apk_install = QPushButton(tr_amp("dashboard_apk_btn"))
         self.btn_apk_install.setStyleSheet("""
             QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
                           padding: 7px 14px; border-radius: 4px; border: none; }
@@ -542,7 +645,7 @@ class Ui_MainWindow:
         # Nur ein Platzhalter, bis main.py ihn direkt nach dem Setup setzt.
         self.lbl_app_ver = QLabel("<b>App Version:</b> …")
         self.lbl_app_ver.setStyleSheet("color: #81a1c1;")
-        self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> Prüfe...")
+        self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> " + tr("tools_checking"))
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
 
         self.combo_language = QComboBox()
@@ -602,7 +705,7 @@ class Ui_MainWindow:
         # Untere Reihe: Firewall-Button + Server-Check NEBENEINANDER (aufgeräumter).
         action_row = QHBoxLayout()
 
-        self.btn_port_status = QPushButton(tr("dashboard_firewall"))
+        self.btn_port_status = QPushButton(tr_amp("dashboard_firewall"))
         self.btn_port_status.setStyleSheet("""
             QPushButton { background-color: #4c566a; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 6px; }
             QPushButton:hover { background-color: #5e81ac; }
@@ -620,13 +723,33 @@ class Ui_MainWindow:
         server_layout.addLayout(action_row)
         layout.addWidget(self.server_group)
 
+        # --- Sprungknopf: OpenXR/SteamVR-Fixes & Performance ---------------
+        # Fuehrt direkt zu Einstellungen -> VR & OpenXR. Dort liegen
+        # Runtime-Umschaltung, Steam-Fix ("invalid Elf handle"), VR-Prioritaet
+        # und der OSCQuery-Fix. Vom Dashboard aus fand die bisher niemand.
+        shortcut_row = QHBoxLayout()
+        self.btn_openxr_shortcut = QPushButton(tr_amp("dashboard_openxr_btn"))
+        self.btn_openxr_shortcut.setCursor(Qt.PointingHandCursor)
+        self.btn_openxr_shortcut.setToolTip(tr("dashboard_openxr_btn_tip"))
+        self.btn_openxr_shortcut.setStyleSheet("""
+            QPushButton { background-color: #3b4252; color: #eceff4; border: 1px solid #4c566a;
+                          font-weight: bold; border-radius: 6px; padding: 8px 16px; text-align: left; }
+            QPushButton:hover { background-color: #434c5e; border-color: #5e81ac; }
+        """)
+        shortcut_row.addWidget(self.btn_openxr_shortcut)
+        shortcut_row.addStretch()
+        layout.addLayout(shortcut_row)
+
         # --- APK INSTALLATION ---
-        self.tracking_group = QGroupBox(tr("dashboard_tracking"))
+        self.tracking_group = QGroupBox(tr_amp("dashboard_tracking"))
         tracking_layout = QVBoxLayout(self.tracking_group)
 
-        self.chk_hand_tracking = QCheckBox(tr("dashboard_hand"))
-        self.chk_fbt = QCheckBox(tr("dashboard_fbt"))
-        self.chk_fbt.setChecked(True)
+        # Hand Tracking / Full Body Tracking standen frueher hier. Sie sind
+        # entfernt: beides muss im Headset selbst aktiviert werden, der
+        # Schalter in der App hat in der Praxis nichts bewirkt und hat nur
+        # den Eindruck erweckt, es sei damit getan. Die Config-Schluessel
+        # bleiben erhalten (siehe core/config_manager.py), damit bestehende
+        # Konfigurationen unveraendert weiterlaufen.
         self.chk_steamvr_tracker = QCheckBox(tr("dashboard_steam"))
 
         # --- Auto-Connect per USB ---------------------------------------
@@ -655,8 +778,6 @@ class Ui_MainWindow:
 
         tracking_layout.addWidget(self.check_usb_autoconnect)
         tracking_layout.addWidget(self.lbl_usb_hint)
-        tracking_layout.addWidget(self.chk_hand_tracking)
-        tracking_layout.addWidget(self.chk_fbt)
         tracking_layout.addWidget(self.chk_steamvr_tracker)
         tracking_layout.addWidget(self.lbl_tracker_note)
         tracking_layout.addLayout(refresh_layout)
@@ -983,7 +1104,7 @@ class Ui_MainWindow:
         # ---- Sub-Tab-Navigation ----
         self.settings_subtabs = QTabWidget()
         self.settings_subtabs.setStyleSheet("""
-            QTabWidget::pane { border:none; background:transparent; top:-1px; }
+            QTabWidget::pane { border:none; background-color:#181a1f; top:-1px; }
             QTabBar { qproperty-drawBase:0; }
             QTabBar::tab {
                 background:#21252b; color:#7b88a1; padding:8px 18px;
@@ -1061,7 +1182,7 @@ class Ui_MainWindow:
         gen_v.addWidget(card)
 
         gen_v.addStretch()
-        self.settings_subtabs.addTab(page_gen, tr("settings_sub_general"))
+        self.settings_subtabs.addTab(page_gen, tr_amp("settings_sub_general"))
 
         # ==============================================================
         #  SEITE 2 — VR & OpenXR
@@ -1085,6 +1206,11 @@ class Ui_MainWindow:
         self.lbl_wayvr_status.setWordWrap(True)
         cv.addWidget(self.lbl_wayvr_status)
         vr_v.addWidget(card)
+
+        # -- OpenXR-Runtime umschalten + VR-Prioritaet (aus dem Streaming-Tab) --
+        from ui.vr_runtime_widget import VrRuntimeWidget
+        self.vr_runtime_widget = VrRuntimeWidget()
+        vr_v.addWidget(self.vr_runtime_widget)
 
         # -- OpenXR Runtime (Steam-Fix) --
         card, cv = self._settings_card()
@@ -1157,7 +1283,7 @@ class Ui_MainWindow:
         vr_v.addWidget(self.oscquery_widget)
 
         vr_v.addStretch()
-        self.settings_subtabs.addTab(page_vr, tr("settings_sub_vr"))
+        self.settings_subtabs.addTab(page_vr, tr_amp("settings_sub_vr"))
 
         # ==============================================================
         #  SEITE 3 — Audio
@@ -1293,7 +1419,7 @@ class Ui_MainWindow:
         # ---- Sub-Tab-Navigation (wie im Settings-Tab) ----
         self.tools_subtabs = QTabWidget()
         self.tools_subtabs.setStyleSheet("""
-            QTabWidget::pane { border:none; background:transparent; top:-1px; }
+            QTabWidget::pane { border:none; background-color:#181a1f; top:-1px; }
             QTabBar { qproperty-drawBase:0; }
             QTabBar::tab {
                 background:#21252b; color:#7b88a1; padding:8px 18px;

@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 import os
-import subprocess
 import json
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QComboBox, QSlider, QGroupBox, QFormLayout,
-                               QPushButton, QMessageBox)
+                               QPushButton)
 from PySide6.QtCore import Qt
 
 # Importiert aus dem selben Verzeichnis (core)
 from config_manager import save_all_settings, load_saved_settings
-from translations import tr
+from translations import tr, tr_amp
 import vr_environment as venv
 
 from logging_setup import get_logger
-import proc
 
 log = get_logger("streaming_tab")
 
@@ -81,7 +79,7 @@ class StreamingTab(QWidget):
         layout.addWidget(self.lbl_title)
 
         # --- GRUPPE 1: KOMPATIBILITÄT ---
-        self.compat_group = QGroupBox(tr("streaming_compat"))
+        self.compat_group = QGroupBox(tr_amp("streaming_compat"))
         compat_form = QFormLayout(self.compat_group)
 
         self.combo_openvr = QComboBox()
@@ -92,7 +90,7 @@ class StreamingTab(QWidget):
         layout.addWidget(self.compat_group)
 
         # --- GRUPPE 2: GRAFIK & AUFLÖSUNG ---
-        self.video_group = QGroupBox(tr("streaming_video"))
+        self.video_group = QGroupBox(tr_amp("streaming_video"))
         video_form = QFormLayout(self.video_group)
 
         # Render Resolution Slider (50% bis 200%)
@@ -132,7 +130,7 @@ class StreamingTab(QWidget):
         layout.addWidget(self.video_group)
 
         # --- GRUPPE 3: ENCODER & BITRATE ---
-        self.encoder_group = QGroupBox(tr("streaming_encoder_grp"))
+        self.encoder_group = QGroupBox(tr_amp("streaming_encoder_grp"))
         encoder_form = QFormLayout(self.encoder_group)
 
         self.combo_encoder = QComboBox()
@@ -172,63 +170,25 @@ class StreamingTab(QWidget):
 
         layout.addWidget(self.encoder_group)
 
-        # --- GRUPPE: VR-PRIORITÄT (Async Reprojection / CAP_SYS_NICE) ---
-        self.prio_group = QGroupBox(tr("streaming_prio"))
-        prio_layout = QVBoxLayout(self.prio_group)
-
-        self.lbl_prio_desc = QLabel(tr("streaming_prio_desc"))
-        self.lbl_prio_desc.setWordWrap(True)
-        self.lbl_prio_desc.setStyleSheet("color: #7b88a1; font-size: 11px;")
-        prio_layout.addWidget(self.lbl_prio_desc)
-
-        prio_row = QHBoxLayout()
-        self.lbl_prio_status = QLabel(tr("streaming_checking"))
-        self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")
-        self.btn_vr_priority = QPushButton(tr("streaming_prio_btn"))
-        self.btn_vr_priority.setStyleSheet(
-            "QPushButton { background-color: #81a1c1; color: #2e3440; font-weight: bold; padding: 8px; } "
-            "QPushButton:hover { background-color: #88c0d0; }"
-        )
-        prio_row.addWidget(self.lbl_prio_status)
-        prio_row.addStretch()
-        prio_row.addWidget(self.btn_vr_priority)
-        prio_layout.addLayout(prio_row)
-
-        # Kompakte Latenz-Tipps direkt unter der VR-Priorität
-        self.lbl_perf_tips = QLabel(tr("perf_tips"))
-        self.lbl_perf_tips.setStyleSheet(
-            "color: #d8dee9; font-size: 11px; background-color: #2e3440; "
-            "border-radius: 4px; padding: 8px;")
-        self.lbl_perf_tips.setWordWrap(True)
-        self.lbl_perf_tips.setTextFormat(Qt.RichText)
-        prio_layout.addWidget(self.lbl_perf_tips)
-
-        layout.addWidget(self.prio_group)
-        # --- GRUPPE 4: OPENXR RUNTIME ---
-        self.openxr_group = QGroupBox(tr("streaming_openxr"))
-        openxr_layout = QFormLayout(self.openxr_group)
-
-        self.lbl_active_runtime = QLabel(tr("streaming_checking"))
-        self.lbl_active_runtime.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")
-
-        self.btn_switch_wivrn = QPushButton(tr("streaming_wivrn_btn"))
-        self.btn_switch_wivrn.setStyleSheet(
-            "QPushButton { background-color: #81a1c1; color: #2e3440; font-weight: bold; padding: 8px; } "
-            "QPushButton:hover { background-color: #88c0d0; }"
-        )
-
-        self.btn_switch_steamvr = QPushButton(tr("streaming_steam_btn"))
-        self.btn_switch_steamvr.setStyleSheet(
-            "QPushButton { background-color: #4c566a; color: #eceff4; font-weight: bold; padding: 8px; } "
-            "QPushButton:hover { background-color: #5e81ac; }"
-        )
-
-        self.lbl_status_title = QLabel(tr("streaming_status"))
-        openxr_layout.addRow(self.lbl_status_title, self.lbl_active_runtime)
-        openxr_layout.addRow(self.btn_switch_wivrn)
-        openxr_layout.addRow(self.btn_switch_steamvr)
-
-        layout.addWidget(self.openxr_group)
+        # --- HINWEIS: OpenXR-Runtime + VR-Prioritaet sind umgezogen ----------
+        # Beides sind einmalige System-Reparaturen, keine Stream-Einstellungen.
+        # Sie liegen jetzt bei den uebrigen Fixes unter Einstellungen -> VR &
+        # OpenXR. Damit niemand suchen muss, bleibt hier ein Verweis mit
+        # Sprungknopf stehen.
+        moved_row = QHBoxLayout()
+        self.lbl_moved_hint = QLabel(tr("streaming_moved_hint"))
+        self.lbl_moved_hint.setWordWrap(True)
+        self.lbl_moved_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
+        self.btn_goto_vr_settings = QPushButton(tr_amp("dashboard_openxr_btn"))
+        self.btn_goto_vr_settings.setCursor(Qt.PointingHandCursor)
+        self.btn_goto_vr_settings.setStyleSheet(
+            "QPushButton { background-color:#2e3440; color:#d8dee9; border:1px solid #4c566a;"
+            " font-weight:bold; padding:8px 14px; border-radius:4px; font-size:12px; }"
+            " QPushButton:hover { background-color:#3b4252; border-color:#5e81ac; }")
+        self.btn_goto_vr_settings.clicked.connect(self.open_vr_settings)
+        moved_row.addWidget(self.lbl_moved_hint, 1)
+        moved_row.addWidget(self.btn_goto_vr_settings)
+        layout.addLayout(moved_row)
 
         layout.addStretch()
 
@@ -248,38 +208,21 @@ class StreamingTab(QWidget):
         self.combo_codec.activated.connect(self.trigger_auto_save)
         self.slider_bitrate.sliderReleased.connect(self.trigger_auto_save)
 
-        # OpenXR Runtime Buttons
-        self.btn_switch_wivrn.clicked.connect(self.set_openxr_runtime_wivrn)
-        self.btn_switch_steamvr.clicked.connect(self.set_openxr_runtime_steamvr)
-        self.check_active_openxr_runtime()
-
-        # VR-Priorität (CAP_SYS_NICE)
-        self.btn_vr_priority.clicked.connect(self.enable_vr_priority)
-        self.check_vr_priority()
 
     def retranslate(self):
         """Setzt alle statischen Texte des Streaming-Tabs neu (nach Sprachwechsel)."""
         self.lbl_title.setText(tr("streaming_title"))
-        self.compat_group.setTitle(tr("streaming_compat"))
+        self.compat_group.setTitle(tr_amp("streaming_compat"))
         self.lbl_openvr.setText(tr("streaming_openvr"))
-        self.video_group.setTitle(tr("streaming_video"))
+        self.video_group.setTitle(tr_amp("streaming_video"))
         self.lbl_res_title.setText(tr("streaming_res"))
         self.lbl_fov_title.setText(tr("streaming_fov"))
-        self.encoder_group.setTitle(tr("streaming_encoder_grp"))
+        self.encoder_group.setTitle(tr_amp("streaming_encoder_grp"))
         self.lbl_encoder.setText(tr("streaming_encoder"))
         self.lbl_codec.setText(tr("streaming_codec"))
         self.lbl_bitrate.setText(tr("streaming_bitrate"))
-        self.openxr_group.setTitle(tr("streaming_openxr"))
-        self.lbl_status_title.setText(tr("streaming_status"))
-        self.btn_switch_wivrn.setText(tr("streaming_wivrn_btn"))
-        self.btn_switch_steamvr.setText(tr("streaming_steam_btn"))
-        self.prio_group.setTitle(tr("streaming_prio"))
-        self.lbl_prio_desc.setText(tr("streaming_prio_desc"))
-        self.btn_vr_priority.setText(tr("streaming_prio_btn"))
-        self.lbl_perf_tips.setText(tr("perf_tips"))
-        # Aktiven Runtime-Status neu prüfen/setzen (Text ist sprachabhängig)
-        self.check_active_openxr_runtime()
-        self.check_vr_priority()
+        self.lbl_moved_hint.setText(tr("streaming_moved_hint"))
+        self.btn_goto_vr_settings.setText(tr_amp("dashboard_openxr_btn"))
 
     def update_resolution_label(self, value):
         base_w, base_h = 2160, 2160
@@ -322,114 +265,11 @@ class StreamingTab(QWidget):
 
         self.trigger_auto_save()
 
-    def check_active_openxr_runtime(self):
-        """Prüft, welche OpenXR Runtime aktuell im System aktiv ist."""
-        try:
-            active_json = os.path.expanduser("~/.config/openxr/1/active_runtime.json")
-            if os.path.exists(active_json):
-                with open(active_json) as f:
-                    content = f.read()
-                    if "wivrn" in content.lower():
-                        self.lbl_active_runtime.setText(tr("streaming_rt_wivrn"))
-                        self.lbl_active_runtime.setStyleSheet("font-weight: bold; color: #a3be8c; font-size: 13px;")
-                    elif "steamvr" in content.lower():
-                        self.lbl_active_runtime.setText(tr("streaming_rt_steamvr"))
-                        self.lbl_active_runtime.setStyleSheet("font-weight: bold; color: #81a1c1; font-size: 13px;")
-                    else:
-                        self.lbl_active_runtime.setText(tr("streaming_rt_other"))
-                        self.lbl_active_runtime.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")
-            else:
-                self.lbl_active_runtime.setText(tr("streaming_rt_none"))
-                self.lbl_active_runtime.setStyleSheet("font-weight: bold; color: #bf616a; font-size: 13px;")
-        except Exception as e:
-            self.lbl_active_runtime.setText(tr("streaming_rt_error") + str(e))
-
-    def set_openxr_runtime_wivrn(self):
-        """Schaltet die OpenXR Runtime auf WiVRn um (Host + Steam-Flatpak-Sandbox)."""
-        try:
-            wivrn_runtime_path = venv.find_wivrn_manifest()
-            data = {"file_format_version": "1.0.0", "runtime": {"library_path": wivrn_runtime_path}}
-            for d in venv.openxr_config_dirs():
-                os.makedirs(d, exist_ok=True)
-                with open(os.path.join(d, "active_runtime.json"), "w") as f:
-                    json.dump(data, f, indent=4)
-
-            self.check_active_openxr_runtime()
-            QMessageBox.information(self, tr("streaming_rt_switched"), tr("streaming_rt_wivrn_ok"))
-        except Exception as e:
-            QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(e))
-
-    def set_openxr_runtime_steamvr(self):
-        """Schaltet die OpenXR Runtime auf SteamVR um (Host + Steam-Flatpak-Sandbox)."""
-        try:
-            steamvr_runtime_path = venv.find_steamvr_manifest()
-            data = {"file_format_version": "1.0.0", "runtime": {"library_path": steamvr_runtime_path}}
-            for d in venv.openxr_config_dirs():
-                os.makedirs(d, exist_ok=True)
-                with open(os.path.join(d, "active_runtime.json"), "w") as f:
-                    json.dump(data, f, indent=4)
-
-            self.check_active_openxr_runtime()
-            QMessageBox.information(self, tr("streaming_rt_switched"), tr("streaming_rt_steam_ok"))
-        except Exception as e:
-            QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(e))
-
-    def _wivrn_server_path(self):
-        """Findet die wivrn-server-Binary (Symlinks aufgelöst). None, wenn nicht da."""
-        return venv.wivrn_server_binary()
-
-    def check_vr_priority(self):
-        """Prüft, ob die wivrn-server-Binary bereits CAP_SYS_NICE besitzt."""
-        path = self._wivrn_server_path()
-        if not path:
-            self.lbl_prio_status.setText(tr("streaming_prio_missing"))
-            self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #bf616a; font-size: 13px;")
-            self.btn_vr_priority.setEnabled(False)
-            return
-
-        # Bei Nix (read-only /nix/store) ist setcap nicht möglich
-        if not venv.supports_setcap():
-            self.lbl_prio_status.setText(tr("streaming_prio_unsupported"))
-            self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")
-            self.btn_vr_priority.setEnabled(False)
-            return
-
-        try:
-            res = subprocess.run(["getcap", path], stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, text=True, timeout=proc.DEFAULT_TIMEOUT)
-            has_cap = "cap_sys_nice" in res.stdout.lower()
-        except Exception:
-            has_cap = False
-
-        if has_cap:
-            self.lbl_prio_status.setText(tr("streaming_prio_on"))
-            self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #a3be8c; font-size: 13px;")
-            self.btn_vr_priority.setEnabled(False)
-        else:
-            self.lbl_prio_status.setText(tr("streaming_prio_off"))
-            self.lbl_prio_status.setStyleSheet("font-weight: bold; color: #ebcb8b; font-size: 13px;")
-            self.btn_vr_priority.setEnabled(True)
-
-    def enable_vr_priority(self):
-        """Setzt CAP_SYS_NICE auf die wivrn-server-Binary (per pkexec)."""
-        path = self._wivrn_server_path()
-        if not path:
-            QMessageBox.warning(self, tr("error"), tr("streaming_prio_missing"))
-            return
-        try:
-            res = subprocess.run(
-                ["pkexec", "setcap", "cap_sys_nice+ep", path],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
-            if res.returncode == 0:
-                QMessageBox.information(self, tr("streaming_prio_ok_title"),
-                                        tr("streaming_prio_ok_text"))
-            else:
-                QMessageBox.critical(self, tr("error"),
-                                     tr("streaming_prio_err") + "\n\n" + (res.stderr or "").strip())
-        except Exception as e:
-            QMessageBox.critical(self, tr("error"),
-                                 tr("streaming_prio_err") + "\n\n" + str(e))
-        self.check_vr_priority()
+    def open_vr_settings(self):
+        """Springt zu Einstellungen -> VR & OpenXR (dort liegen Runtime-Wechsel,
+        Steam-Fix und VR-Prioritaet)."""
+        if self.main_app and hasattr(self.main_app, "open_vr_settings"):
+            self.main_app.open_vr_settings()
 
     def trigger_auto_save(self):
         """Reicht die aktuellen Streaming-Werte an die Hauptanwendung weiter und speichert."""
@@ -447,9 +287,9 @@ class StreamingTab(QWidget):
             "bitrate": self.slider_bitrate.value()
         }
 
-        # FIX: Zugriff erfolgt nun über self.main_app.ui.<widget_name>
-        hand = self.main_app.ui.chk_hand_tracking.isChecked()
-        fbt = self.main_app.ui.chk_fbt.isChecked()
+        # Hand-/Full-Body-Tracking haben keine Schalter mehr im Dashboard —
+        # die gespeicherten Werte werden unveraendert durchgereicht.
+        hand, fbt = self.main_app.tracking_flags()
         steam = self.main_app.ui.chk_steamvr_tracker.isChecked()
         refresh = self.main_app.ui.combo_refresh.currentText()
         count = self.main_app.ui.num_apps.text()

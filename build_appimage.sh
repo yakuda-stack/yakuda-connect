@@ -1,36 +1,38 @@
 #!/usr/bin/env bash
-# yakuda-connect — AppImage Builder (fuse2 + fuse3)
+# yakuda-connect — AppImage Builder (EINE Datei, laeuft mit fuse2 UND fuse3)
 # ============================================================================
 # Verwendung:
-#   bash build_appimage.sh              # baut BEIDE Varianten (empfohlen)
-#   bash build_appimage.sh fuse3        # nur moderne Systeme
-#   bash build_appimage.sh fuse2        # nur aeltere Systeme
+#   bash build_appimage.sh
 #
 # ----------------------------------------------------------------------------
-# Warum zwei Varianten?
+# Warum jetzt nur noch eine Datei?
 # ----------------------------------------------------------------------------
-# Eine AppImage ist eine SquashFS-Datei mit einem "Runtime"-Kopf davor. Dieser
-# Kopf haengt das Dateisystem per FUSE ein — und genau da gehen die Distros
-# auseinander:
+# Eine AppImage ist ein SquashFS-Abbild mit einem "Runtime"-Kopf davor. Dieser
+# Kopf haengt das Abbild per FUSE ein, bevor irgendein Code von uns laeuft.
+# Genau dort gingen die Distros bisher auseinander:
 #
-#   * Der klassische AppImageKit-Runtime braucht libfuse.so.2 auf dem System.
-#     Auf aktuellen Distros (Fedora 40+, Ubuntu 24.04, SteamOS) ist libfuse2
-#     nicht mehr vorinstalliert -> die AppImage bricht mit der kryptischen
-#     Meldung "dlopen(): error loading libfuse.so.2" ab, BEVOR unser Code
-#     ueberhaupt laeuft. Wir koennen diesen Fehler also nicht abfangen.
+#   * Der alte AppImageKit-Runtime laedt zur Laufzeit libfuse.so.2 per dlopen.
+#     Auf aktuellen Systemen (Fedora 40+, Ubuntu 24.04+, SteamOS) ist libfuse2
+#     nicht mehr installiert -> Abbruch mit "dlopen(): error loading
+#     libfuse.so.2", noch bevor AppRun startet.
 #
-#   * Der neuere type2-runtime linkt libfuse3 STATISCH. Er braucht kein
-#     libfuse-Paket, nur das Kernelmodul fuse und fusermount3. Damit laeuft er
-#     auf allen modernen Systemen ohne Zusatzpaket — auf wirklich alten
-#     (nur fusermount aus fuse2, kein fusermount3) dagegen nicht.
+#   * Der type2-runtime linkt libfuse3 STATISCH (static-pie, keine einzige
+#     dynamische Bibliothek) und sucht sich sein Mount-Hilfsprogramm selbst:
+#     er geht den $PATH durch und nimmt das erste setuid-root-Binary, dessen
+#     Name mit "fusermount" beginnt und das auf --version sauber antwortet.
+#     Damit passt sowohl "fusermount3" (fuse3) als auch "fusermount" (fuse2).
 #
-# Deshalb zwei Dateien, klar benannt. Die fuse3-Variante ist die normale,
-# die fuse2-Variante der Rueckfall fuer aeltere Systeme.
+# Ergo: der type2-runtime deckt beide Welten ab. Er braucht KEIN libfuse-Paket,
+# nur das Kernelmodul fuse plus irgendein fusermount — egal welcher Generation.
+# Deshalb bauen wir nur noch eine Datei statt zwei, und der Schritt
+# "runtime pruefen" unten stellt sicher, dass auch wirklich dieser Runtime
+# drinsteckt (siehe verify_runtime).
 #
-# Universeller Notausgang fuer BEIDE:
+# Universeller Notausgang, falls FUSE komplett fehlt (z. B. Container,
+# gehaertete Kernel, kein /dev/fuse):
 #   ./yakuda-connect-*.AppImage --appimage-extract-and-run
-# (entpackt in ein Temp-Verzeichnis und startet ohne FUSE — langsamer beim
-#  Start, laeuft aber ueberall).
+# (entpackt nach /tmp und startet ohne FUSE — langsamer beim Start, laeuft
+#  aber ueberall).
 # ============================================================================
 
 set -euo pipefail
@@ -39,6 +41,21 @@ APP="yakuda-connect"
 ARCH="x86_64"
 BUILD_DIR="$(pwd)/AppDir"
 
+# Alte Aufrufe (fuse2 / fuse3 / both) sollen nicht hart scheitern.
+if [ $# -gt 0 ]; then
+    case "$1" in
+        fuse2|fuse3|both)
+            echo "[Hinweis] '$1' wird nicht mehr gebraucht — es gibt nur noch"
+            echo "          eine AppImage, die fuse2 wie fuse3 bedient."
+            echo ""
+            ;;
+        *)
+            echo "Unbekanntes Argument: $1 (dieses Skript erwartet keine)" >&2
+            exit 1
+            ;;
+    esac
+fi
+
 # --- Version aus der EINEN Quelle der Wahrheit lesen: core/version.py -------
 VERSION="$(grep -oP '^VERSION\s*=\s*"\K[^"]+' core/version.py | head -1 || true)"
 if [ -z "$VERSION" ]; then
@@ -46,46 +63,82 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-# --- Welche Varianten bauen? ------------------------------------------------
-VARIANTS="${1:-both}"
-case "$VARIANTS" in
-    fuse2|fuse3|both) ;;
-    *) echo "Unbekannte Variante: $VARIANTS (erlaubt: fuse2, fuse3, both)" >&2; exit 1 ;;
-esac
-
-RUNTIME_FUSE3_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${ARCH}"
-RUNTIME_FUSE2_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/runtime-${ARCH}"
+OUT="$(pwd)/${APP}-${VERSION}-${ARCH}.AppImage"
+RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${ARCH}"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/yakuda-connect/build"
+RUNTIME="$CACHE_DIR/runtime-type2-${ARCH}"
 mkdir -p "$CACHE_DIR"
 
 echo "=== yakuda-connect AppImage Builder ==="
-echo "Version:   $VERSION"
-echo "Varianten: $VARIANTS"
+echo "Version: $VERSION"
+echo "Ziel:    $(basename "$OUT")  (fuse2 + fuse3)"
 echo ""
+
+# ---------------------------------------------------------------------------
+# 0. Runtime besorgen und pruefen
+# ---------------------------------------------------------------------------
+# Die Pruefung ist der Kern dieses Umbaus: Ein halb geladener oder falscher
+# Runtime wuerde eine AppImage ergeben, die auf halben Systemen nicht startet —
+# und das faellt beim Bauen auf dem eigenen Rechner nie auf, sondern erst bei
+# den Nutzern. Zwei Merkmale unterscheiden die beiden Runtimes eindeutig:
+#   * type2-runtime  : enthaelt "FUSERMOUNT_PROG", KEIN "libfuse.so.2"
+#   * AppImageKit    : enthaelt "libfuse.so.2",   KEIN "FUSERMOUNT_PROG"
+verify_runtime() {
+    local f="$1"
+    [ -s "$f" ] || return 1
+    # ELF-Magic
+    [ "$(head -c 4 "$f" | od -An -tx1 | tr -d ' \n')" = "7f454c46" ] || return 1
+    # muss die fusermount-Eigensuche haben (deckt fusermount UND fusermount3 ab)
+    grep -aq "FUSERMOUNT_PROG" "$f" || return 1
+    # darf NICHT der alte, dynamisch gegen libfuse2 gelinkte Runtime sein
+    grep -aq "libfuse\.so\.2" "$f" && return 1
+    return 0
+}
+
+echo "[1/7] Hole AppImage-Runtime (type2, statisches libfuse3)..."
+if ! verify_runtime "$RUNTIME"; then
+    rm -f "$RUNTIME"
+    if ! curl -fsSL "$RUNTIME_URL" -o "$RUNTIME"; then
+        echo "[Fehler] Runtime konnte nicht geladen werden:" >&2
+        echo "         $RUNTIME_URL" >&2
+        echo "         Ohne diesen Runtime gibt es keine fuse2+fuse3-AppImage." >&2
+        rm -f "$RUNTIME"
+        exit 1
+    fi
+fi
+if ! verify_runtime "$RUNTIME"; then
+    echo "[Fehler] Geladener Runtime besteht die Pruefung nicht — er wuerde" >&2
+    echo "         nicht auf allen Systemen starten. Abbruch." >&2
+    rm -f "$RUNTIME"
+    exit 1
+fi
+chmod +x "$RUNTIME"
+echo "      OK ($(du -h "$RUNTIME" | cut -f1), statisch, fusermount-Eigensuche vorhanden)"
 
 # ---------------------------------------------------------------------------
 # 1. appimagetool besorgen
 # ---------------------------------------------------------------------------
+echo "[2/7] Suche appimagetool..."
 if command -v appimagetool &>/dev/null; then
     APPIMAGETOOL="appimagetool"
 else
-    echo "[Info] appimagetool nicht gefunden — lade herunter..."
     TOOL="$CACHE_DIR/appimagetool-${ARCH}.AppImage"
-    if [ ! -f "$TOOL" ]; then
+    if [ ! -s "$TOOL" ]; then
+        echo "      nicht gefunden — lade herunter..."
         curl -fsSL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${ARCH}.AppImage" -o "$TOOL"
     fi
     chmod +x "$TOOL"
     APPIMAGETOOL="$TOOL"
 fi
-
-# appimagetool ist selbst eine AppImage — auf einem Rechner ohne libfuse2
-# koennte sie sich nicht starten. Diese Variable entpackt sie stattdessen.
+# appimagetool ist selbst eine AppImage mit altem Runtime — auf einem Rechner
+# ohne libfuse2 koennte sie sich nicht starten. Diese Variable entpackt sie
+# stattdessen nach /tmp.
 export APPIMAGE_EXTRACT_AND_RUN=1
 
 # ---------------------------------------------------------------------------
 # 2. AppDir aufbauen
 # ---------------------------------------------------------------------------
-echo "[1/6] Erstelle AppDir-Struktur..."
+echo "[3/7] Erstelle AppDir-Struktur..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/usr/bin" \
          "$BUILD_DIR/usr/lib/yakuda-connect" \
@@ -93,7 +146,7 @@ mkdir -p "$BUILD_DIR/usr/bin" \
          "$BUILD_DIR/usr/share/icons/hicolor/scalable/apps" \
          "$BUILD_DIR/usr/share/icons/hicolor/512x512/apps"
 
-echo "[2/6] Kopiere Programmdateien..."
+echo "[4/7] Kopiere Programmdateien..."
 # locales/ nicht vergessen — ohne den Ordner startet die App nicht (Texte).
 cp -r assets config core ui locales "$BUILD_DIR/usr/lib/yakuda-connect/"
 cp starter.py "$BUILD_DIR/usr/lib/yakuda-connect/"
@@ -110,7 +163,7 @@ exec python3 starter.py "$@"
 WRAPPER
 chmod +x "$BUILD_DIR/usr/bin/yakuda-connect"
 
-echo "[3/6] Setze Icon und Desktop-Eintrag..."
+echo "      Setze Icon und Desktop-Eintrag..."
 cp assets/yakuda_icon.svg "$BUILD_DIR/usr/share/icons/hicolor/scalable/apps/yakuda-connect.svg"
 cp assets/yakuda_icon_512.png "$BUILD_DIR/usr/share/icons/hicolor/512x512/apps/yakuda-connect.png"
 cp assets/yakuda_icon.svg "$BUILD_DIR/yakuda-connect.svg"
@@ -129,7 +182,7 @@ X-AppImage-Version=$VERSION
 EOF
 cp "$BUILD_DIR/usr/share/applications/yakuda-connect.desktop" "$BUILD_DIR/yakuda-connect.desktop"
 
-echo "[4/6] Bundele Python-Abhaengigkeiten..."
+echo "[5/7] Bundele Python-Abhaengigkeiten..."
 mkdir -p "$BUILD_DIR/usr/lib/python3"
 # PySide6-Essentials statt PySide6: spart mehrere hundert MB (WebEngine, 3D,
 # Charts werden nicht gebraucht). Schlaegt es fehl, muss PySide6 auf dem
@@ -140,10 +193,10 @@ fi
 find "$BUILD_DIR/usr/lib/python3" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
 
 # --- AppRun -----------------------------------------------------------------
-# Laeuft ERST, nachdem die Runtime das Dateisystem eingehaengt hat. Fehler
-# beim Einhaengen selbst kann es also nicht abfangen (siehe Kopf der Datei) —
-# aber es sorgt fuer eine saubere Umgebung und eine verstaendliche Meldung,
-# falls python3 auf dem Zielsystem fehlt.
+# Laeuft ERST, nachdem die Runtime das Abbild eingehaengt hat. Fehler beim
+# Einhaengen selbst kann es also nicht abfangen (siehe Kopf der Datei) — aber
+# es sorgt fuer eine saubere Umgebung und eine verstaendliche Meldung, falls
+# python3 auf dem Zielsystem fehlt.
 cat > "$BUILD_DIR/AppRun" << 'APPRUN'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "$0")")"
@@ -166,77 +219,64 @@ APPRUN
 chmod +x "$BUILD_DIR/AppRun"
 
 # ---------------------------------------------------------------------------
-# 3. Bauen — je Variante mit passendem Runtime
+# 3. Bauen
 # ---------------------------------------------------------------------------
-build_variant() {
-    local variant="$1" url out runtime
-    if [ "$variant" = "fuse3" ]; then
-        url="$RUNTIME_FUSE3_URL"
-        out="$(pwd)/${APP}-${VERSION}-${ARCH}.AppImage"
-    else
-        url="$RUNTIME_FUSE2_URL"
-        out="$(pwd)/${APP}-${VERSION}-${ARCH}-legacy-fuse2.AppImage"
-    fi
-    runtime="$CACHE_DIR/runtime-${variant}-${ARCH}"
+echo "[6/7] Baue AppImage..."
+rm -f "$OUT"
+ARCH="$ARCH" "$APPIMAGETOOL" --runtime-file "$RUNTIME" "$BUILD_DIR" "$OUT"
+chmod +x "$OUT"
 
-    if [ ! -f "$runtime" ]; then
-        echo "      Lade Runtime ($variant)..."
-        if ! curl -fsSL "$url" -o "$runtime"; then
-            echo "[Warn] Runtime fuer $variant nicht ladbar — Variante uebersprungen." >&2
-            rm -f "$runtime"
-            return 1
-        fi
-    fi
-    chmod +x "$runtime"
+# ---------------------------------------------------------------------------
+# 4. Gegenproben
+# ---------------------------------------------------------------------------
+echo "[7/7] Pruefe das Ergebnis..."
 
-    ARCH="$ARCH" "$APPIMAGETOOL" --runtime-file "$runtime" "$BUILD_DIR" "$out"
-    echo "      -> $(basename "$out")"
-}
-
-echo "[5/6] Baue AppImage(s)..."
-BUILT=()
-if [ "$VARIANTS" = "both" ] || [ "$VARIANTS" = "fuse3" ]; then
-    build_variant fuse3 && BUILT+=("${APP}-${VERSION}-${ARCH}.AppImage") || true
-fi
-if [ "$VARIANTS" = "both" ] || [ "$VARIANTS" = "fuse2" ]; then
-    build_variant fuse2 && BUILT+=("${APP}-${VERSION}-${ARCH}-legacy-fuse2.AppImage") || true
-fi
-
-if [ ${#BUILT[@]} -eq 0 ]; then
-    echo "[Fehler] Keine AppImage gebaut." >&2
+# a) Steckt der richtige Runtime wirklich in der fertigen Datei? Der Kopf ist
+#    die erste knappe Megabyte der Datei — dort muessen dieselben Merkmale
+#    stehen wie oben geprueft.
+head -c 2000000 "$OUT" > "$CACHE_DIR/head.bin"
+if grep -aq "FUSERMOUNT_PROG" "$CACHE_DIR/head.bin" && ! grep -aq "libfuse\.so\.2" "$CACHE_DIR/head.bin"; then
+    echo "      Runtime in der Datei: type2 (fuse2 + fuse3) — passt."
+else
+    echo "[Fehler] Die gebaute Datei enthaelt nicht den erwarteten Runtime." >&2
+    echo "         Vermutlich hat appimagetool --runtime-file ignoriert." >&2
+    rm -f "$CACHE_DIR/head.bin"
     exit 1
 fi
+rm -f "$CACHE_DIR/head.bin"
 
-# ---------------------------------------------------------------------------
-# 4. Gegenprobe: startet die gebaute Datei ueberhaupt?
-# ---------------------------------------------------------------------------
-# Bewusst mit --appimage-extract-and-run: das prueft den INHALT (Python,
-# PySide6, unsere Module), unabhaengig davon, ob dieser Rechner FUSE hat.
-echo "[6/6] Teste die gebaute AppImage (offscreen)..."
-TEST_FILE="${BUILT[0]}"
-chmod +x "$TEST_FILE"
-if QT_QPA_PLATFORM=offscreen timeout 120 "./$TEST_FILE" --appimage-extract-and-run --selftest >/dev/null 2>&1; then
+# b) Startet der Inhalt? Bewusst mit --appimage-extract-and-run: das prueft
+#    Python, PySide6 und unsere Module, unabhaengig davon, ob DIESER Rechner
+#    FUSE hat.
+if QT_QPA_PLATFORM=offscreen timeout 120 "$OUT" --appimage-extract-and-run --selftest >/dev/null 2>&1; then
     echo "      Start-Test bestanden."
 else
     echo "      [Hinweis] Automatischer Start-Test nicht eindeutig — bitte einmal von Hand starten."
 fi
 
+# c) Nur zur Information: hat DIESER Rechner ein fusermount, ueber das die
+#    Datei nativ starten kann?
+FM="$(command -v fusermount3 || command -v fusermount || true)"
+if [ -n "$FM" ]; then
+    echo "      Auf diesem Rechner nativ startbar (gefunden: $FM)."
+else
+    echo "      [Hinweis] Kein fusermount auf diesem Rechner — hier nur mit"
+    echo "                --appimage-extract-and-run testbar. Das sagt nichts"
+    echo "                ueber die Zielsysteme aus."
+fi
+
 echo ""
 echo "Fertig:"
-for f in "${BUILT[@]}"; do
-    echo "   $f   ($(du -h "$f" | cut -f1))"
-done
+echo "   $(basename "$OUT")   ($(du -h "$OUT" | cut -f1))"
 cat << EOF
 
-Welche Datei fuer wen?
-   ${APP}-${VERSION}-${ARCH}.AppImage
-       -> Standard. Moderne Systeme (Arch, CachyOS, Fedora 40+,
-          Ubuntu 24.04+, Bazzite, SteamOS). Braucht kein libfuse2.
+Diese eine Datei laeuft auf:
+   * Systemen mit fuse3 (Arch, CachyOS, Fedora 40+, Ubuntu 24.04+,
+     Bazzite, SteamOS)  -> nutzt fusermount3
+   * Systemen mit fuse2 (Ubuntu 22.04 und aelter, Debian 11/12)
+     -> nutzt fusermount
+   libfuse2 muss NICHT installiert sein: libfuse3 steckt statisch im Runtime.
 
-   ${APP}-${VERSION}-${ARCH}-legacy-fuse2.AppImage
-       -> Aeltere Systeme (Ubuntu 22.04 und aelter, Debian 11/12),
-          dort ist libfuse2 vorhanden, fusermount3 dagegen oft nicht.
-
-Laeuft eine der beiden nicht, hilft immer:
-   ./${APP}-${VERSION}-${ARCH}.AppImage --appimage-extract-and-run
+Fehlt FUSE ganz (Container, gehaerteter Kernel, kein /dev/fuse):
+   ./$(basename "$OUT") --appimage-extract-and-run
 EOF

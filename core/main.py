@@ -20,7 +20,7 @@ import webbrowser
 # Diese Zeile hier ist eine ZUSAETZLICHE Kopie und existiert aus einem einzigen
 # Grund: Der Update-Checker aller bereits ausgelieferten Versionen (bis v1.1.4)
 # laedt diese Datei von GitHub und sucht darin per regulaerem Ausdruck nach
-# genau dem Muster  APP_VERSION = "v1.1.5".
+# genau dem Muster  APP_VERSION = "v1.1.6".
 #
 # Faellt die Zeile weg, findet der Ausdruck nichts, und JEDE bereits
 # installierte Version meldet fuer immer "du bist aktuell" — die Nutzer
@@ -88,9 +88,10 @@ import openxr_manager as oxr
 import overlay_manager as ovl
 import paths
 import proc
+import firewall as fw
 from jsonio import update_json
 import version as version_mod
-from translations import tr, set_language, get_language
+from translations import tr, tr_amp, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
 
 from logging_setup import get_logger, read_log_tail
@@ -360,8 +361,8 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             self.ui.sidebar.setCurrentRow(0)
             QMessageBox.warning(
                 self,
-                "Components are missing",
-                "Please install the required system components first to enable the dashboard!"
+                tr("msg_components_title"),
+                tr("msg_components_text")
             )
         else:
             self.ui.sidebar.setCurrentRow(1)
@@ -920,6 +921,8 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.ui.toggle_server.toggled.connect(self.on_server_toggled)
         self.ui.btn_server_check.clicked.connect(self.manual_server_check)
         self.ui.btn_port_status.clicked.connect(self.open_port_9757_firewall)
+        # Sprung ins Einstellungen-Unterregister "VR & OpenXR"
+        self.ui.btn_openxr_shortcut.clicked.connect(self.open_vr_settings)
         self.ui.combo_language.currentIndexChanged.connect(self.on_language_changed)
         # Selbst-Update: kleiner Pfeil neben der App-Version
         self.ui.btn_app_update.clicked.connect(self.start_app_self_update)
@@ -930,8 +933,6 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self._apk_worker = None
 
         # Autosave Trigger
-        self.ui.chk_hand_tracking.clicked.connect(self.trigger_auto_save)
-        self.ui.chk_fbt.clicked.connect(self.trigger_auto_save)
         self.ui.chk_steamvr_tracker.clicked.connect(self.trigger_auto_save)
         self.ui.combo_refresh.activated.connect(self.trigger_auto_save)
         self.ui.chk_pairing.toggled.connect(self.toggle_pairing_mode)
@@ -1010,12 +1011,15 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             self.ui.sidebar.setCurrentRow(0)
             self.ui.pages.setCurrentIndex(0)
             self.ui.sidebar.blockSignals(False)
-            QMessageBox.critical(self, "Zugriff verweigert", "Du kannst andere Funktionen erst nutzen, wenn alle Komponenten installiert sind!")
+            QMessageBox.critical(self, tr("msg_locked_title"), tr("msg_locked_text"))
             return
         self.ui.pages.setCurrentIndex(index)
         if index == 1: self.refresh_headset_list()
         if index == 3: self.check_tools_status()
         if index == 4: self.on_games_tab_opened()
+        # Runtime/Prioritaet koennen sich ausserhalb der App geaendert haben
+        if index == 5 and hasattr(self.ui, "vr_runtime_widget"):
+            self.ui.vr_runtime_widget.refresh()
 
     # ------------------------------------------------------------------ #
     #  Games-Tab
@@ -1064,7 +1068,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
         self.ui.btn_apk_install.setEnabled(False)
         self.ui.btn_apk_cancel.setVisible(True)
-        self.ui.lbl_apk_status.setText("Starte...")
+        self.ui.lbl_apk_status.setText(tr("apk_starting"))
         self.ui.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
 
         self._apk_worker = ApkWorker()
@@ -1133,7 +1137,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             for prog_name, lbl in self.prog_labels.items():
                 text = lbl.text()
                 if "Update" in text:
-                    lbl.setText(tr("pkg_installed") + " (Update available)" if lang == "en" else tr("pkg_installed") + " (Update verfügbar)")
+                    lbl.setText(tr("pkg_installed") + " " + tr("pkg_update_suffix"))
                 elif "✔" in text:
                     lbl.setText(tr("pkg_installed"))
                 elif "⚠" in text:
@@ -1204,7 +1208,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         try:
             vrchat_proton_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            self.ui.lbl_vrchat_status.setText(f"Fehler beim Anlegen des Proton-Ordners: {e}")
+            self.ui.lbl_vrchat_status.setText(tr("vrchat_err_proton").format(err=e))
             self.ui.lbl_vrchat_status.setStyleSheet("color: #bf616a; font-size: 11px;")
             return
 
@@ -1256,14 +1260,14 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             self.ui.btn_vrchat_symlink.setText("✔ Done")
             self.ui.btn_vrchat_symlink.setEnabled(False)
         except Exception as e:
-            self.ui.lbl_vrchat_status.setText(f"Fehler: {e}")
+            self.ui.lbl_vrchat_status.setText(tr("err_generic").format(err=e))
             self.ui.lbl_vrchat_status.setStyleSheet("color: #bf616a; font-size: 11px;")
 
     def trigger_vr_backup(self):
         if create_vr_backup():
-            QMessageBox.information(self, "Backup erfolgreich", "Die VR-Umgebung wurde erfolgreich gesichert!")
+            QMessageBox.information(self, tr("backup_ok_title"), tr("backup_ok_text"))
         else:
-            QMessageBox.critical(self, "Fehler", "Das Backup konnte nicht erstellt werden.")
+            QMessageBox.critical(self, tr("error"), tr("backup_fail_text"))
 
     def trigger_vr_restore(self):
         # FIX: 'self' übergeben, da die Funktion das Parent-Fenster für die Dialoge braucht
@@ -1495,7 +1499,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             QMessageBox.information(self, tr("native_update_title"), tr("native_update_text"))
             return
         if not method:
-            self.ui.lbl_worker_status.setText("Keine Update-Methode verfügbar (yay/paru/dnf).")
+            self.ui.lbl_worker_status.setText(tr("install_no_update_method"))
             return
         self.ui.btn_install.setEnabled(False)
         self.ui.btn_update.setEnabled(False)
@@ -1517,7 +1521,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             QMessageBox.information(self, tr("native_install_title"), tr("native_install_text"))
             return
         if not method:
-            self.ui.lbl_worker_status.setText("Keine Installationsmethode verfügbar (yay/paru/dnf).")
+            self.ui.lbl_worker_status.setText(tr("install_no_method"))
             return
 
         if method == "dnf":
@@ -1549,7 +1553,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                 return
             worker_pkgs, helper = packages_to_process, method
         else:
-            self.ui.lbl_worker_status.setText("Keine Installationsmethode verfügbar (yay/paru/dnf).")
+            self.ui.lbl_worker_status.setText(tr("install_no_method"))
             return
 
         self.ui.btn_install.setEnabled(False)
@@ -1575,67 +1579,80 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
     def open_port_9757_firewall(self):
         """
-        Gibt den WiVRn-Port exakt so frei wie der offizielle WiVRn-Server:
-        1. UFW-App-Profil unter /etc/ufw/applications.d/wivrn schreiben
-        2. 'ufw allow wivrn' ausführen — identisch zu WiVRns do_setup()
-        Fallback: firewall-cmd (Firewalld) für nicht-UFW-Systeme.
+        Gibt die von WiVRn benoetigten Ports frei — mit der Firewall, die auf
+        DIESEM System wirklich zustaendig ist (siehe core/firewall.py).
+
+        Freigegeben wird, was WiVRns README verlangt:
+            9757/tcp + 9757/udp   Verbindung Headset <-> PC
+            5353/udp  (mDNS)      damit das Headset den PC ueberhaupt findet
+
+        Bisher wurde stur zuerst nach ufw gesucht, mDNS blieb zu, und wenn
+        gar keine Firewall lief, gab es eine Fehlermeldung. Alles drei ist
+        hier behoben.
         """
-        WIVRN_PORT = 9757
-        UFW_PROFILE_PATH = "/etc/ufw/applications.d/wivrn"
-        UFW_PROFILE_CONTENT = (
-            "[WiVRn]\n"
-            "title=WiVRn server\n"
-            "description=WiVRn OpenXR streaming server\n"
-            f"ports={WIVRN_PORT}\n"
-        )
+        info = fw.detect()
+        kind = info["kind"]
+        log.info("Firewall erkannt: %s (aktiv=%s, gefunden=%s)",
+                 kind, info["active"], ", ".join(info["installed"]) or "-")
 
-        opened_any = False
-        errors = []
+        # 1. Gar keine Firewall — das ist normal (Arch/CachyOS ab Werk) und
+        #    kein Fehler. Frueher: rote Warnung.
+        if kind is None:
+            QMessageBox.information(self, tr("firewall_none_title"),
+                                    tr("firewall_none_text"))
+            return
 
-        if shutil.which("ufw"):
-            # Schritt 1: Profildatei schreiben (identisch zu WiVRns C++-Code)
-            write_cmd = (
-                f"printf '{UFW_PROFILE_CONTENT}' > {UFW_PROFILE_PATH}"
-            )
-            res_write = proc.run(
-                ["pkexec", "sh", "-c", write_cmd],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
+        # 2. nftables/iptables fassen wir nicht selbst an — dort gibt es keine
+        #    verlaesslich gleiche Stelle fuer eine Regel. Stattdessen die
+        #    fertigen Befehle zum Kopieren.
+        if kind not in fw.SUPPORTED:
+            self._show_firewall_commands(kind, tr("firewall_manual_text").format(fw=kind))
+            return
 
-            if res_write.returncode != 0:
-                errors.append(f"UFW Profil konnte nicht geschrieben werden:\n{res_write.stderr}")
-            else:
-                # Schritt 2: Port über den Profilnamen freigeben — genau wie WiVRn
-                res_allow = proc.run(
-                    ["pkexec", "ufw", "allow", "wivrn"],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
-                if res_allow.returncode == 0:
-                    opened_any = True
-                else:
-                    errors.append(f"UFW Fehler:\n{res_allow.stderr}")
+        # 3. ufw: ist das WiVRn-Profil schon da, ist nichts zu tun (dieselbe
+        #    Pruefung wie im WiVRn-Dashboard) — spart eine Passwortabfrage.
+        if fw.already_configured(kind):
+            self._mark_firewall_done()
+            QMessageBox.information(self, tr("success"),
+                                    tr("firewall_already_text").format(fw=kind))
+            return
 
-        elif shutil.which("firewall-cmd"):
-            # Firewalld-Fallback (z.B. Fedora/openSUSE)
-            res_udp = proc.run(
-                ["pkexec", "firewall-cmd", "--permanent", f"--add-port={WIVRN_PORT}/udp"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
-            res_tcp = proc.run(
-                ["pkexec", "firewall-cmd", "--permanent", f"--add-port={WIVRN_PORT}/tcp"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
-            if res_udp.returncode == 0 and res_tcp.returncode == 0:
-                proc.run(["pkexec", "firewall-cmd", "--reload"], timeout=proc.LONG_TIMEOUT)
-                opened_any = True
-            else:
-                errors.append(f"Firewalld Fehler:\n{res_udp.stderr}")
+        ok, err = fw.apply(kind)
+        if ok:
+            self._mark_firewall_done()
+            text = tr("firewall_ok_text").format(fw=kind)
+            if not info["active"]:
+                text += "\n\n" + tr("firewall_inactive_note").format(fw=kind)
+            QMessageBox.information(self, tr("success"), text)
         else:
-            errors.append("Kein unterstützter Firewall-Manager gefunden (ufw oder firewall-cmd).")
+            self._show_firewall_commands(
+                kind, tr("firewall_fail_text").format(fw=kind, err=err))
 
-        if opened_any:
-            QMessageBox.information(self, "Erfolg", "WiVRn-Firewall-Profil gesetzt und Port freigegeben!")
-            self.ui.btn_port_status.setText("✔ Port & Dashboard gefixt")
-            self.ui.btn_port_status.setStyleSheet("QPushButton { background-color: #a3be8c; color: #2e3440; font-weight: bold; border-radius: 4px; padding: 6px; margin-top: 5px; }")
-        else:
-            if errors:
-                QMessageBox.warning(self, "Firewall Fehler", "\n".join(errors))
+    def _mark_firewall_done(self):
+        """Knopf im Dashboard auf 'erledigt' setzen."""
+        self.ui.btn_port_status.setText(tr_amp("firewall_btn_done"))
+        self.ui.btn_port_status.setStyleSheet(
+            "QPushButton { background-color: #a3be8c; color: #2e3440; font-weight: bold;"
+            " border-radius: 4px; padding: 6px; margin-top: 5px; }")
+
+    def _show_firewall_commands(self, kind, intro):
+        """Zeigt die Befehle zum Selbst-Ausfuehren, mit Kopier-Knopf.
+
+        Ohne Kopier-Knopf tippt sie niemand fehlerfrei ab — und genau in
+        diesem Moment (Firewall haengt) ist der Nutzer ohnehin schon genervt.
+        """
+        commands = "\n".join(fw.manual_commands(kind))
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("firewall_manual_title"))
+        box.setText(intro)
+        box.setInformativeText(
+            "<pre style='font-family:monospace'>" + commands.replace("<", "&lt;") + "</pre>")
+        btn_copy = box.addButton(tr("tools_copy"), QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Ok)
+        box.exec()
+        if box.clickedButton() is btn_copy:
+            QApplication.clipboard().setText(commands)
 
     def update_autostart_fields(self):
         try:
@@ -1663,7 +1680,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                 # Debug-Checkbox
                 from PySide6.QtWidgets import QCheckBox
                 chk_debug = QCheckBox("Debug")
-                chk_debug.setToolTip("Terminal anzeigen (für OSC-Programme zum Debuggen)")
+                chk_debug.setToolTip(tr("autostart_debug_tip"))
                 chk_debug.setFixedWidth(65)
                 chk_debug.setStyleSheet("color: #ebcb8b; font-size: 11px;")
 
@@ -1695,10 +1712,36 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         if not self.ui.num_apps.signalsBlocked(): self.trigger_auto_save()
 
     def browse_custom_app_for_row(self, line_edit):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Programm auswählen", "/usr/bin", "Alle Dateien (*)")
+        file_path, _ = QFileDialog.getOpenFileName(self, tr("dlg_choose_program"), "/usr/bin", tr("dlg_all_files"))
         if file_path:
             line_edit.setText(file_path)
             self.trigger_auto_save()
+
+    def tracking_flags(self):
+        """Liefert (hand_tracking, full_body_tracking) aus der Konfiguration.
+
+        Fuer beides gibt es seit v1.1.6 keinen Schalter mehr im Dashboard:
+        Hand- und Full-Body-Tracking muessen im Headset selbst aktiviert
+        werden, der Haken in der App hat daran nichts geaendert. Die Werte
+        werden aber weiterhin unveraendert mitgespeichert, damit bestehende
+        Konfigurationen beim naechsten Speichern nicht stillschweigend
+        umgeschrieben werden.
+        """
+        data = load_saved_settings() or {}
+        return (bool(data.get("hand_tracking", False)),
+                bool(data.get("full_body_tracking", True)))
+
+    def open_vr_settings(self):
+        """Springt zu Einstellungen -> VR & OpenXR.
+
+        Ueber die Sidebar (nicht direkt ueber pages), damit die Sperre aus
+        on_tab_changed greift, solange Grundpakete fehlen.
+        """
+        self.ui.sidebar.setCurrentRow(5)
+        if hasattr(self.ui, "settings_subtabs"):
+            self.ui.settings_subtabs.setCurrentIndex(1)   # 1 = VR & OpenXR
+        if hasattr(self.ui, "vr_runtime_widget"):
+            self.ui.vr_runtime_widget.refresh()
 
     def trigger_auto_save(self):
         if hasattr(self, 'is_loading') and self.is_loading: return
@@ -1707,9 +1750,10 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             "cmd":   r["input"].text(),
             "debug": r["chk_debug"].isChecked()
         } for r in self.autostart_rows]
+        hand, fbt = self.tracking_flags()
         save_all_settings(
-            self.ui.chk_hand_tracking.isChecked(),
-            self.ui.chk_fbt.isChecked(),
+            hand,
+            fbt,
             self.ui.chk_steamvr_tracker.isChecked(),
             self.ui.combo_refresh.currentText(),
             self.ui.num_apps.text(),
@@ -1728,14 +1772,10 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.ui.combo_language.blockSignals(False)
         self.apply_translations()
 
-        self.ui.chk_hand_tracking.blockSignals(True)
-        self.ui.chk_fbt.blockSignals(True)
         self.ui.chk_steamvr_tracker.blockSignals(True)
         self.ui.combo_refresh.blockSignals(True)
         self.ui.num_apps.blockSignals(True)
 
-        self.ui.chk_hand_tracking.setChecked(data.get("hand_tracking", False))
-        self.ui.chk_fbt.setChecked(data.get("full_body_tracking", True))
         self.ui.chk_steamvr_tracker.setChecked(data.get("steam_tracker", False))
         self.ui.combo_refresh.setCurrentText(data.get("refresh_rate", "Auto"))
 
@@ -1754,8 +1794,6 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                 self.autostart_rows[i]["input"].setText(app.get("cmd", ""))
                 self.autostart_rows[i]["chk_debug"].setChecked(app.get("debug", False))
 
-        self.ui.chk_hand_tracking.blockSignals(False)
-        self.ui.chk_fbt.blockSignals(False)
         self.ui.chk_steamvr_tracker.blockSignals(False)
         self.ui.combo_refresh.blockSignals(False)
         self.ui.num_apps.blockSignals(False)
@@ -1772,13 +1810,15 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                     if not line.strip() or "Headset name" in line: continue
                     self.ui.list_headsets.addItem(line.strip())
             if self.ui.list_headsets.count() == 0: self.ui.list_headsets.addItem("Keine gekoppelten Headsets gefunden.")
-        except Exception as e: self.ui.list_headsets.addItem(f"Fehler: {e}")
+        except Exception as e: self.ui.list_headsets.addItem(tr("err_generic").format(err=e))
 
     def remove_selected_headset(self):
         item = self.ui.list_headsets.currentItem()
         if not item or "Keine" in item.text() or "Server" in item.text(): return
         match = re.match(r'^(\d+)', item.text())
-        if match and QMessageBox.question(self, "Entkoppeln", f"Headset entkoppeln?\n{item.text()}", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+        if match and QMessageBox.question(self, tr("headset_unpair_title"),
+                                     tr("headset_unpair_text").format(name=item.text()),
+                                     QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             proc.run(["wivrnctl", "unpair", match.group(1)], timeout=proc.DEFAULT_TIMEOUT)
             self.refresh_headset_list()
 
@@ -2101,9 +2141,138 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         except Exception:
             return None
 
+    # --- Quellen einlesen und lesbar aufbereiten ------------------------
+    #
+    # `pactl list sources short` liefert nur die rohen Node-Namen
+    # ("alsa_output.usb-Generic_USB_Audio-00.HiFi__Speaker__sink.monitor").
+    # In einer Liste mit einem Dutzend Eintraegen ist darin nichts zu finden:
+    # alle fangen gleich an, der unterscheidende Teil steht in der Mitte, und
+    # Mikrofone, virtuelle Quellen und Monitore stehen bunt gemischt.
+    #
+    # Deshalb wird die LANGE Ausgabe (`pactl list sources`) gelesen. Die
+    # enthaelt zu jeder Quelle eine "Description" — den Klartextnamen, den
+    # auch die Systemeinstellungen anzeigen. Sortiert wird in drei Gruppen:
+    #
+    #   Mikrofone          echte Aufnahmegeraete (alsa_input, Bluetooth)
+    #   Virtuelle Quellen  z. B. PipeWeaver-Nodes, Null-Sinks
+    #   Monitore           Mithoeren einer Ausgabe (.monitor) — selten gemeint,
+    #                      steht deshalb unten
+    #
+    # Der echte Node-Name bleibt als userData am Eintrag haengen (den braucht
+    # pactl) und steht zusaetzlich im Tooltip, damit nichts verlorengeht.
+    # ------------------------------------------------------------------
+    _MIC_KIND_MIC = "mic"
+    _MIC_KIND_VIRTUAL = "virtual"
+    _MIC_KIND_MONITOR = "monitor"
+
+    def _mic_list_sources(self):
+        """[(name, description, kind)] aller Aufnahmequellen.
+
+        LC_ALL=C erzwingt englische Feldnamen — pactl uebersetzt seine
+        Ausgabe sonst mit, und "Description:" hiesse auf einem deutschen
+        System "Beschreibung:". Ohne das waere die Erkennung sprachabhaengig.
+        """
+        import re as _re
+
+        env = dict(os.environ, LC_ALL="C", LANG="C")
+        try:
+            res = subprocess.run(["pactl", "list", "sources"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, timeout=5, env=env)
+            blocks = _re.split(r"\n(?=Source #)", res.stdout)
+        except Exception as exc:
+            log.debug("pactl list sources fehlgeschlagen (%s) — nutze Kurzform.", exc)
+            blocks = []
+
+        out = []
+        for block in blocks:
+            # WICHTIG: [^\S\n] statt \s — \s schliesst den Zeilenumbruch ein.
+            # Mit \s* wuerde bei einer LEEREN "Description:"-Zeile munter in
+            # die naechste Zeile hineingelesen und deren Inhalt ("Monitor of
+            # Sink: n/a") als Beschreibung angezeigt.
+            m_name = _re.search(r"^[^\S\n]*Name:[^\S\n]*(\S+)[^\S\n]*$", block, _re.M)
+            if not m_name:
+                continue
+            name = m_name.group(1)
+            m_desc = _re.search(r"^[^\S\n]*Description:[^\S\n]*(\S.*?)[^\S\n]*$", block, _re.M)
+            desc = m_desc.group(1) if m_desc else ""
+            m_mon = _re.search(r"^[^\S\n]*Monitor of Sink:[^\S\n]*(\S.*?)[^\S\n]*$", block, _re.M)
+            is_monitor = name.endswith(".monitor") or bool(
+                m_mon and m_mon.group(1).strip().lower() not in ("n/a", "none", ""))
+            out.append((name, desc, self._mic_kind(name, is_monitor)))
+
+        if out:
+            return out
+
+        # Rueckfall: die Kurzform kennt keine Beschreibungen, reicht aber, um
+        # ueberhaupt etwas anzuzeigen (z. B. wenn die lange Ausgabe scheitert).
+        try:
+            res = subprocess.run(["pactl", "list", "sources", "short"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True, timeout=3, env=env)
+        except Exception:
+            return []
+        for line in res.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[1].strip():
+                name = parts[1].strip()
+                out.append((name, "", self._mic_kind(name, name.endswith(".monitor"))))
+        return out
+
+    def _mic_kind(self, name, is_monitor):
+        """Grobe Einordnung einer Quelle in eine der drei Gruppen.
+
+        Feinheit: Der Monitor eines VIRTUELLEN Sinks (z. B.
+        "pipeweaver_system.monitor") landet bewusst bei den virtuellen
+        Quellen und nicht unter "Monitore". Wer sich solche Nodes gebaut hat,
+        sucht sie beisammen — sie sind der Zweck des Aufbaus, waehrend die
+        Monitore der Soundkarte nur Beifang der Geraeteliste sind.
+        """
+        if is_monitor:
+            if name.startswith(("alsa_output.", "bluez_output.", "bluez_sink.")):
+                return self._MIC_KIND_MONITOR
+            return self._MIC_KIND_VIRTUAL
+        if name.startswith(("alsa_input.", "bluez_input.", "bluez_source.")):
+            return self._MIC_KIND_MIC
+        return self._MIC_KIND_VIRTUAL
+
+    def _mic_label(self, name, desc, kind):
+        """Anzeigetext: Klartextname, wenn vorhanden — sonst der gekuerzte
+        Node-Name (Hersteller-Praefix und Endung weg)."""
+        text = (desc or "").strip()
+        if not text:
+            short = name
+            for prefix in ("alsa_input.", "alsa_output.", "bluez_input.",
+                           "bluez_source.", "bluez_output."):
+                if short.startswith(prefix):
+                    short = short[len(prefix):]
+                    break
+            if short.endswith(".monitor"):
+                short = short[:-len(".monitor")]
+            # "usb-Generic_USB_Audio-00.HiFi__Speaker__sink" -> lesbarer machen
+            short = short.replace("__", " ").replace("_", " ").replace(".", " · ")
+            text = " ".join(short.split())   # Mehrfach-Leerzeichen einsammeln
+        if kind == self._MIC_KIND_MONITOR:
+            return "🔊 " + text
+        if kind == self._MIC_KIND_VIRTUAL:
+            return "🎛 " + text
+        return "🎤 " + text
+
+    def _mic_add_header(self, combo, text):
+        """Nicht waehlbare Gruppenueberschrift in die Liste einhaengen."""
+        combo.addItem(text)
+        idx = combo.count() - 1
+        try:
+            item = combo.model().item(idx)
+            item.setEnabled(False)          # Qt ueberspringt sie auch per Tastatur
+            from PySide6.QtGui import QColor
+            item.setForeground(QColor("#7b88a1"))
+        except Exception as exc:
+            log.debug("_mic_add_header: Kopfzeile nicht formatierbar — %s", exc)
+
     def refresh_mic_sources(self):
-        """Liest `pactl list sources short` und füllt das Dropdown. Die aktuell
-        aktive Standard-Quelle wird mit ● markiert und vorausgewählt."""
+        """Fuellt das Dropdown gruppiert (Mikrofone / Virtuelle / Monitore).
+        Die aktive Standard-Quelle wird mit ● markiert und vorausgewaehlt."""
         combo = self.ui.combo_mic_source
         combo.clear()
 
@@ -2116,33 +2285,42 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.ui.btn_mic_set.setEnabled(True)
         self.ui.btn_mic_reset.setEnabled(True)
 
-        try:
-            res = subprocess.run(["pactl", "list", "sources", "short"],
-                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                 text=True, timeout=3)
-        except Exception as e:
-            self.ui.lbl_mic_status.setText(tr("mic_status_error").format(err=e))
-            return
-
-        current = self._current_default_source()
-        sources = []
-        for line in res.stdout.splitlines():
-            parts = line.split("\t")
-            # Format: index \t name \t driver \t sample-spec \t state
-            if len(parts) >= 2 and parts[1].strip():
-                sources.append(parts[1].strip())
-
+        sources = self._mic_list_sources()
         if not sources:
             self.ui.lbl_mic_status.setText(tr("mic_status_none"))
             return
 
-        select_index = 0
-        for i, name in enumerate(sources):
-            label = ("● " + name) if name == current else name
-            combo.addItem(label, name)  # echter Name als userData
-            if name == current:
-                select_index = i
-        combo.setCurrentIndex(select_index)
+        current = self._current_default_source()
+        groups = [
+            (self._MIC_KIND_MIC,     tr("mic_grp_mics")),
+            (self._MIC_KIND_VIRTUAL, tr("mic_grp_virtual")),
+            (self._MIC_KIND_MONITOR, tr("mic_grp_monitors")),
+        ]
+
+        select_index = -1
+        first_real = -1
+        for kind, title in groups:
+            entries = [e for e in sources if e[2] == kind]
+            if not entries:
+                continue
+            self._mic_add_header(combo, title)
+            for name, desc, _k in sorted(entries, key=lambda e: (e[1] or e[0]).lower()):
+                label = self._mic_label(name, desc, kind)
+                if name == current:
+                    label = "● " + label
+                combo.addItem(label, name)
+                idx = combo.count() - 1
+                # Roher Node-Name bleibt im Tooltip nachschlagbar
+                combo.setItemData(idx, name, Qt.ToolTipRole)
+                if first_real < 0:
+                    first_real = idx
+                if name == current:
+                    select_index = idx
+
+        if select_index < 0:
+            select_index = first_real
+        if select_index >= 0:
+            combo.setCurrentIndex(select_index)
 
         if current:
             self.ui.lbl_mic_status.setText(tr("mic_status_current").format(name=current))
@@ -2266,7 +2444,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     def start_wivrn_server(self):
         current_settings = load_saved_settings()
         if current_settings.get("first_time_vr_setup", 0) == 0:
-            QMessageBox.information(self, "Erststart", "Proton & WiVRn werden initialisiert. Setze deine Brille auf.")
+            QMessageBox.information(self, tr("firstrun_title"), tr("firstrun_text"))
             # Erst abspeichern...
             save_all_settings(setup_state=1, hand=False, fbt=True, steam=False, refresh="Auto", count="1", apps_data=[])
             # ...und sofort in der laufenden App-Instanz anwenden/nachladen!

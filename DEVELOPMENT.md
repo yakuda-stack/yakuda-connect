@@ -117,7 +117,7 @@ Siehe `UPDATE-ANLEITUNG-yakuda-connect.md`. Kurz:
 ```bash
 python3 scripts/bump_version.py 1.3.0    # setzt version.py, main.py, PKGBUILD
 # CHANGELOG-Block schreiben, committen, taggen, pushen
-bash build_appimage.sh                   # beide AppImage-Varianten
+bash build_appimage.sh                   # eine AppImage (fuse2 + fuse3)
 ```
 
 **`APP_VERSION` in `core/main.py` niemals entfernen.** Der Update-Checker

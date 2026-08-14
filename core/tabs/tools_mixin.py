@@ -58,7 +58,7 @@ class ToolsTabMixin:
         for key, card in self.ui.tool_cards.items():
             entry = cache.get(key)
             if entry is None:
-                card["lbl_status"].setText("Unbekannt — bitte Update-Check starten")
+                card["lbl_status"].setText(tr("tools_unknown"))
                 card["lbl_status"].setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
                 card["lbl_version"].setText("")
                 card["lbl_update"].setText("")
@@ -116,7 +116,7 @@ class ToolsTabMixin:
 
         elif pm_inst:
             card["lbl_version"].setText(f"v{pm_ver}" if pm_ver else "")
-            card["lbl_update"].setText("⬆ Update verfügbar" if pm_upd else "")
+            card["lbl_update"].setText(tr("tools_update") if pm_upd else "")
             st.setText(tr("tools_pm_ok").format(helper=pm_helper))
             st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
             # Per yay/paru installiert -> der Knopf wird zum Löschen-Knopf.
@@ -181,10 +181,10 @@ class ToolsTabMixin:
         self._last_tools_check_ts = time.time()
 
         self.ui.btn_tools_check.setEnabled(False)
-        self.ui.btn_tools_check.setText("⏳ Prüfe...")
+        self.ui.btn_tools_check.setText("⏳ " + tr("tools_checking"))
 
         for key, card in self.ui.tool_cards.items():
-            card["lbl_status"].setText("Prüfe...")
+            card["lbl_status"].setText(tr("tools_checking"))
             card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px; font-style: italic;")
 
         tools = {key: card.get("tool", {"pkg": card["pkg"]})
@@ -196,7 +196,7 @@ class ToolsTabMixin:
 
     def _on_tools_check_done(self):
         self.ui.btn_tools_check.setEnabled(True)
-        self.ui.btn_tools_check.setText("🔄 Nach Updates suchen")
+        self.ui.btn_tools_check.setText(tr("tools_check_btn"))
         self._tools_status_worker = None
 
     def _load_programs_cache(self) -> dict:
