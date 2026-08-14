@@ -114,12 +114,28 @@ bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/mai
 ```
 
 #### Option B: Manual AppImage (No Installation Required)
-1. Navigate to the **Releases** section on GitHub[cite: 2].
-2. Download the latest `yakuda-connect-x86_64.AppImage`[cite: 2].
-3. Make the file executable[cite: 2]:
-   - **Via GUI:** Right-click the file -> Properties -> Permissions -> Enable "Allow executing file as program"[cite: 2].
-   - **Via Terminal:** `chmod +x yakuda-connect-*.AppImage`[cite: 2].
-4. Double-click the file to launch the dashboard![cite: 2]
+1. Navigate to the **Releases** section on GitHub.
+2. Download the AppImage that matches your system:
+
+   | File | For |
+   |---|---|
+   | `yakuda-connect-<version>-x86_64.AppImage` | **Most systems.** Arch, CachyOS, Fedora 40+, Ubuntu 24.04+, Bazzite, SteamOS. Needs no `libfuse2`. |
+   | `yakuda-connect-<version>-x86_64-legacy-fuse2.AppImage` | **Older systems.** Ubuntu 22.04 and earlier, Debian 11/12. |
+
+3. Make the file executable:
+   - **Via GUI:** Right-click the file -> Properties -> Permissions -> Enable "Allow executing file as program".
+   - **Via Terminal:** `chmod +x yakuda-connect-*.AppImage`
+4. Double-click the file to launch the dashboard!
+
+> **If it won't start** with an error mentioning `libfuse` or `fusermount`, run it
+> unpacked instead — this works on every system, it is just slightly slower to start:
+> ```bash
+> ./yakuda-connect-*.AppImage --appimage-extract-and-run
+> ```
+
+> **Something not working?** The app writes a log to `~/.cache/yakuda-connect/app.log`.
+> Attaching it to a bug report or Discord message makes problems far easier to track down.
+> For more detail, start with `YAKUDA_LOG_LEVEL=DEBUG yakuda-connect`.
 
 ---
 

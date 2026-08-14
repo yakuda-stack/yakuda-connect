@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 import os
-import shutil
 import subprocess
 import json
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QComboBox, QSlider, QGroupBox, QFormLayout,
-                               QPushButton, QMessageBox, QLineEdit, QApplication)
+                               QPushButton, QMessageBox)
 from PySide6.QtCore import Qt
 
 # Importiert aus dem selben Verzeichnis (core)
 from config_manager import save_all_settings, load_saved_settings
 from translations import tr
 import vr_environment as venv
+
+from logging_setup import get_logger
+import proc
+
+log = get_logger("streaming_tab")
+
 
 
 
@@ -302,18 +307,18 @@ class StreamingTab(QWidget):
 
         if os.path.exists(wivrn_config_file):
             try:
-                with open(wivrn_config_file, "r") as f:
+                with open(wivrn_config_file) as f:
                     wivrn_data = json.load(f)
 
                 wivrn_data["openvr-compat-path"] = target_path
-                print(f"[Streaming Tab] openvr-compat-path -> '{target_path}'.")
+                log.info(f"[Streaming Tab] openvr-compat-path -> '{target_path}'.")
 
                 with open(wivrn_config_file, "w") as f:
                     json.dump(wivrn_data, f, indent=4)
             except Exception as e:
-                print(f"[Fehler] Konnte WiVRn-config.json nicht aktualisieren: {e}")
+                log.warning(f"[Fehler] Konnte WiVRn-config.json nicht aktualisieren: {e}")
         else:
-            print(f"[Fehler] WiVRn config.json nicht gefunden unter {wivrn_config_file}.")
+            log.warning(f"[Fehler] WiVRn config.json nicht gefunden unter {wivrn_config_file}.")
 
         self.trigger_auto_save()
 
@@ -322,7 +327,7 @@ class StreamingTab(QWidget):
         try:
             active_json = os.path.expanduser("~/.config/openxr/1/active_runtime.json")
             if os.path.exists(active_json):
-                with open(active_json, "r") as f:
+                with open(active_json) as f:
                     content = f.read()
                     if "wivrn" in content.lower():
                         self.lbl_active_runtime.setText(tr("streaming_rt_wivrn"))
@@ -391,7 +396,7 @@ class StreamingTab(QWidget):
 
         try:
             res = subprocess.run(["getcap", path], stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, text=True)
+                                 stderr=subprocess.DEVNULL, text=True, timeout=proc.DEFAULT_TIMEOUT)
             has_cap = "cap_sys_nice" in res.stdout.lower()
         except Exception:
             has_cap = False
@@ -414,7 +419,7 @@ class StreamingTab(QWidget):
         try:
             res = subprocess.run(
                 ["pkexec", "setcap", "cap_sys_nice+ep", path],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
             if res.returncode == 0:
                 QMessageBox.information(self, tr("streaming_prio_ok_title"),
                                         tr("streaming_prio_ok_text"))

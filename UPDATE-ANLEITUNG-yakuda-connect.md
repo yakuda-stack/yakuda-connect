@@ -77,10 +77,64 @@ TEIL B: UPDATE (bei neuer Version, z.B. 1.1.1 -> 1.3.0)
 ====================================================================
 
 ## 1. Projekt: Version hochsetzen
-  - APP_VERSION in core/main.py
-  - CHANGELOG: neuen Block GANZ OBEN (alte nie umbenennen oder mergen)
-  - Projekt-PKGBUILD (packaging/aur/): pkgver hoch, pkgrel=1
-    committen, pushen, taggen, Tag pushen, GitHub-Release anlegen
+
+  SEIT v1.1.5 macht das ein Skript — nicht mehr drei Dateien von Hand:
+
+    cd ~/Schreibtisch/yakuda-connect
+    python3 scripts/bump_version.py 1.3.0
+
+  Das setzt gleichzeitig:
+    - core/version.py         VERSION      (die Quelle der Wahrheit)
+    - core/main.py            APP_VERSION  (Anker, siehe Kasten unten)
+    - packaging/aur/PKGBUILD  pkgver + pkgrel=1
+
+  Danach von Hand:
+    - CHANGELOG.md: neuen Block GANZ OBEN (alte nie umbenennen oder mergen)
+    - committen, pushen, taggen, Tag pushen, GitHub-Release anlegen
+
+  Vor dem Taggen kurz gegenprüfen:
+
+    python3 scripts/bump_version.py --check     # alle Stellen gleich?
+    QT_QPA_PLATFORM=offscreen python3 tests/smoke.py
+    python3 -m pytest tests/ -q
+
+  (Dieselben Prüfungen laufen auch automatisch in GitHub Actions. Bei einem
+   Tag wird zusätzlich geprüft, ob der Tag-Name zur Version im Code passt —
+   ein v1.3.0-Tag mit 1.2.9 im Code fällt also auf, bevor das AUR baut.)
+
+  +---------------------------------------------------------------------+
+  | WARUM APP_VERSION IN core/main.py STEHEN BLEIBEN MUSS                |
+  |                                                                     |
+  | Der Update-Checker aller bereits ausgelieferten Versionen (bis       |
+  | v1.1.4) lädt core/main.py von GitHub und sucht darin per regulärem   |
+  | Ausdruck nach   APP_VERSION = "v1.2.3".                             |
+  |                                                                     |
+  | Fällt diese Zeile weg, findet der Ausdruck nichts, und JEDE bereits  |
+  | installierte Version meldet für immer "du bist aktuell". Die Nutzer  |
+  | bekommen nie wieder ein Update angeboten — auch nicht mit späteren   |
+  | Releases. Deshalb pflegt bump_version.py sie mit, und der            |
+  | Smoke-Test schlägt Alarm, wenn sie fehlt oder abweicht.              |
+  +---------------------------------------------------------------------+
+
+## 1b. AppImage bauen (optional, fürs GitHub-Release)
+
+    bash build_appimage.sh          # baut BEIDE Varianten
+
+  Ergebnis sind zwei Dateien — beide ans Release anhängen:
+
+    yakuda-connect-<ver>-x86_64.AppImage
+        Standard. Neuerer Runtime mit statisch gelinktem libfuse3,
+        braucht kein libfuse2-Paket. Arch, CachyOS, Fedora 40+,
+        Ubuntu 24.04+, Bazzite, SteamOS.
+
+    yakuda-connect-<ver>-x86_64-legacy-fuse2.AppImage
+        Für ältere Systeme (Ubuntu 22.04 und älter, Debian 11/12),
+        wo libfuse2 vorhanden ist, fusermount3 aber oft nicht.
+
+  Läuft eine der beiden beim Nutzer nicht, hilft immer:
+        ./yakuda-connect-<ver>-x86_64.AppImage --appimage-extract-and-run
+
+  Nur eine Variante bauen: bash build_appimage.sh fuse3   (bzw. fuse2)
 
 ## 2. AUR aktualisieren (ZUERST muss der GitHub-Tag online sein!)
     cd ~/aur/yakuda-connect
@@ -115,6 +169,15 @@ DIE HÄUFIGSTEN FEHLER
                                (Lektion: python-python-osc gab es nie.)
 7. yay -Ss findet es nicht  -> normal, Cache-Index braucht Stunden.
                                yay -S yakuda-connect geht sofort.
+8. Version nur teilweise    -> nicht mehr von Hand editieren, sondern
+   hochgesetzt                 scripts/bump_version.py benutzen.
+                               Kontrolle: bump_version.py --check
+9. APP_VERSION aus main.py  -> NIEMALS entfernen. Alte Clients finden
+   entfernt/umbenannt          sonst nie wieder ein Update (Kasten Teil B.1).
+10. CI ist rot nach Push    -> lokal nachstellen:
+                               ruff check core ui tests scripts
+                               QT_QPA_PLATFORM=offscreen python3 tests/smoke.py
+                               python3 -m pytest tests/ -q
 
 ====================================================================
 CHAOTIC-AUR (optional, wie beim letzten Projekt)

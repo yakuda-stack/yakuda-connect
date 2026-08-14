@@ -40,6 +40,13 @@ import subprocess
 
 import vr_environment as venv
 
+from logging_setup import get_logger
+from jsonio import update_json
+import proc
+
+log = get_logger("games")
+
+
 HOME = os.path.expanduser("~")
 APP_CONFIG = os.path.join(HOME, ".config/yakuda-connect/config/config.json")
 
@@ -392,15 +399,15 @@ def _steamapps_dirs():
         vdf = os.path.join(sa, "libraryfolders.vdf")
         if os.path.isfile(vdf):
             try:
-                with open(vdf, "r", errors="ignore") as f:
+                with open(vdf, errors="ignore") as f:
                     content = f.read()
                 # "path"  "/mnt/spiele/SteamLibrary"
                 for m in re.finditer(r'"path"\s+"([^"]+)"', content):
                     extra = os.path.join(m.group(1), "steamapps")
                     if os.path.isdir(extra):
                         dirs.append(extra)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("_steamapps_dirs: ignoriert — %s", exc)
     # Duplikate entfernen, Reihenfolge erhalten
     seen, unique = set(), []
     for d in dirs:
@@ -493,7 +500,7 @@ _VR_SCAN_MAX_DEPTH = 7     # UE: Engine/Binaries/ThirdParty/OpenXR/win64/... = 5
 def _parse_acf(path):
     """Liest appid, name und installdir aus einer appmanifest_<id>.acf."""
     try:
-        with open(path, "r", errors="ignore") as f:
+        with open(path, errors="ignore") as f:
             content = f.read()
     except Exception:
         return None
@@ -530,8 +537,8 @@ def _looks_like_vr_game(steamapps_dir, installdir):
         try:
             if glob.glob(os.path.join(root, pattern)):
                 return True
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("_looks_like_vr_game: ignoriert — %s", exc)
 
     # --- Stufe 2: begrenzter Walk als Fallback ---------------------------- #
     root_depth = root.rstrip(os.sep).count(os.sep)
@@ -550,8 +557,8 @@ def _looks_like_vr_game(steamapps_dir, installdir):
             for f in files:
                 if f.lower() in _VR_MARKER_FILES:
                     return True
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("_looks_like_vr_game: ignoriert — %s", exc)
     return False
 
 
@@ -598,7 +605,7 @@ def scan_installed_games():
 # --------------------------------------------------------------------------- #
 def _load_app_config():
     try:
-        with open(APP_CONFIG, "r") as f:
+        with open(APP_CONFIG) as f:
             content = f.read().strip()
             return json.loads(content) if content else {}
     except Exception:
@@ -637,16 +644,16 @@ def load_cached_games():
 def save_cached_games(tested, untested):
     """Schreibt beide Scan-Ergebnisse fest in die Config
     (Keys 'detected_games' + 'detected_games_untested')."""
-    try:
-        data = _load_app_config()
-        data["detected_games"] = list(tested)
-        data["detected_games_untested"] = [
-            {"appid": g["appid"], "name": g["name"]} for g in untested]
-        os.makedirs(os.path.dirname(APP_CONFIG), exist_ok=True)
-        with open(APP_CONFIG, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"[Games] Konnte Spiele-Cache nicht speichern: {e}")
+    # update_json liest, aendert gezielt und schreibt atomar zurueck — so
+    # geht kein fremder Schluessel der config.json verloren, auch wenn eine
+    # andere Stelle sie parallel erweitert hat.
+    ok = update_json(APP_CONFIG, {
+        "detected_games": list(tested),
+        "detected_games_untested": [
+            {"appid": g["appid"], "name": g["name"]} for g in untested],
+    })
+    if not ok:
+        log.warning("Spiele-Cache konnte nicht gespeichert werden.")
 
 
 # --------------------------------------------------------------------------- #
@@ -666,8 +673,8 @@ def detect_gpu_vendor():
                 return "amd"
             if "nvidia" in drv or "nouveau" in drv:
                 return "nvidia"
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("detect_gpu_vendor: ignoriert — %s", exc)
     # Fallback: lspci
     try:
         out = subprocess.run(["lspci"], capture_output=True, text=True,
@@ -676,15 +683,15 @@ def detect_gpu_vendor():
             return "nvidia"
         if "amd" in out or "radeon" in out or "advanced micro devices" in out:
             return "amd"
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("detect_gpu_vendor: ignoriert — %s", exc)
     return "unknown"
 
 
 def is_cachyos():
     """True auf CachyOS (bestimmt, welche Proton-Empfehlung 'main' ist)."""
     try:
-        with open("/etc/os-release", "r") as f:
+        with open("/etc/os-release") as f:
             content = f.read().lower()
         return bool(re.search(r'^id=.*cachyos', content, re.MULTILINE)) or \
             "cachyos" in "".join(re.findall(r'^id_like=(.*)$', content, re.MULTILINE))
@@ -877,8 +884,8 @@ def find_game_cover(appid):
                         p = os.path.join(grid, f"{appid}p.{ext}")
                         if os.path.isfile(p):
                             return p
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("find_game_cover: ignoriert — %s", exc)
     return None
 
 
@@ -991,15 +998,15 @@ def _backup_file(path):
     try:
         stamp = __import__("datetime").datetime.now().strftime("%Y%m%d_%H%M%S")
         shutil.copy2(path, f"{path}.bak.{stamp}")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("_backup_file: ignoriert — %s", exc)
 
 
 def steam_is_running():
     """True, wenn ein Steam-Client-Prozess läuft (Änderungen an den VDFs
     greifen dann erst nach einem Steam-Neustart)."""
     try:
-        r = subprocess.run(["pgrep", "-x", "steam"], capture_output=True)
+        r = subprocess.run(["pgrep", "-x", "steam"], capture_output=True, timeout=proc.DEFAULT_TIMEOUT)
         return r.returncode == 0
     except Exception:
         return False
@@ -1084,7 +1091,7 @@ def set_steam_compat_tool(appid, tool_name):
     if not path:
         return False, "config.vdf nicht gefunden"
     try:
-        with open(path, "r", errors="ignore") as f:
+        with open(path, errors="ignore") as f:
             text = f.read()
 
         steam_span = (_vdf_descend(text, ["InstallConfigStore", "Software", "Valve", "Steam"])
@@ -1151,7 +1158,7 @@ def set_steam_launch_options(appid, options):
             if not os.path.isfile(path):
                 continue
             try:
-                with open(path, "r", errors="ignore") as f:
+                with open(path, errors="ignore") as f:
                     text = f.read()
                 apps = (_vdf_descend(text, ["UserLocalConfigStore", "Software",
                                             "Valve", "Steam", "apps"])
@@ -1199,18 +1206,12 @@ def load_selected_protons():
 
 def save_selected_proton(appid, version):
     """Merkt die per 'Use' gewählte Version dauerhaft in der App-Config."""
-    try:
-        data = _load_app_config()
-        sel = data.get("games_selected_proton", {})
-        if not isinstance(sel, dict):
-            sel = {}
-        sel[str(appid)] = version
-        data["games_selected_proton"] = sel
-        os.makedirs(os.path.dirname(APP_CONFIG), exist_ok=True)
-        with open(APP_CONFIG, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"[Games] Konnte Proton-Auswahl nicht speichern: {e}")
+    sel = _load_app_config().get("games_selected_proton", {})
+    if not isinstance(sel, dict):
+        sel = {}
+    sel[str(appid)] = version
+    if not update_json(APP_CONFIG, {"games_selected_proton": sel}):
+        log.warning("Proton-Auswahl konnte nicht gespeichert werden.")
 
 
 # --------------------------------------------------------------------------- #
@@ -1325,16 +1326,10 @@ def load_launch_toggles(appid, extra_toggles=None):
 
 def save_launch_toggles(appid, enabled_keys, custom):
     """Merkt Toggles + eigene Parameter eines Spiels dauerhaft in der Config."""
-    try:
-        data = _load_app_config()
-        all_t = data.get("games_launch_toggles", {})
-        if not isinstance(all_t, dict):
-            all_t = {}
-        all_t[str(appid)] = {"toggles": list(enabled_keys),
-                             "custom": (custom or "").strip()}
-        data["games_launch_toggles"] = all_t
-        os.makedirs(os.path.dirname(APP_CONFIG), exist_ok=True)
-        with open(APP_CONFIG, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"[Games] Konnte Startparameter-Toggles nicht speichern: {e}")
+    all_t = _load_app_config().get("games_launch_toggles", {})
+    if not isinstance(all_t, dict):
+        all_t = {}
+    all_t[str(appid)] = {"toggles": list(enabled_keys),
+                         "custom": (custom or "").strip()}
+    if not update_json(APP_CONFIG, {"games_launch_toggles": all_t}):
+        log.warning("Startparameter-Toggles konnten nicht gespeichert werden.")

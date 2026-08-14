@@ -6,7 +6,13 @@ import datetime
 import subprocess
 from PySide6.QtWidgets import QMessageBox
 import vr_environment as venv
-import openxr_manager as oxr
+
+from logging_setup import get_logger
+from jsonio import write_json_atomic
+import proc
+
+log = get_logger("backup_manager")
+
 
 HOME = os.path.expanduser("~")
 BACKUP_DIR = os.path.join(HOME, ".config/yakuda-connect/backup")
@@ -37,7 +43,7 @@ GITHUB_BACKUP_TARBALL = (
 # --------------------------------------------------------------------------- #
 def _load_app_config():
     try:
-        with open(APP_CONFIG_FILE, "r") as f:
+        with open(APP_CONFIG_FILE) as f:
             content = f.read().strip()
             return json.loads(content) if content else {}
     except Exception:
@@ -45,12 +51,8 @@ def _load_app_config():
 
 
 def _save_app_config(data):
-    try:
-        os.makedirs(os.path.dirname(APP_CONFIG_FILE), exist_ok=True)
-        with open(APP_CONFIG_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"[Backup] Konnte Backup-Flag nicht speichern: {e}")
+    if not write_json_atomic(APP_CONFIG_FILE, data):
+        log.warning("Backup-Flag konnte nicht gespeichert werden.")
 
 
 def mark_backup_created():
@@ -93,7 +95,7 @@ def auto_backup_on_start():
     if not any(os.path.isdir(p) for p in candidates):
         return False
 
-    print("[Backup] Kein Backup vorhanden, VR-Umgebung erkannt — erstelle automatisches Erst-Backup...")
+    log.info("[Backup] Kein Backup vorhanden, VR-Umgebung erkannt — erstelle automatisches Erst-Backup...")
     return create_vr_backup()
 
 
@@ -114,7 +116,7 @@ def auto_backup_on_start():
 # --------------------------------------------------------------------------- #
 def _distro_id():
     try:
-        with open("/etc/os-release", "r") as f:
+        with open("/etc/os-release") as f:
             data = dict(
                 line.strip().split("=", 1)
                 for line in f if "=" in line and not line.startswith("#")
@@ -158,12 +160,12 @@ def _write_backup_meta(origin, fingerprint=None, root=None):
         with open(path, "w") as f:
             json.dump(meta, f, indent=4)
     except Exception as e:
-        print(f"[Backup] Meta-Datei konnte nicht geschrieben werden: {e}")
+        log.warning(f"[Backup] Meta-Datei konnte nicht geschrieben werden: {e}")
 
 
 def _read_backup_meta(root):
     try:
-        with open(os.path.join(root, "backup_meta.json"), "r") as f:
+        with open(os.path.join(root, "backup_meta.json")) as f:
             return json.load(f)
     except Exception:
         return {}
@@ -232,7 +234,7 @@ def create_vr_backup():
         mark_backup_created()
         return True
     except Exception as e:
-        print(f"[Backup Fehler] Sicherung fehlgeschlagen: {e}")
+        log.warning(f"[Backup Fehler] Sicherung fehlgeschlagen: {e}")
         return False
 
 def restore_vr_environment(parent_window):
@@ -243,7 +245,7 @@ def restore_vr_environment(parent_window):
     """
     # Falls noch überhaupt kein Backup-Ordner existiert, legen wir jetzt das erste an!
     if not os.path.exists(BACKUP_DIR) or not os.listdir(BACKUP_DIR):
-        print("[Backup] Kein Backup gefunden. Erstelle ersten System-Wiederherstellungspunkt...")
+        log.info("[Backup] Kein Backup gefunden. Erstelle ersten System-Wiederherstellungspunkt...")
         if create_vr_backup():
             QMessageBox.information(parent_window, "Backup erstellt",
                                     "Es wurde erfolgreich ein erster sauberer System-Wiederherstellungspunkt deiner VR-Laufumgebung angelegt!")
@@ -348,8 +350,8 @@ def _apply_restore(root):
                         ("opt/opencomposite", "/opt/opencomposite")):
         src = os.path.join(root, b_sub)
         if os.path.exists(src):
-            subprocess.run(["pkexec", "rm", "-rf", dest], check=True)
-            subprocess.run(["pkexec", "cp", "-r", src, dest], check=True)
+            subprocess.run(["pkexec", "rm", "-rf", dest], check=True, timeout=proc.LONG_TIMEOUT)
+            subprocess.run(["pkexec", "cp", "-r", src, dest], check=True, timeout=proc.LONG_TIMEOUT)
 
     return notes
 
@@ -367,7 +369,7 @@ def _heal_user_manifests():
         if not os.path.isfile(target):
             continue
         try:
-            with open(target, "r") as f:
+            with open(target) as f:
                 data = json.load(f)
             lib = data.get("runtime", {}).get("library_path", "")
         except Exception:
@@ -448,7 +450,7 @@ def _manifest_is_usable(path, name):
     Nicht-Runtime-JSONs (API-Layer) werden durchgelassen.
     """
     try:
-        with open(path, "r") as f:
+        with open(path) as f:
             data = json.load(f)
     except Exception:
         return False

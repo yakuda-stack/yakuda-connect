@@ -4,7 +4,7 @@ import sys
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QListWidget,
                                QStackedWidget, QLabel, QPushButton, QCheckBox,
                                QComboBox, QLineEdit, QGroupBox, QFormLayout,
-                               QSlider, QTextEdit, QFrame, QGridLayout,
+                               QTextEdit, QFrame, QGridLayout,
                                QTabWidget, QToolButton, QToolTip, QPlainTextEdit,
                                QScrollArea, QSizePolicy)
 from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF, QPoint
@@ -74,9 +74,14 @@ class ToggleSwitch(QCheckBox):
 # Programme aus zentraler Datei laden
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
 from programs import TOOLS_APPS, TOOLS_OSC
-from translations import tr, get_language
+from translations import tr
 
-class Ui_MainWindow(object):
+from logging_setup import get_logger
+
+log = get_logger("ui_main")
+
+
+class Ui_MainWindow:
     def setupUi(self, main_window):
         main_window.setWindowTitle("yakuda-connect")
 
@@ -167,7 +172,6 @@ class Ui_MainWindow(object):
         # Sidebar
         self.sidebar = QListWidget()
         self.sidebar.setFixedWidth(200)
-        from PySide6.QtWidgets import QSizePolicy
         self.sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.sidebar.addItems([
             "Installation",
@@ -262,6 +266,8 @@ class Ui_MainWindow(object):
         self.btn_server_check.setText(tr("dashboard_check"))
         self.btn_port_status.setText(tr("dashboard_firewall"))
         self.tracking_group.setTitle(tr("dashboard_tracking"))
+        self.check_usb_autoconnect.setText(tr("streaming_usb_autoconnect"))
+        self.check_usb_autoconnect.setToolTip(tr("streaming_usb_autoconnect_tip"))
         self.chk_hand_tracking.setText(tr("dashboard_hand"))
         self.chk_fbt.setText(tr("dashboard_fbt"))
         self.chk_steamvr_tracker.setText(tr("dashboard_steam"))
@@ -306,8 +312,8 @@ class Ui_MainWindow(object):
             import games as games_db
             self.lbl_games_db_ver.setText(
                 f"{tr('games_db_version_label')} {games_db.games_config_version()}")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("retranslate_ui: ignoriert — %s", exc)
         # General-Gruppe entfernt: APK-Installer lebt jetzt im Installation-Tab
         # (Widgets unten weiter übersetzt), der VRChat Picture Folder Fix als
         # dynamischer Button im ausgeklappten VRChat-Bereich des Games-Tabs
@@ -337,6 +343,10 @@ class Ui_MainWindow(object):
         self.btn_community_check.setText(tr("community_check_btn"))
         self.btn_community_discord.setText(tr("community_discord_btn"))
         self.btn_community_donate.setText(tr("community_donate_btn"))
+        # Diagnose / Logdatei
+        self.btn_log_open.setText(tr("diag_open_btn"))
+        self.btn_log_copy.setText(tr("diag_copy_btn"))
+        self.lbl_log_hint.setText(tr("diag_hint"))
         # WayVR Design
         self.btn_wayvr_install.setText(tr("wayvr_install_btn"))
         self.btn_wayvr_reset.setText(tr("wayvr_reset_btn"))
@@ -416,7 +426,6 @@ class Ui_MainWindow(object):
         layout.addSpacing(20)
 
 # --- INFO-KASTEN (ERWEITERTE HÖHE FÜR VOLLSTÄNDIGEN TEXT) ---
-        from PySide6.QtWidgets import QTextEdit
 
         self.info_group = QGroupBox(tr("install_hints_title"))
         info_layout = QVBoxLayout(self.info_group)
@@ -513,7 +522,7 @@ class Ui_MainWindow(object):
 
 
     def setup_dashboard_tab(self):
-        from PySide6.QtWidgets import QScrollArea, QSizePolicy
+        from PySide6.QtWidgets import QScrollArea
 
         scroll = QScrollArea(self.tab_dashboard)
         scroll.setWidgetResizable(True)
@@ -620,6 +629,18 @@ class Ui_MainWindow(object):
         self.chk_fbt.setChecked(True)
         self.chk_steamvr_tracker = QCheckBox(tr("dashboard_steam"))
 
+        # --- Auto-Connect per USB ---------------------------------------
+        # Entspricht "Auto connect from USB" im WiVRn-Dashboard. Der Wert
+        # liegt NICHT in config.json, sondern in wivrn-dashboard.conf
+        # (Qt-Einstellungen) — siehe core/wivrn_dashboard.py.
+        self.check_usb_autoconnect = QCheckBox(tr("streaming_usb_autoconnect"))
+        self.check_usb_autoconnect.setToolTip(tr("streaming_usb_autoconnect_tip"))
+
+        self.lbl_usb_hint = QLabel("")
+        self.lbl_usb_hint.setWordWrap(True)
+        self.lbl_usb_hint.setStyleSheet("color:#ebcb8b; font-size:11px;")
+        self.lbl_usb_hint.setVisible(False)
+
         self.lbl_tracker_note = QLabel(tr("dashboard_steam_hint"))
         self.lbl_tracker_note.setStyleSheet("color: #d08770; font-style: italic; font-weight: bold; margin-bottom: 5px;")
 
@@ -632,6 +653,8 @@ class Ui_MainWindow(object):
         refresh_layout.addWidget(self.combo_refresh)
         refresh_layout.addStretch()
 
+        tracking_layout.addWidget(self.check_usb_autoconnect)
+        tracking_layout.addWidget(self.lbl_usb_hint)
         tracking_layout.addWidget(self.chk_hand_tracking)
         tracking_layout.addWidget(self.chk_fbt)
         tracking_layout.addWidget(self.chk_steamvr_tracker)
@@ -828,7 +851,6 @@ class Ui_MainWindow(object):
         #     klappt darunter die Detail-Sektion auf (Akkordeon). Kacheln
         #     und Details baut main.py dynamisch. Die Überschriften blendet
         #     main.py aus, wenn eine Sektion leer ist. ---
-        from PySide6.QtWidgets import QGridLayout
 
         self.lbl_games_tested_header = QLabel(tr("games_section_tested"))
         self.lbl_games_tested_header.setStyleSheet(
@@ -996,6 +1018,27 @@ class Ui_MainWindow(object):
         self.lbl_community_version = QLabel("")
         self.lbl_community_version.setStyleSheet("color:#7b88a1; font-size:11px;")
         cv.addWidget(self.lbl_community_version)
+        gen_v.addWidget(card)
+
+        # -- Diagnose / Logdatei --
+        # Beim Start ueber das Desktop-Symbol gibt es keine Konsole. Ohne diese
+        # Knoepfe muesste ein Nutzer im Supportfall wissen, wo
+        # ~/.cache/yakuda-connect/app.log liegt — die wenigsten wissen das.
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("diag_title")
+        self.btn_log_open = QPushButton(tr("diag_open_btn"))
+        self.btn_log_open.setCursor(Qt.PointingHandCursor)
+        self.btn_log_open.setStyleSheet(self._CSS_PRIMARY)
+        self.btn_log_copy = QPushButton(tr("diag_copy_btn"))
+        self.btn_log_copy.setCursor(Qt.PointingHandCursor)
+        self.btn_log_copy.setStyleSheet(self._CSS_SECONDARY)
+        head.addWidget(self.btn_log_open)
+        head.addWidget(self.btn_log_copy)
+        cv.addLayout(head)
+        self.lbl_log_hint = QLabel(tr("diag_hint"))
+        self.lbl_log_hint.setWordWrap(True)
+        self.lbl_log_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
+        cv.addWidget(self.lbl_log_hint)
         gen_v.addWidget(card)
 
         # -- Backup --
@@ -1278,7 +1321,6 @@ class Ui_MainWindow(object):
     def _build_tool_card(self, tool):
         """Baut eine einzelne Tool-Karte — kompaktes Design."""
         from PySide6.QtWidgets import QFrame
-        import subprocess
 
         card = QFrame()
         featured = bool(tool.get("featured"))

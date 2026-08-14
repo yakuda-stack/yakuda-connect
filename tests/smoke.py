@@ -52,7 +52,10 @@ def main():
     print(f"Test-HOME: {fake_home}\n")
 
     from PySide6.QtWidgets import QApplication, QMessageBox
-    app = QApplication(sys.argv)
+    # Die Referenz MUSS gehalten werden: raeumt Python das QApplication-Objekt
+    # ab, waehrend noch Widgets leben, stuerzt Qt ab. Deshalb kein '_' und
+    # das noqa — ruff sieht nur, dass die Variable nicht gelesen wird.
+    app = QApplication(sys.argv)  # noqa: F841
 
     # Modale Dialoge blockieren ewig, weil hier niemand klickt.
     # Ohne dieses Mocking bleibt der Test am "Components are missing"-Fenster
@@ -67,24 +70,121 @@ def main():
     check("VRApp() startet", True)
 
     print("\n[2] Übersetzungen")
+    import json as _json
     import translations
     src = " ".join(p.read_text() for p in
-                   list((ROOT / "core").glob("*.py")) + list((ROOT / "ui").glob("*.py")))
+                   list((ROOT / "core").glob("*.py")) + list((ROOT / "core" / "tabs").glob("*.py"))
+                   + list((ROOT / "ui").glob("*.py")))
     used = set(re.findall(r'tr\(\s*"([^"]+)"', src)) - {"games_toggle_<key>"}
-    tf = (ROOT / "core" / "translations.py").read_text()
-    defined = set(re.findall(r'^\s{8}"([^"]+)":', tf, re.M))
+
+    # Seit v1.1.5 stehen die Texte in locales/*.json statt in einem Dict im
+    # Python-Code. Das wird hier direkt geladen statt per regulärem Ausdruck
+    # geparst — dadurch prüft der Test wirklich das, was die App zur Laufzeit
+    # sieht, und nicht eine Textform davon.
+    locales_dir = ROOT / "locales"
+    langs = {p.stem: _json.loads(p.read_text(encoding="utf-8"))
+             for p in sorted(locales_dir.glob("*.json"))}
+    check("Sprachdateien vorhanden", "en" in langs, f"gefunden: {sorted(langs)}")
+
+    defined = set(langs.get("en", {}))
     missing = sorted(used - defined)
     check("Alle tr()-Keys definiert", not missing, str(missing[:5]))
 
-    en = set(re.findall(r'"([^"]+)":', re.search(r'"en"\s*:\s*\{(.*?)\n    \},', tf, re.S).group(1)))
-    de = set(re.findall(r'"([^"]+)":', re.search(r'"de"\s*:\s*\{(.*?)\n    \},?', tf, re.S).group(1)))
-    check("EN/DE symmetrisch", en == de, f"nur EN: {sorted(en-de)[:3]} / nur DE: {sorted(de-en)[:3]}")
+    # Jede Sprache gegen Englisch (die Referenz) prüfen — funktioniert
+    # automatisch auch für Sprachen, die später dazukommen.
+    for code, data in sorted(langs.items()):
+        if code == "en":
+            continue
+        only_en = sorted(defined - set(data))
+        only_other = sorted(set(data) - defined)
+        check(f"{code}.json vollständig", not only_en and not only_other,
+              f"fehlt: {only_en[:3]} / unbekannt: {only_other[:3]}")
 
     print("\n[3] Sprachwechsel (fängt fehlende Attribute in retranslate_ui)")
     for lang in ("en", "de"):
         translations.set_language(lang)
         w.ui.retranslate_ui()
         check(f"retranslate_ui('{lang}')", True)
+
+    print("\n[4] Tab-Logik wirklich aufrufen (Mixins aus core/tabs/)")
+    # Warum das noetig ist: "VRApp() startet" prueft nur den Aufbau des
+    # Fensters. Die Methoden des Games- und Tools-Tabs laufen erst, wenn der
+    # Nutzer den Tab OEFFNET. Beim Aufteilen von main.py in Mixins fiel genau
+    # deshalb nicht auf, dass dort Importe fehlten — die App startete sauber
+    # und waere erst beim Klick auf "Games" mit NameError abgestuermmt.
+    #
+    # Modale Dialoge muessen zusaetzlich abgefangen werden: QMessageBox(self)
+    # .exec() ist eine INSTANZ-Methode, die das Mocking der statischen
+    # Methoden oben nicht erwischt — der Test bliebe daran haengen.
+    from PySide6.QtWidgets import QDialog
+    QMessageBox.exec = lambda self, *a, **k: QMessageBox.Ok
+    QDialog.exec = lambda self, *a, **k: 0
+
+    try:
+        # 438100 = VRChat; ein erfundener Eintrag deckt die "ungetestet"-Spalte ab
+        w.render_games_cards(["438100"], [{"appid": "1234", "name": "Testspiel"}])
+        w._on_game_tile_clicked("438100")     # baut das Detailpanel auf
+        w._collapse_detail()
+        w.show_games_info()
+        w._refresh_games_db_version()
+        check("Games-Tab rendert", True)
+    except Exception as exc:
+        check("Games-Tab rendert", False, f"{type(exc).__name__}: {exc}")
+
+    try:
+        w.check_tools_status()
+        for key in list(w.ui.tool_cards)[:4]:
+            w._apply_tool_status(key, {"installed": True, "version": "1.0"})
+            w._set_tool_status(key, "Test")
+            w._populate_method_combo(w.ui.tool_cards[key])
+        check("Tools-Tab rendert", True)
+    except Exception as exc:
+        check("Tools-Tab rendert", False, f"{type(exc).__name__}: {exc}")
+
+    # Hintergrund-Threads sauber auslaufen lassen: close() loest closeEvent()
+    # aus, das auf alle Worker wartet. Ohne das endet der Prozess mit
+    # SIGABRT (Exitcode 134) — und die CI waere rot, obwohl alle Pruefungen
+    # bestanden haben. Zugleich ist das der einzige Test, der closeEvent
+    # ueberhaupt durchlaeuft.
+    w.close()
+
+    print("\n[5] Version an allen Stellen gleich")
+    # Faengt genau die beiden Fehler, die beim Release am teuersten sind:
+    # PKGBUILD vergessen -> AUR baut den alten Tag; Anker in main.py vergessen
+    # -> alte Clients (bis v1.1.4) finden nie wieder ein Update.
+    import version as version_mod
+    anchor = re.search(r'APP_VERSION\s*=\s*"v?([^"]+)"',
+                       (ROOT / "core" / "main.py").read_text())
+    check("APP_VERSION-Anker in main.py vorhanden", anchor is not None,
+          "Ohne ihn sehen alte Clients nie wieder ein Update!")
+    if anchor:
+        check("Anker == core/version.py", anchor.group(1) == version_mod.VERSION,
+              f"main.py={anchor.group(1)} vs version.py={version_mod.VERSION}")
+
+    pkgbuild = ROOT / "packaging" / "aur" / "PKGBUILD"
+    if pkgbuild.exists():
+        m_pkg = re.search(r"^pkgver=(.+)$", pkgbuild.read_text(), re.M)
+        check("PKGBUILD == core/version.py",
+              bool(m_pkg) and m_pkg.group(1).strip() == version_mod.VERSION,
+              f"PKGBUILD={m_pkg.group(1).strip() if m_pkg else '?'} vs {version_mod.VERSION}")
+
+    print("\n[6] Sicherheitsnetze aktiv")
+    # Ein subprocess.run ohne Zeitlimit friert die GUI ein, wenn pacman an
+    # einer Lock-Datei haengt oder das Headset im Standby ist. Diese Pruefung
+    # verhindert, dass so ein Aufruf spaeter unbemerkt wieder hereinrutscht.
+    import ast
+    missing = []
+    for py in sorted((ROOT / "core").glob("*.py")) + sorted((ROOT / "ui").glob("*.py")):
+        if py.name == "proc.py":
+            continue
+        for node in ast.walk(ast.parse(py.read_text())):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "run"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "subprocess"
+                    and not any(k.arg == "timeout" for k in node.keywords)):
+                missing.append(f"{py.name}:{node.lineno}")
+    check("Kein subprocess.run ohne timeout", not missing, str(missing[:3]))
 
     print("\n" + "=" * 52)
     if _fails:

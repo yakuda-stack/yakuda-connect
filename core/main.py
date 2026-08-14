@@ -5,15 +5,31 @@ import shutil
 import re
 import os
 import json
-from PySide6.QtWidgets import (QColorDialog, QApplication, QMainWindow, QLabel, QMessageBox,
+from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QMessageBox,
                                QHBoxLayout, QVBoxLayout, QComboBox, QLineEdit,
-                               QPushButton, QFileDialog, QFrame, QWidget,
-                               QCheckBox)
-from PySide6.QtCore import Qt, QTimer, QUrl, QSize, QPointF
-from PySide6.QtGui import (QDesktopServices, QPixmap, QIcon, QPainter,
-                           QPolygonF, QColor)
+                               QPushButton, QFileDialog, QWidget)
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import (QDesktopServices)
 
 import webbrowser
+
+# --------------------------------------------------------------------------- #
+#  Versions-Anker — BITTE NICHT ENTFERNEN
+# --------------------------------------------------------------------------- #
+# Gepflegt wird die Version in core/version.py (per scripts/bump_version.py).
+# Diese Zeile hier ist eine ZUSAETZLICHE Kopie und existiert aus einem einzigen
+# Grund: Der Update-Checker aller bereits ausgelieferten Versionen (bis v1.1.4)
+# laedt diese Datei von GitHub und sucht darin per regulaerem Ausdruck nach
+# genau dem Muster  APP_VERSION = "v1.1.5".
+#
+# Faellt die Zeile weg, findet der Ausdruck nichts, und JEDE bereits
+# installierte Version meldet fuer immer "du bist aktuell" — die Nutzer
+# bekommen nie wieder ein Update angeboten. Deshalb bleibt sie stehen, auch
+# wenn sie doppelt aussieht.
+#
+# scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
+# und die CI bricht ab, falls beide auseinanderlaufen.
+APP_VERSION = "v1.1.4"
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
@@ -51,13 +67,15 @@ sudo cp -r build/bin/linux64 /opt/opencomposite/"""
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.ui_main import Ui_MainWindow
 
+# Tab-Logik (Mixins, siehe core/tabs/)
+from tabs.games_mixin import GamesTabMixin
+from tabs.tools_mixin import ToolsTabMixin
+
 # Interne Importe (liegen im selben Ordner 'core')
-from install_worker import (InstallWorker, UpdateWorker, RemoveWorker,
-                            AppUpdateCheckWorker, AppUpdateWorker,
-                            CoverDownloadWorker, GamesDbWorker)
-from appimage_installer import AppImageInstallWorker
+from install_worker import (InstallWorker, UpdateWorker, AppUpdateCheckWorker, AppUpdateWorker)
 import appimage_installer as appimg
 import vr_environment as venv
+import wivrn_dashboard as wivrn_dash
 from config_manager import load_saved_settings, save_all_settings
 from streaming_tab import StreamingTab
 from backup_manager import (create_vr_backup, restore_vr_environment,
@@ -68,26 +86,94 @@ from programs import (INSTALL_PACKAGES, INSTALL_DNF, FEDORA_XRIZER_COPR,
 import games as games_db
 import openxr_manager as oxr
 import overlay_manager as ovl
+import paths
+import proc
+from jsonio import update_json
+import version as version_mod
 from translations import tr, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
 
+from logging_setup import get_logger, read_log_tail
 
-class ToolsStatusWorker(QThread):
-    """Prüft den Status aller Tools im Hintergrund — ein Signal pro Tool (voller Bericht)."""
-    result_signal = QtSignal(str, object)  # key, status-dict
+log = get_logger("main")
 
-    def __init__(self, tools: dict):
+
+
+class PackageCheckWorker(QThread):
+    """
+    Ermittelt im Hintergrund, welche Pakete installiert sind und fuer welche
+    ein Update bereitliegt.
+
+    Der Trick: die Paketlisten werden EINMAL komplett geholt und danach im
+    Speicher nachgeschlagen — statt je Paket einen eigenen Prozess zu starten.
+    Aus bis zu zwoelf Aufrufen werden so zwei, unabhaengig von der Anzahl der
+    geprueften Pakete.
+
+    Signal: result_signal(results, updates_available)
+        results = {"WiVRn / Monado": {"installed": bool, "has_update": bool}, ...}
+    """
+    result_signal = QtSignal(dict, bool)
+
+    def __init__(self, method, groups):
         super().__init__()
-        self.tools = tools  # {key: tool_dict}
+        self.method = method
+        self.groups = dict(groups)
+
+    def _installed_and_updatable(self):
+        """
+        (installierte Pakete, Pakete mit Update) als Mengen von Namen.
+
+        'yay -Qu' braucht laenger als 'yay -Q', weil es das AUR abfragt.
+        Schlaegt es fehl (kein Netz, Spiegelserver weg), gilt einfach
+        "keine Updates bekannt" — der Paketstatus bleibt trotzdem korrekt,
+        statt dass die ganze Anzeige leer bleibt.
+        """
+        if self.method == "dnf":
+            # rpm -qa listet alle Pakete; Zeilen sind "name-version-release.arch".
+            # Fuer den Abgleich reicht der Anfang des Namens.
+            out = proc.output_of(["rpm", "-qa", "--qf", "%{NAME}\\n"],
+                                 timeout=proc.LONG_TIMEOUT)
+            installed = {line.strip() for line in out.splitlines() if line.strip()}
+            return installed, set()
+
+        if self.method == "native" or not self.method:
+            return None, set()          # wird ueber shutil.which geprueft
+
+        if not shutil.which(self.method):
+            return set(), set()
+
+        # pacman/yay/paru: "name version" je Zeile
+        out = proc.output_of([self.method, "-Q"], timeout=proc.LONG_TIMEOUT)
+        installed = {line.split()[0] for line in out.splitlines() if line.strip()}
+
+        out_up = proc.output_of([self.method, "-Qu"], timeout=proc.LONG_TIMEOUT)
+        updatable = {line.split()[0] for line in out_up.splitlines() if line.strip()}
+        return installed, updatable
 
     def run(self):
-        import appimage_installer as appimg
-        for key, tool in self.tools.items():
-            try:
-                status = appimg.compute_status(tool)
-            except Exception:
-                status = {}
-            self.result_signal.emit(key, status)
+        try:
+            installed, updatable = self._installed_and_updatable()
+        except Exception:
+            log.exception("Paketpruefung fehlgeschlagen")
+            self.result_signal.emit({}, False)
+            return
+
+        results = {}
+        updates_available = False
+        for name, idents in self.groups.items():
+            if installed is None:
+                # 'native': es gibt keine Paketverwaltung — nur schauen, ob
+                # die Binary im PATH liegt.
+                state = {"installed": shutil.which("wivrn-server") is not None,
+                         "has_update": False}
+            else:
+                state = {"installed": all(pkg in installed for pkg in idents),
+                         "has_update": any(pkg in updatable for pkg in idents)}
+            if state["has_update"]:
+                updates_available = True
+            results[name] = state
+
+        self.result_signal.emit(results, updates_available)
 
 
 class ApkWorker(QThread):
@@ -157,7 +243,7 @@ class ApkWorker(QThread):
             # 3. ADB-Gerät suchen
             self.status_signal.emit("Search for a USB-connected headset...")
             res = subprocess.run(["adb", "devices"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
 
             devices = [l.split()[0] for l in res.stdout.splitlines()
                        if l.strip() and not l.startswith("List") and "device" in l]
@@ -174,7 +260,7 @@ class ApkWorker(QThread):
             # 4. APK installieren
             res = subprocess.run(
                 ["adb", "-s", serial, "install", "-r", self.APK_CACHE],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
 
             if res.returncode == 0:
                 self.status_signal.emit(f"✔ WiVRn {tag} successfully installed!")
@@ -188,94 +274,15 @@ class ApkWorker(QThread):
             self.finished_signal.emit(False)
 
 
-def make_play_icon(size=14, color="#21252b"):
+class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     """
-    Zeichnet ein gefülltes Play-Dreieck als Icon.
+    Hauptfenster.
 
-    Bewusst selbst gezeichnet statt des Unicode-Zeichens "▶": Das Zeichen
-    fehlt in manchen System-Schriften oder wird als Kästchen/hauchdünner
-    Pfeil gerendert. Ein gemaltes Dreieck sieht auf jeder Distro identisch
-    und klar nach "Play" aus.
+    Der Games- und der Tools-Tab liegen als Mixins in core/tabs/ — sie
+    arbeiten auf demselben self, sind hier also ganz normal als Methoden
+    verfuegbar. In dieser Datei bleiben: Fenster-Aufbau, Installation,
+    Dashboard, Streaming, OpenXR, Autostart und Server-Steuerung.
     """
-    pm = QPixmap(size, size)
-    pm.fill(Qt.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor(color))
-    p.setPen(Qt.NoPen)
-    # Leicht eingerückt, damit das Dreieck optisch mittig sitzt
-    inset = size * 0.14
-    tri = QPolygonF([
-        QPointF(inset * 1.6, inset),               # oben links
-        QPointF(size - inset, size / 2.0),         # Spitze rechts (Mitte)
-        QPointF(inset * 1.6, size - inset),        # unten links
-    ])
-    p.drawPolygon(tri)
-    p.end()
-    return QIcon(pm)
-
-
-class ClickableFrame(QFrame):
-    """QFrame, das wie ein großer Button funktioniert (für die Spiel-Kacheln)."""
-    clicked = QtSignal()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit()
-        super().mousePressEvent(event)
-
-
-class GameScanWorker(QThread):
-    """Scannt die Steam-Bibliotheken im Hintergrund nach ALLEN VR-Spielen."""
-    result_signal = QtSignal(object)  # (tested: [appid], untested: [{appid,name}])
-
-    def run(self):
-        try:
-            result = games_db.scan_installed_games()
-        except Exception as e:
-            print(f"[Games] Scan fehlgeschlagen: {e}")
-            result = ([], [])
-        self.result_signal.emit(result)
-
-
-class ProtonPlusInstallWorker(QThread):
-    """
-    Öffnet ein Terminal ("in deine Fresse") mit der interaktiven
-    ProtonPlus-CLI-Installation eines Runners, z. B.:
-        protonplus install steam-system proton-ge-rtsp
-    Ohne 'latest' listet ProtonPlus alle Releases auf und der Nutzer
-    wählt die empfohlene Version per Nummer aus.
-    """
-    finished_signal = QtSignal(bool)
-
-    def __init__(self, cli_cmd):
-        super().__init__()
-        self.cli_cmd = cli_cmd  # Liste, z. B. ["protonplus", "install", ...]
-
-    def run(self):
-        from install_worker import find_terminal
-        terminal, exec_flags = find_terminal()
-        if terminal is None or not self.cli_cmd:
-            self.finished_signal.emit(False)
-            return
-        cli_str = " ".join(self.cli_cmd)
-        bash_cmd = (
-            f"echo '=== ProtonPlus: {cli_str} ==='; "
-            f"{cli_str}; "
-            "echo ''; echo 'Fertig. Dieses Fenster schliesst sich gleich automatisch...'; "
-            "sleep 3"
-        )
-        cmd = [terminal] + exec_flags + ["bash", "-c", bash_cmd]
-        try:
-            proc = subprocess.Popen(cmd)
-            proc.wait()
-            self.finished_signal.emit(proc.returncode == 0)
-        except Exception as e:
-            print(f"[Games] ProtonPlus-Terminal konnte nicht geöffnet werden: {e}")
-            self.finished_signal.emit(False)
-
-
-class VRApp(QMainWindow):
     def __init__(self):
         super().__init__()
         #loading initliserung
@@ -285,11 +292,13 @@ class VRApp(QMainWindow):
         self.ui.setupUi(self)
 
         # === ORDNERSTRUKTUR FIX ===
-        PROJEKT_CONFIG_DIR = os.path.expanduser("~/.config/yakuda-connect/config")
-        os.makedirs(PROJEKT_CONFIG_DIR, exist_ok=True)
-        print(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
+        PROJEKT_CONFIG_DIR = paths.config_dir()
+        paths.ensure_dirs()
+        log.info(f"[System] Folder structure checked/created under: {PROJEKT_CONFIG_DIR}")
 
-        self.APP_VERSION = "v1.1.4"
+        # Aus core/version.py — der einen Quelle der Wahrheit. Der Anker oben
+        # in dieser Datei ist nur fuer den Update-Check ALTER Clients da.
+        self.APP_VERSION = version_mod.APP_VERSION
         self.server_process = None
         self.pairing_process = None
 
@@ -526,8 +535,8 @@ class VRApp(QMainWindow):
             try:
                 os.execv(sys.executable, [sys.executable] + sys.argv)
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("_restart_app: ignoriert — %s", exc)
         QApplication.quit()
 
     # ------------------------------------------------------------------ #
@@ -568,6 +577,73 @@ class VRApp(QMainWindow):
         QDesktopServices.openUrl(QUrl(PAYPAL_URL))
 
     # ------------------------------------------------------------------ #
+    #  Diagnose: Logdatei                                                 #
+    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------ #
+    #  Auto-Connect per USB (WiVRn-Dashboard-Einstellung)                 #
+    # ------------------------------------------------------------------ #
+    def load_usb_autoconnect(self):
+        """
+        Zustand aus wivrn-dashboard.conf uebernehmen. Bewusst NICHT aus
+        unserer eigenen Konfiguration: die Datei des Dashboards ist die
+        Wahrheit — der Nutzer kann die Option ja auch dort umstellen.
+        """
+        self.ui.check_usb_autoconnect.blockSignals(True)
+        self.ui.check_usb_autoconnect.setChecked(wivrn_dash.get_auto_connect_usb())
+        self.ui.check_usb_autoconnect.blockSignals(False)
+        self._update_usb_hint()
+
+    def _update_usb_hint(self):
+        """Warnt, solange das Dashboard laeuft — es wuerde die Datei beim
+        Beenden mit seinem eigenen Stand ueberschreiben."""
+        running = wivrn_dash.dashboard_is_running()
+        self.ui.lbl_usb_hint.setText(
+            tr("streaming_usb_dashboard_running") if running else "")
+        self.ui.lbl_usb_hint.setVisible(running)
+
+    def on_usb_autoconnect_toggled(self, checked):
+        """Schreibt die Option direkt in die Dashboard-Konfiguration."""
+        if not wivrn_dash.set_auto_connect_usb(checked):
+            # Zurueckstellen, damit der Haken nicht etwas anzeigt, was nicht
+            # gespeichert wurde.
+            self.ui.check_usb_autoconnect.blockSignals(True)
+            self.ui.check_usb_autoconnect.setChecked(not checked)
+            self.ui.check_usb_autoconnect.blockSignals(False)
+            QMessageBox.warning(self, tr("streaming_usb_autoconnect"),
+                                tr("streaming_usb_write_failed").format(
+                                    path=wivrn_dash.dashboard_config_file()))
+            return
+        self._update_usb_hint()
+
+    def open_log_file(self):
+        """Oeffnet die Logdatei im Standardprogramm des Systems."""
+        path = paths.log_file()
+        if not os.path.exists(path):
+            QMessageBox.information(self, tr("diag_title"), tr("diag_no_log"))
+            return
+        # openUrl waehlt den vom Desktop registrierten Texteditor. Schlaegt
+        # das fehl (z. B. minimale Umgebung ohne xdg-open), bekommt der
+        # Nutzer wenigstens den Pfad genannt, statt dass nichts passiert.
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
+            QMessageBox.warning(self, tr("diag_title"),
+                                tr("diag_open_failed").format(path=path))
+
+    def copy_log_to_clipboard(self):
+        """
+        Kopiert das Ende des Logs in die Zwischenablage — gedacht zum
+        Einfuegen in Discord oder einen Fehlerbericht.
+
+        Bewusst nur der Schluss (read_log_tail begrenzt auf ~200 KB): bei
+        einer lange laufenden Sitzung waere die ganze Datei mehrere Megabyte
+        gross und in einer Chatnachricht ohnehin nicht brauchbar.
+        """
+        text = read_log_tail()
+        QApplication.clipboard().setText(text)
+        QMessageBox.information(
+            self, tr("diag_title"),
+            tr("diag_copied").format(lines=len(text.splitlines())))
+
+    # ------------------------------------------------------------------ #
     #  Automatisches Erst-Backup beim Start (siehe backup_manager.py)
     # ------------------------------------------------------------------ #
     def _start_auto_backup_check(self):
@@ -579,7 +655,7 @@ class VRApp(QMainWindow):
                 try:
                     created = auto_backup_on_start()
                 except Exception as e:
-                    print(f"[Backup] Auto-Backup-Check fehlgeschlagen: {e}")
+                    log.warning(f"[Backup] Auto-Backup-Check fehlgeschlagen: {e}")
                     created = False
                 self.done.emit(bool(created))
 
@@ -589,7 +665,7 @@ class VRApp(QMainWindow):
 
     def _on_auto_backup_done(self, created):
         if created:
-            print("[Backup] Automatisches Erst-Backup der VR-Umgebung wurde angelegt.")
+            log.info("[Backup] Automatisches Erst-Backup der VR-Umgebung wurde angelegt.")
 
     # ------------------------------------------------------------------ #
     #  Steam-Schutz: defekte System-OpenXR-Manifeste erkennen
@@ -605,7 +681,7 @@ class VRApp(QMainWindow):
                 try:
                     broken = oxr.broken_runtime_manifests()
                 except Exception as e:
-                    print(f"[OpenXR] Manifest-Check fehlgeschlagen: {e}")
+                    log.warning(f"[OpenXR] Manifest-Check fehlgeschlagen: {e}")
                     broken = []
                 self.done.emit(broken)
 
@@ -811,6 +887,12 @@ class VRApp(QMainWindow):
         # Community & Updates (Settings, ganz oben)
         self.ui.btn_community_check.clicked.connect(self.manual_check_app_update)
         self.ui.btn_community_discord.clicked.connect(self.open_discord_link)
+        # Auto-Connect per USB (Dashboard-Tab). Der Zustand kommt aus WiVRns
+        # eigener Einstellungsdatei, nicht aus unserer Config.
+        self.ui.check_usb_autoconnect.clicked.connect(self.on_usb_autoconnect_toggled)
+        self.load_usb_autoconnect()
+        self.ui.btn_log_open.clicked.connect(self.open_log_file)
+        self.ui.btn_log_copy.clicked.connect(self.copy_log_to_clipboard)
         self.ui.btn_community_donate.clicked.connect(self.open_paypal_link)
         # WayVR Design (Settings): cubee-cb-Design installieren / Config löschen
         self._wayvr_worker = None
@@ -892,12 +974,12 @@ class VRApp(QMainWindow):
     def get_wivrn_version(self):
         # Immer nativ: Version direkt aus der wivrn-server-Binary lesen
         try:
-            res = subprocess.run(["wivrn-server", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            res = subprocess.run(["wivrn-server", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.DEFAULT_TIMEOUT)
             if res.returncode == 0:
                 version_match = re.search(r'[\d\.]+', res.stdout)
                 return version_match.group(0) if version_match else "Unbekannt"
-        except:
-            pass
+        except Exception as exc:
+            log.debug("get_wivrn_version: ignoriert — %s", exc)
         return tr("tools_not_installed")
 
     def _runtime_installed(self):
@@ -911,8 +993,10 @@ class VRApp(QMainWindow):
         if not shutil.which(method):
             return False
         for pkg in INSTALL_PACKAGES.get("WiVRn / Monado", []):
-            res = subprocess.run(f"{method} -Q {pkg}", shell=True,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Listenform statt shell=True: der Paketname wandert nicht mehr
+            # durch eine Shell, die ihn interpretieren koennte.
+            res = proc.run([method, "-Q", pkg],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT)
             if res.returncode != 0:
                 return False
         return True
@@ -936,1280 +1020,6 @@ class VRApp(QMainWindow):
     # ------------------------------------------------------------------ #
     #  Games-Tab
     # ------------------------------------------------------------------ #
-    def on_games_tab_opened(self):
-        """
-        Beim ersten Klick auf den Tab: gecachte Spiele aus der Config laden.
-        Wurde noch NIE gescannt (kein Cache-Key vorhanden) -> automatisch
-        scannen. Danach lädt der Tab nur noch aus dem Cache; neu gescannt
-        wird nur über den "Spiele scannen"-Button.
-        """
-        if self._games_tab_visited:
-            return
-        self._games_tab_visited = True
-
-        tested, untested, was_scanned = games_db.load_cached_games()
-        if was_scanned:
-            self.render_games_cards(tested, untested)
-        else:
-            self.start_games_scan()
-
-    def start_games_scan(self):
-        """Startet den Steam-Scan im Hintergrund (Button oder Erst-Besuch)."""
-        if self._games_scan_worker and self._games_scan_worker.isRunning():
-            return
-        self.ui.btn_games_scan.setEnabled(False)
-        self.ui.lbl_games_status.setText(tr("games_scanning"))
-        self._games_scan_worker = GameScanWorker()
-        self._games_scan_worker.result_signal.connect(self._on_games_scan_done)
-        self._games_scan_worker.start()
-
-    def _on_games_scan_done(self, result):
-        """Scan fertig: Ergebnis fest in die Config schreiben + anzeigen."""
-        tested, untested = result
-        games_db.save_cached_games(tested, untested)
-        self.ui.btn_games_scan.setEnabled(True)
-        self.render_games_cards(tested, untested)
-
-    # --- Kachel-Grid + Akkordeon -------------------------------------- #
-    GAMES_TILES_PER_ROW = 4          # Kacheln pro Zeile
-    GAMES_TILE_W, GAMES_TILE_H = 150, 240   # Kachelgröße
-    GAMES_COVER_W, GAMES_COVER_H = 126, 189 # Coverfläche (2:3 wie Steam-Capsule)
-
-    def _clear_layout(self, layout):
-        while layout.count():
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
-    # ----- Spiele-Datenbank (config/games.json): Version + Update ----------- #
-    def _refresh_games_db_version(self):
-        """Setzt das Versions-Label der Spiele-DB (games.json)."""
-        try:
-            self.ui.lbl_games_db_ver.setText(
-                f"{tr('games_db_version_label')} {games_db.games_config_version()}")
-        except Exception:
-            pass
-
-    def _check_games_db_update(self):
-        """Hintergrund-Check, ob auf GitHub eine neuere games.json liegt."""
-        self._games_db_check_worker = GamesDbWorker(mode="check")
-        self._games_db_check_worker.check_result.connect(self._on_games_db_checked)
-        self._games_db_check_worker.start()
-
-    def _on_games_db_checked(self, available, remote_version):
-        self._games_db_remote_version = remote_version or ""
-        if available and remote_version:
-            self.ui.btn_games_db_update.setVisible(True)
-            self.ui.btn_games_db_update.setToolTip(
-                tr("games_db_update_available").format(version=remote_version))
-        else:
-            self.ui.btn_games_db_update.setVisible(False)
-
-    def start_games_db_update(self):
-        """Klick auf den Update-Button: neue games.json laden und neu einlesen."""
-        self.ui.btn_games_db_update.setEnabled(False)
-        self.ui.lbl_games_status.setText(tr("games_db_updating"))
-        self._games_db_dl_worker = GamesDbWorker(mode="download")
-        self._games_db_dl_worker.apply_result.connect(self._on_games_db_updated)
-        self._games_db_dl_worker.start()
-
-    def _on_games_db_updated(self, ok, new_version):
-        self.ui.btn_games_db_update.setEnabled(True)
-        if ok:
-            self.ui.btn_games_db_update.setVisible(False)
-            self._refresh_games_db_version()
-            self.ui.lbl_games_status.setText(
-                tr("games_db_updated").format(version=new_version))
-            # Kacheln mit der neuen DB neu aufbauen (nur wenn schon gescannt).
-            if getattr(self, "_games_tiles", None):
-                self.start_games_scan()
-        else:
-            self.ui.lbl_games_status.setText(tr("games_db_update_failed"))
-
-    def render_games_cards(self, tested, untested):
-        """
-        Baut die Kacheln in ZWEI Sektionen untereinander:
-          * "Getestete VR-Spiele"  : kuratierte Profile aus core/games.py
-          * "Ungetestete VR-Spiele": alle übrigen erkannten VR-Spiele —
-            bekommen beim Aufklappen automatisch generierte Proton-
-            Empfehlungen (games_db.dynamic_protons()).
-        Dem Nutzer wird immer der NAME angezeigt, nie die AppID. Leere
-        Sektionen bleiben samt Überschrift ausgeblendet.
-        """
-        # Laufenden Cover-Download stoppen und alte Label-Referenzen verwerfen:
-        # die Widgets darunter werden gleich zerstoert.
-        if getattr(self, "_cover_worker", None) is not None and self._cover_worker.isRunning():
-            self._cover_worker.stop()
-            self._cover_worker.wait(2000)
-        self._pending_covers = {}
-
-        self._clear_layout(self.ui.games_grid_tested)
-        self._clear_layout(self.ui.games_grid_untested)
-        self._games_tiles = {}
-        self._games_tile_pos = {}
-        self._games_untested_names = {}
-        self._games_detail_widget = None
-        self._detail_params_edit = None
-        self._detail_status_lbl = None
-        self._detail_toggles = {}
-        self._detail_custom_edit = None
-        self._detail_base_params = ""
-        self._expanded_appid = None
-        self._selected_proton = games_db.load_selected_protons()
-
-        total = len(tested) + len(untested)
-        if total == 0:
-            self.ui.lbl_games_tested_header.setVisible(False)
-            self.ui.lbl_games_untested_header.setVisible(False)
-            self.ui.lbl_games_status.setText(tr("games_none"))
-            return
-        self.ui.lbl_games_status.setText(tr("games_found").format(n=total))
-
-        # Kacheln liegen auf den GERADEN Grid-Zeilen (row*2); die ungeraden
-        # Zeilen dazwischen sind für das Inline-Detail-Panel reserviert, das
-        # beim Klick direkt unter der Reihe der Kachel erscheint.
-        # Sektion 1: getestete Spiele (Profil vorhanden)
-        self.ui.lbl_games_tested_header.setVisible(bool(tested))
-        for idx, appid in enumerate(tested):
-            game = games_db.GAMES.get(appid)
-            if not game:
-                continue
-            tile = self._build_game_tile(appid, game["name"])
-            self._games_tiles[appid] = tile
-            row, col = divmod(idx, self.GAMES_TILES_PER_ROW)
-            self._games_tile_pos[appid] = (self.ui.games_grid_tested, row, col)
-            self.ui.games_grid_tested.addWidget(tile, row * 2, col)
-
-        # Sektion 2: ungetestete Spiele (automatische Empfehlung)
-        self.ui.lbl_games_untested_header.setVisible(bool(untested))
-        for idx, entry in enumerate(untested):
-            appid, name = entry["appid"], entry["name"]
-            self._games_untested_names[appid] = name
-            tile = self._build_game_tile(appid, name)
-            self._games_tiles[appid] = tile
-            row, col = divmod(idx, self.GAMES_TILES_PER_ROW)
-            self._games_tile_pos[appid] = (self.ui.games_grid_untested, row, col)
-            self.ui.games_grid_untested.addWidget(tile, row * 2, col)
-
-        # Fehlende Cover jetzt im Hintergrund vom Steam-CDN holen
-        self._start_cover_downloads()
-
-    # ----------------------------------------------------------------- #
-    #  Spiel-Cover aus dem Netz nachladen
-    # ----------------------------------------------------------------- #
-    def _start_cover_downloads(self):
-        """
-        Startet den Hintergrund-Download für alle Kacheln ohne Bild.
-        Läuft in einem QThread, damit das Fenster nicht einfriert.
-        """
-        if not self._pending_covers:
-            return
-        if self._cover_worker is not None and self._cover_worker.isRunning():
-            self._cover_worker.stop()
-            self._cover_worker.wait(2000)
-        self._cover_worker = CoverDownloadWorker(list(self._pending_covers.keys()))
-        self._cover_worker.cover_ready.connect(self._on_cover_ready)
-        self._cover_worker.start()
-
-    def _on_cover_ready(self, appid, path):
-        """Ein Cover ist da -> Platzhalter der Kachel durch das Bild ersetzen."""
-        lbl = self._pending_covers.pop(str(appid), None)
-        if lbl is None:
-            return
-        try:
-            pix = QPixmap(path)
-            if pix.isNull():
-                return
-            # Platzhalter-Styling zurücknehmen (feste Größe + 🎮-Schrift)
-            lbl.setText("")
-            lbl.setStyleSheet("background: transparent; border: none;")
-            lbl.setFixedSize(self.GAMES_COVER_W, self.GAMES_COVER_H)
-            lbl.setPixmap(pix.scaled(
-                self.GAMES_COVER_W, self.GAMES_COVER_H,
-                Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        except RuntimeError:
-            # Kachel wurde inzwischen neu aufgebaut -> Label existiert nicht mehr
-            pass
-
-    def _tile_css(self, selected):
-        if selected:
-            return """
-                QFrame#gameTile { background-color: #2e3440; border: 2px solid #88c0d0;
-                                  border-radius: 8px; }
-            """
-        return """
-            QFrame#gameTile { background-color: #21252b; border: 1px solid #2e3440;
-                              border-radius: 8px; }
-            QFrame#gameTile:hover { background-color: #282c34; border-color: #5e81ac; }
-        """
-
-    def _build_game_tile(self, appid, name):
-        """
-        Das "kleine Viereck" (150x240) — für getestete UND ungetestete
-        Spiele identisch: vertikales Steam-Cover aus dem lokalen Cache
-        (find_game_cover), Spielname darüber, Pfeil darunter. Die ganze
-        Kachel ist klickbar.
-        """
-        tile = ClickableFrame()
-        tile.setObjectName("gameTile")
-        tile.setFixedSize(self.GAMES_TILE_W, self.GAMES_TILE_H)
-        tile.setCursor(Qt.PointingHandCursor)
-        tile.setStyleSheet(self._tile_css(selected=False))
-
-        box = QVBoxLayout(tile)
-        box.setContentsMargins(8, 8, 8, 6)
-        box.setSpacing(4)
-
-        # Name (sauberer Text über dem Cover)
-        lbl_name = QLabel(name)
-        lbl_name.setStyleSheet(
-            "font-weight: bold; color: #eceff4; font-size: 12px; background: transparent; border: none;")
-        lbl_name.setAlignment(Qt.AlignHCenter)
-        lbl_name.setWordWrap(True)
-        box.addWidget(lbl_name)
-
-        # Vertikales Coverbild aus dem Steam-Cache; Fallback: 🎮-Platzhalter
-        lbl_cover = QLabel()
-        lbl_cover.setAlignment(Qt.AlignCenter)
-        lbl_cover.setStyleSheet("background: transparent; border: none;")
-        # Ohne Download: was lokal da ist, erscheint SOFORT (Steam-Cache oder
-        # frueher geladenes Cover). Fehlt das Bild, merken wir uns das Label
-        # und holen es im Hintergrund vom Steam-CDN nach.
-        cover_path = games_db.get_game_cover(appid, allow_download=False)
-        pix = QPixmap(cover_path) if cover_path else QPixmap()
-        if not pix.isNull():
-            lbl_cover.setPixmap(pix.scaled(
-                self.GAMES_COVER_W, self.GAMES_COVER_H,
-                Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        else:
-            lbl_cover.setText("🎮")
-            lbl_cover.setStyleSheet(
-                "font-size: 48px; background-color: #2e3440; border-radius: 6px; border: none;")
-            lbl_cover.setFixedSize(self.GAMES_COVER_W, self.GAMES_COVER_H)
-            self._pending_covers[str(appid)] = lbl_cover
-        box.addWidget(lbl_cover, alignment=Qt.AlignHCenter)
-
-        # Fußzeile der Kachel: [▶ Starten]  ...  [▾ aufklappen]
-        # Der ▶-Knopf startet das Spiel SOFORT (gemerkte Proton-Version +
-        # gespeicherte Startparameter), ohne dass man aufklappen muss.
-        # Der Klick bleibt am Knopf hängen und klappt die Kachel NICHT auf.
-        foot = QHBoxLayout()
-        foot.setContentsMargins(0, 0, 0, 0)
-        foot.setSpacing(4)
-
-        # Grün gefüllter Knopf mit gemaltem Dreieck -> unmissverständlich "Play"
-        btn_tile_play = QPushButton()
-        btn_tile_play.setObjectName("tilePlay")
-        btn_tile_play.setCursor(Qt.PointingHandCursor)
-        btn_tile_play.setFixedSize(34, 24)
-        btn_tile_play.setIcon(make_play_icon(13, "#21252b"))
-        btn_tile_play.setIconSize(QSize(13, 13))
-        btn_tile_play.setToolTip(self._tile_play_tooltip(appid, name))
-        btn_tile_play.setStyleSheet("""
-            QPushButton#tilePlay { background-color: #a3be8c; border: none; border-radius: 4px; }
-            QPushButton#tilePlay:hover { background-color: #b8d19f; }
-            QPushButton#tilePlay:pressed { background-color: #8fae76; }
-        """)
-        btn_tile_play.clicked.connect(lambda _, a=appid: self._play_game_from_tile(a))
-        foot.addWidget(btn_tile_play)
-        foot.addStretch()
-
-        # Kleiner Pfeil: zeigt an, dass die Kachel aufklappbar ist
-        lbl_arrow = QLabel("▾")
-        lbl_arrow.setStyleSheet(
-            "color: #7b88a1; font-size: 12px; background: transparent; border: none;")
-        foot.addWidget(lbl_arrow)
-        foot.addStretch()
-        # Platzhalter, damit der Pfeil trotz ▶-Knopf mittig bleibt
-        spacer = QLabel("")
-        spacer.setFixedSize(34, 24)
-        spacer.setStyleSheet("background: transparent; border: none;")
-        foot.addWidget(spacer)
-
-        box.addLayout(foot)
-        tile._arrow = lbl_arrow      # zum Umschalten ▾/▴
-        tile._play_btn = btn_tile_play
-
-        tile.clicked.connect(lambda a=appid: self._on_game_tile_clicked(a))
-        return tile
-
-    def _tile_play_tooltip(self, appid, name):
-        """Tooltip des ▶-Knopfs: zeigt, mit welcher Proton-Version gestartet wird."""
-        version = self._selected_proton.get(appid)
-        if version:
-            return tr("games_tile_play_tip").format(name=name, proton=version)
-        return tr("games_tile_play_tip_default").format(name=name)
-
-    def _game_data_for(self, appid):
-        """
-        Spieldaten für die Detail-Sektion:
-          * getestet   -> kuratierter Eintrag aus games_db.GAMES
-          * ungetestet -> synthetischer Eintrag mit automatisch generierten
-                          Proton-Empfehlungen und LEEREN Startparametern
-                          (der Nutzer kann eigene eintragen).
-        """
-        game = games_db.GAMES.get(appid)
-        if game:
-            return game
-        name = self._games_untested_names.get(appid)
-        if name is None:
-            return None
-        return {
-            "name": name,
-            "untested": True,
-            "protons": games_db.dynamic_protons(),
-            "launch_params": {},
-            "fixes": [],
-        }
-
-    def _collapse_detail(self):
-        """Klappt das aktuell offene Inline-Panel zu (falls eines offen ist)."""
-        if self._games_detail_widget is not None:
-            grid = self._games_detail_widget.parentWidget()
-            self._games_detail_widget.setParent(None)
-            self._games_detail_widget.deleteLater()
-            self._games_detail_widget = None
-        self._detail_params_edit = None
-        self._detail_status_lbl = None
-        self._detail_toggles = {}
-        self._detail_custom_edit = None
-        self._detail_base_params = ""
-        for a, tile in self._games_tiles.items():
-            tile.setStyleSheet(self._tile_css(selected=False))
-            if getattr(tile, "_arrow", None):
-                tile._arrow.setText("▾")
-        self._expanded_appid = None
-
-    def _expand_game(self, appid):
-        """
-        Klappt das Detail-Panel INLINE auf: es wird in dieselbe Grid-Sektion
-        gesetzt, direkt in die (reservierte ungerade) Zeile unter der Reihe
-        der angeklickten Kachel — über die volle Breite. So klebt das Panel
-        immer am richtigen Spiel, statt global unter der Liste zu hängen.
-        """
-        game = self._game_data_for(appid)
-        pos = self._games_tile_pos.get(appid)
-        if not game or not pos:
-            return
-        grid, row, _col = pos
-
-        self._expanded_appid = appid
-        tile = self._games_tiles.get(appid)
-        if tile:
-            tile.setStyleSheet(self._tile_css(selected=True))
-            if getattr(tile, "_arrow", None):
-                tile._arrow.setText("▴")
-
-        detail = self._build_game_detail(appid, game)
-        self._games_detail_widget = detail
-        grid.addWidget(detail, row * 2 + 1, 0, 1, self.GAMES_TILES_PER_ROW)
-
-    def _refresh_detail(self):
-        """Baut das offene Panel neu auf (z. B. nach 'Use': Aktiv-Badge)."""
-        appid = self._expanded_appid
-        if appid is None:
-            return
-        self._collapse_detail()
-        self._expand_game(appid)
-
-    def _on_game_tile_clicked(self, appid):
-        """
-        Akkordeon: Klick klappt das Panel inline unter der Kachel-Reihe auf.
-        Erneuter Klick auf dieselbe Kachel (oder Klick auf eine andere)
-        klappt das alte Panel wieder zu.
-        """
-        was_expanded = (appid == self._expanded_appid)
-        self._collapse_detail()
-        if not was_expanded:
-            self._expand_game(appid)
-
-    # ------------------------------------------------------------------ #
-    #  "Use" (Proton wählen) + "Play" (Spiel starten)
-    # ------------------------------------------------------------------ #
-    def _detail_status(self, text, color="#88c0d0"):
-        if self._detail_status_lbl is not None:
-            self._detail_status_lbl.setText(text)
-            self._detail_status_lbl.setStyleSheet(
-                f"color: {color}; font-size: 11px; border: none;")
-
-    def _current_toggle_keys(self):
-        return [k for k, cb in self._detail_toggles.items() if cb.isChecked()]
-
-    def _update_final_params(self):
-        """Baut den finalen Parameter-String neu (Basis + Toggles + Eigene)."""
-        if self._detail_params_edit is None:
-            return ""
-        custom = self._detail_custom_edit.text() if self._detail_custom_edit else ""
-        final = games_db.compose_launch_options(
-            self._detail_base_params, self._current_toggle_keys(), custom,
-            extra_toggles=getattr(self, "_detail_game_toggles", None))
-        self._detail_params_edit.setText(final)
-        return final
-
-    def _on_launch_opts_changed(self, appid):
-        """Toggle geklickt oder eigene Parameter getippt: finalen String neu
-        bauen und die Auswahl dauerhaft für dieses Spiel merken."""
-        self._update_final_params()
-        custom = self._detail_custom_edit.text() if self._detail_custom_edit else ""
-        games_db.save_launch_toggles(appid, self._current_toggle_keys(), custom)
-
-    def _use_proton(self, appid, proton):
-        """
-        'Use': setzt diese Proton-Version als aktive Version für das Spiel —
-        sie wird in Steams CompatToolMapping geschrieben (gleicher Weg wie
-        ProtonPlus), in der App-Config gemerkt und vom 'Play'-Button benutzt.
-        """
-        tool, found, kind = games_db.resolve_steam_tool(proton)
-        if not found:
-            self._detail_status(tr("games_tool_missing"), "#ebcb8b")
-            return
-        ok, err = games_db.set_steam_compat_tool(appid, tool)
-        if not ok:
-            self._detail_status(f"Steam-Config: {err}", "#bf616a")
-            return
-
-        version = proton.get("version", "")
-        self._selected_proton[appid] = version
-        games_db.save_selected_proton(appid, version)
-        g = self._game_data_for(appid)
-        game_name_for_tooltip = g.get("name", "") if g else ""
-
-        if tool is None:
-            msg = tr("games_use_default")
-        else:
-            msg = tr("games_use_applied").format(tool=tool)
-        if games_db.steam_is_running():
-            msg += " " + tr("games_steam_restart_hint")
-        # Tooltip des ▶-Knopfs auf der Kachel nachziehen (neue Proton-Version)
-        tile = self._games_tiles.get(appid)
-        if tile is not None and getattr(tile, "_play_btn", None):
-            tile._play_btn.setToolTip(
-                self._tile_play_tooltip(appid, game_name_for_tooltip))
-
-        # Panel neu bauen, damit das ✓-Aktiv-Badge umzieht — Status danach setzen
-        self._refresh_detail()
-        self._detail_status(msg, "#a3be8c")
-
-    def _saved_launch_options(self, appid, game):
-        """
-        Baut die Startparameter eines Spiels aus den GESPEICHERTEN Angaben —
-        ohne dass das Panel offen sein muss (für den ▶-Knopf auf der Kachel).
-        Basis (GPU-abhängig) + gemerkte Toggles + eigene Parameter.
-        """
-        params = game.get("launch_params", {})
-        gpu = games_db.detect_gpu_vendor()
-        if params:
-            base = params.get(gpu) or params.get("amd") or next(iter(params.values()), "")
-        else:
-            base = ""
-        game_toggles = game.get("toggles", [])
-        keys, custom = games_db.load_launch_toggles(appid, game_toggles)
-        # Noch nie gespeichert -> Spiel-Vorgaben anwenden (gleiche Logik wie im Panel),
-        # damit z. B. VRChat auch über den ▶-Knopf mit gamemoderun + HW-Dekodierung startet.
-        if not games_db.has_saved_launch_toggles(appid):
-            keys = list(game.get("default_on", [])) + \
-                   [t["key"] for t in game_toggles if t.get("default")]
-        return games_db.compose_launch_options(base, keys, custom, extra_toggles=game_toggles)
-
-    def _launch_game(self, appid, game, params, status):
-        """
-        Gemeinsame Start-Routine für beide Play-Knöpfe (Kachel + Panel):
-        schreibt die Startparameter in Steams LaunchOptions und startet das
-        Spiel per Steam-CLI. Die per "Use" gewählte Proton-Version steht
-        bereits in Steams CompatToolMapping.
-          status: Callback(text, farbe) für die jeweilige Statuszeile.
-        """
-        ok, err = games_db.set_steam_launch_options(appid, (params or "").strip())
-        warn = "" if ok else " " + tr("games_options_failed").format(err=err)
-
-        cmd = games_db.steam_launch_cmd(appid)
-        if not cmd:
-            status(tr("games_play_failed") + warn, "#bf616a")
-            return
-        try:
-            subprocess.Popen(cmd)
-        except Exception:
-            status(tr("games_play_failed") + warn, "#bf616a")
-            return
-
-        msg = tr("games_play_starting").format(name=game.get("name", ""))
-        if ok and games_db.steam_is_running():
-            msg += " " + tr("games_steam_restart_hint")
-        status(msg + warn, "#a3be8c" if ok else "#ebcb8b")
-
-    def _play_game(self, appid, game):
-        """▶ im aufgeklappten Panel: nimmt die AKTUELLEN Werte aus dem Panel."""
-        params = (self._update_final_params() or "").strip()
-        self._launch_game(appid, game, params, self._detail_status)
-
-    def _play_game_from_tile(self, appid):
-        """
-        ▶ direkt auf der Kachel: startet das Spiel, ohne es aufzuklappen.
-        Benutzt die gespeicherten Toggles/Parameter und die per "Use"
-        gewählte Proton-Version. Rückmeldung in der Statuszeile oben.
-        """
-        game = self._game_data_for(appid)
-        if not game:
-            return
-        # Ist das Spiel gerade offen, gelten die (evtl. ungespeicherten)
-        # Panel-Werte — sonst die gespeicherten.
-        if appid == self._expanded_appid and self._detail_params_edit is not None:
-            params = (self._update_final_params() or "").strip()
-        else:
-            params = self._saved_launch_options(appid, game)
-
-        def status(text, color):
-            self.ui.lbl_games_status.setText(text)
-            self.ui.lbl_games_status.setStyleSheet(
-                f"color: {color}; font-size: 12px; font-weight: bold;")
-
-        self._launch_game(appid, game, params, status)
-
-    def _build_game_detail(self, appid, game):
-        """
-        Ausgeklappte Detail-Sektion einer Kachel:
-          * Proton-Versionen (auf CachyOS ohne das normale Valve-Proton)
-            mit Beschreibung, Kopieren- und ProtonPlus-Install-Knopf
-          * Startparameter passend zur erkannten GPU mit Kopieren-Knopf
-          * Spiel-spezifische Fixes (z. B. VRChat Picture Folder Fix)
-        """
-        lang = get_language()
-        rec_role = games_db.recommended_role()
-        gpu = games_db.detect_gpu_vendor()
-        pp_available = games_db.find_protonplus() is not None
-
-        card = QFrame()
-        card.setObjectName("settingsCard")
-        card.setStyleSheet("""
-            QFrame#settingsCard {
-                background-color: #21252b;
-                border: 1px solid #88c0d0;
-                border-radius: 6px;
-            }
-        """)
-        box = QVBoxLayout(card)
-        box.setContentsMargins(14, 12, 14, 12)
-        box.setSpacing(8)
-
-        # Kopfzeile: Spielname + "Play"-Button direkt daneben.
-        # Play startet das Spiel per Steam-CLI mit der per "Use" gewählten
-        # Proton-Version und den Startparametern aus dem Textfeld unten.
-        name_row = QHBoxLayout()
-        lbl_name = QLabel(game["name"])
-        lbl_name.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 15px; border: none;")
-        name_row.addWidget(lbl_name)
-
-        btn_play = QPushButton(tr("games_play_btn"))
-        btn_play.setObjectName("panelPlay")
-        btn_play.setCursor(Qt.PointingHandCursor)
-        btn_play.setIcon(make_play_icon(12, "#21252b"))
-        btn_play.setIconSize(QSize(12, 12))
-        btn_play.setStyleSheet("""
-            QPushButton#panelPlay { background-color: #a3be8c; color: #21252b; border: none;
-                          font-weight: bold; padding: 5px 16px; border-radius: 4px; font-size: 12px; }
-            QPushButton#panelPlay:hover { background-color: #b8d19f; }
-            QPushButton#panelPlay:pressed { background-color: #8fae76; }
-        """)
-        btn_play.clicked.connect(lambda _, a=appid, g=game: self._play_game(a, g))
-        name_row.addWidget(btn_play)
-        name_row.addStretch()
-        box.addLayout(name_row)
-
-        # --- Proton-Versionen (gefiltert + Empfehlung zuerst) ---
-        lbl_proton = QLabel(tr("games_proton_section"))
-        lbl_proton.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-        box.addWidget(lbl_proton)
-
-        role_labels = {
-            "main": tr("games_role_main"),
-            "main_cachyos": tr("games_role_cachyos"),
-            "alternative": tr("games_role_alt"),
-            "alternative_ge": tr("games_role_alt_ge"),
-        }
-
-        for proton in games_db.visible_protons(game):
-            row_frame = QFrame()
-            is_rec = proton.get("role") == rec_role
-            row_frame.setStyleSheet(
-                "QFrame { background-color: #2e3440; border-radius: 4px; border: none; }"
-                if is_rec else
-                "QFrame { background-color: transparent; border: 1px solid #2e3440; border-radius: 4px; }")
-            row = QVBoxLayout(row_frame)
-            row.setContentsMargins(10, 8, 10, 8)
-            row.setSpacing(4)
-
-            head = QHBoxLayout()
-            ver_text = proton.get("version", "")
-            if proton.get("untested"):
-                ver_text = f"{ver_text} {tr('games_untested_suffix')}"
-            lbl_ver = QLabel(ver_text)
-            lbl_ver.setStyleSheet(
-                "color: #a3be8c; font-family: monospace; font-size: 12px; font-weight: bold; border: none;")
-            lbl_ver.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            head.addWidget(lbl_ver)
-
-            badge_text = (tr("games_recommended_cachyos")
-                          if is_rec and rec_role == "main_cachyos"
-                          else tr("games_recommended")) if is_rec \
-                else role_labels.get(proton.get("role"), "")
-            lbl_badge = QLabel(badge_text)
-            lbl_badge.setStyleSheet(
-                "color: #ebcb8b; font-size: 11px; font-weight: bold; border: none;" if is_rec
-                else "color: #7b88a1; font-size: 11px; border: none;")
-            head.addWidget(lbl_badge)
-
-            # Per "Use" als aktiv gewählte Version markieren
-            is_active = self._selected_proton.get(appid) == proton.get("version")
-            if is_active:
-                lbl_active = QLabel(tr("games_active_badge"))
-                lbl_active.setStyleSheet(
-                    "color: #a3be8c; font-size: 11px; font-weight: bold; border: none;")
-                head.addWidget(lbl_active)
-            head.addStretch()
-
-            # "Use": setzt diese Version als aktive Version für den Play-Button
-            # (schreibt sie in Steams CompatToolMapping und merkt sie dauerhaft)
-            btn_use = QPushButton(tr("games_use_btn"))
-            btn_use.setCursor(Qt.PointingHandCursor)
-            btn_use.setEnabled(not is_active)
-            btn_use.setStyleSheet("""
-                QPushButton { background-color: #5e81ac; color: white; border: none;
-                              font-weight: bold; padding: 3px 12px; border-radius: 4px; font-size: 11px; }
-                QPushButton:hover { background-color: #81a1c1; }
-                QPushButton:disabled { background-color: #3b4252; color: #a3be8c; }
-            """)
-            btn_use.clicked.connect(
-                lambda _, a=appid, p=proton: self._use_proton(a, p))
-            head.addWidget(btn_use)
-
-            btn_copy_ver = QPushButton(tr("games_copy_btn"))
-            btn_copy_ver.setCursor(Qt.PointingHandCursor)
-            btn_copy_ver.setStyleSheet("""
-                QPushButton { background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a;
-                              padding: 3px 10px; border-radius: 4px; font-size: 11px; }
-                QPushButton:hover { background-color: #3b4252; border-color: #5e81ac; }
-            """)
-            btn_copy_ver.clicked.connect(
-                lambda _, v=proton.get("version", ""), b=btn_copy_ver:
-                self._copy_games_text(v, b))
-            head.addWidget(btn_copy_ver)
-
-            runner_id = proton.get("protonplus_runner")
-            if runner_id and pp_available:
-                btn_pp = QPushButton(tr("games_pp_install_btn"))
-                btn_pp.setCursor(Qt.PointingHandCursor)
-                btn_pp.setStyleSheet("""
-                    QPushButton { background-color: #5e81ac; color: white; border: none;
-                                  font-weight: bold; padding: 3px 10px; border-radius: 4px; font-size: 11px; }
-                    QPushButton:hover { background-color: #81a1c1; }
-                    QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-                """)
-                btn_pp.clicked.connect(
-                    lambda _, r=runner_id: self.start_protonplus_install(r))
-                head.addWidget(btn_pp)
-            row.addLayout(head)
-
-            desc = proton.get("desc", {})
-            lbl_desc = QLabel(desc.get(lang) or desc.get("en") or desc.get("de") or "")
-            lbl_desc.setStyleSheet("color: #d8dee9; font-size: 11px; border: none;")
-            lbl_desc.setWordWrap(True)
-            row.addWidget(lbl_desc)
-
-            if runner_id is None:
-                lbl_src = QLabel(tr("games_pp_steam_note"))
-                lbl_src.setStyleSheet("color: #7b88a1; font-size: 10px; font-style: italic; border: none;")
-                row.addWidget(lbl_src)
-            elif not pp_available:
-                lbl_src = QLabel(tr("games_pp_missing"))
-                lbl_src.setStyleSheet("color: #ebcb8b; font-size: 10px; font-style: italic; border: none;")
-                lbl_src.setWordWrap(True)
-                row.addWidget(lbl_src)
-
-            box.addWidget(row_frame)
-
-        # --- Startparameter: Basis (GPU-abhängig) + Zusatz-Optionen ---
-        # Aufbau: hinterlegte Basis-Parameter  ->  Toggle-Schalter
-        #         ->  eigene Parameter  ->  finaler, kopierbarer String.
-        # Der finale String wird live neu berechnet und ist genau das, was
-        # "Play" in Steams LaunchOptions schreibt.
-        params = game.get("launch_params", {})
-        if params and gpu in ("amd", "nvidia"):
-            gpu_name = tr("games_gpu_amd") if gpu == "amd" else tr("games_gpu_nvidia")
-            lbl_params = QLabel(tr("games_params_section").format(gpu=gpu_name))
-            self._detail_base_params = params.get(gpu, "")
-        else:
-            lbl_params = QLabel(tr("games_params_section_unknown"))
-            self._detail_base_params = (params.get("amd", "")
-                                        or next(iter(params.values()), "")) if params else ""
-        lbl_params.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-        box.addWidget(lbl_params)
-
-        game_toggles = game.get("toggles", [])
-        self._detail_game_toggles = game_toggles
-        saved_keys, saved_custom = games_db.load_launch_toggles(appid, game_toggles)
-
-        # Beim ERSTEN Öffnen (noch nichts gespeichert) greifen die Spiel-
-        # Vorgaben (z. B. gamemoderun + HW-Video-Dekodierung sind bei VRChat
-        # per Default an). Danach ist die gespeicherte Auswahl maßgeblich —
-        # der Nutzer kann die Vorgaben also ganz normal wieder abschalten.
-        if games_db.has_saved_launch_toggles(appid):
-            initial_keys = set(saved_keys)
-        else:
-            initial_keys = set(game.get("default_on", []))
-            initial_keys |= {t["key"] for t in game_toggles if t.get("default")}
-
-        # Toggle-Schalter: globale (LAUNCH_TOGGLES) + spiel-eigene (game['toggles'])
-        lbl_toggles = QLabel(tr("games_toggles_section"))
-        lbl_toggles.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-        box.addWidget(lbl_toggles)
-
-        toggle_row = QHBoxLayout()
-        toggle_row.setSpacing(16)
-        self._detail_toggles = {}
-        for t in list(games_db.LAUNCH_TOGGLES) + list(game_toggles):
-            cb = QCheckBox(tr(f"games_toggle_{t['key']}"))
-            cb.setCursor(Qt.PointingHandCursor)
-            cb.setChecked(t["key"] in initial_keys)
-            cb.setToolTip(tr(f"games_toggle_{t['key']}_tip"))
-            cb.setStyleSheet(
-                "QCheckBox { color: #d8dee9; font-size: 11px; font-family: monospace; border: none; }")
-            cb.toggled.connect(lambda _, a=appid: self._on_launch_opts_changed(a))
-            self._detail_toggles[t["key"]] = cb
-            toggle_row.addWidget(cb)
-        toggle_row.addStretch()
-        box.addLayout(toggle_row)
-
-        # Eigene Parameter (auch der Platz für ungetestete Spiele ohne Profil)
-        lbl_custom = QLabel(tr("games_custom_params"))
-        lbl_custom.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-        box.addWidget(lbl_custom)
-
-        self._detail_custom_edit = QLineEdit(saved_custom)
-        self._detail_custom_edit.setPlaceholderText(tr("games_custom_placeholder"))
-        self._detail_custom_edit.setStyleSheet("font-family: monospace; font-size: 11px;")
-        self._detail_custom_edit.textEdited.connect(
-            lambda _, a=appid: self._on_launch_opts_changed(a))
-        box.addWidget(self._detail_custom_edit)
-
-        # Finaler String (schreibgeschützt, wird live gebaut) + Kopieren
-        lbl_final = QLabel(tr("games_final_params"))
-        lbl_final.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-        box.addWidget(lbl_final)
-
-        param_row = QHBoxLayout()
-        txt_params = QLineEdit()
-        txt_params.setReadOnly(True)
-        txt_params.setStyleSheet("font-family: monospace; font-size: 11px; color: #a3be8c;")
-        self._detail_params_edit = txt_params   # Play liest hieraus
-        param_row.addWidget(txt_params)
-
-        btn_copy = QPushButton(tr("games_copy_btn"))
-        btn_copy.setCursor(Qt.PointingHandCursor)
-        btn_copy.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 6px 12px; border-radius: 4px; font-size: 11px; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
-        btn_copy.clicked.connect(
-            lambda _, t=txt_params, b=btn_copy: self._copy_games_text(t.text(), b))
-        param_row.addWidget(btn_copy)
-        box.addLayout(param_row)
-
-        self._update_final_params()   # Startwert berechnen
-
-        # --- Spiel-spezifische Fixes (Umzug aus Settings -> "General") ---
-        if "vrchat_pictures" in game.get("fixes", []):
-            lbl_fix_head = QLabel(tr("games_fixes_section"))
-            lbl_fix_head.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-            box.addWidget(lbl_fix_head)
-
-            fix_row = QHBoxLayout()
-            btn_fix = QPushButton(tr("settings_vrchat_btn"))
-            btn_fix.setCursor(Qt.PointingHandCursor)
-            btn_fix.setToolTip(tr("settings_vrchat_desc_short"))
-            btn_fix.setStyleSheet("""
-                QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
-                              padding: 6px 12px; border-radius: 4px; border: none; font-size: 11px; }
-                QPushButton:hover { background-color: #81a1c1; }
-                QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-            """)
-            lbl_fix_status = QLabel("")
-            lbl_fix_status.setStyleSheet("font-size: 11px; border: none;")
-            lbl_fix_status.setWordWrap(True)
-
-            # Die bestehende Symlink-Logik (create_vrchat_symlink) schreibt in
-            # self.ui.btn_vrchat_symlink / self.ui.lbl_vrchat_status — wir
-            # hängen die dynamischen Widgets einfach dort ein, dann läuft
-            # alles unverändert weiter.
-            self.ui.btn_vrchat_symlink = btn_fix
-            self.ui.lbl_vrchat_status = lbl_fix_status
-            btn_fix.clicked.connect(self.create_vrchat_symlink)
-
-            fix_row.addWidget(btn_fix)
-            fix_row.addStretch()
-            box.addLayout(fix_row)
-
-            lbl_fix_desc = QLabel(tr("settings_vrchat_desc_short"))
-            lbl_fix_desc.setStyleSheet("color: #d8dee9; font-size: 10px; border: none;")
-            lbl_fix_desc.setWordWrap(True)
-            box.addWidget(lbl_fix_desc)
-            box.addWidget(lbl_fix_status)
-
-        # Statuszeile für Use-/Play-Feedback (Steam-Neustart-Hinweis usw.)
-        self._detail_status_lbl = QLabel("")
-        self._detail_status_lbl.setStyleSheet("color: #88c0d0; font-size: 11px; border: none;")
-        self._detail_status_lbl.setWordWrap(True)
-        box.addWidget(self._detail_status_lbl)
-
-        return card
-
-    def _copy_games_text(self, text, button):
-        """Text in die Zwischenablage + kurzes 'Kopiert!'-Feedback am Knopf."""
-        QApplication.clipboard().setText(text)
-        original = button.text()
-        button.setText(tr("games_copied"))
-        QTimer.singleShot(1200, lambda: button.setText(original))
-
-    def start_protonplus_install(self, runner_id):
-        """
-        Öffnet die interaktive ProtonPlus-Installation im Terminal.
-        Dort listet ProtonPlus alle Releases; der Nutzer wählt die auf der
-        Karte empfohlene Version per Nummer aus.
-        """
-        if self._pp_worker and self._pp_worker.isRunning():
-            return
-        cmd = games_db.protonplus_install_cmd(runner_id)
-        if not cmd:
-            self.ui.lbl_games_status.setText(tr("games_pp_missing"))
-            return
-        self.ui.lbl_games_status.setText(tr("games_pp_running"))
-        self._pp_worker = ProtonPlusInstallWorker(cmd)
-        self._pp_worker.finished_signal.connect(self._on_pp_install_done)
-        self._pp_worker.start()
-
-    def _on_pp_install_done(self, ok):
-        self.ui.lbl_games_status.setText(tr("games_pp_done") if ok else tr("games_pp_missing"))
-
-    def show_games_info(self):
-        """Das kleine (i): erklärt, wo man in Steam Proton-Version und
-        Startparameter einträgt."""
-        box = QMessageBox(self)
-        box.setWindowTitle(tr("games_info_title"))
-        box.setTextFormat(Qt.RichText)
-        box.setText(tr("games_info_text"))
-        box.setIcon(QMessageBox.Information)
-        box.exec()
-
-    def check_tools_status(self):
-        """Lädt den Status aus dem Cache (programs.json) und zeigt ihn sofort an."""
-        cache = self._load_programs_cache()
-        for key, card in self.ui.tool_cards.items():
-            entry = cache.get(key)
-            if entry is None:
-                card["lbl_status"].setText("Unbekannt — bitte Update-Check starten")
-                card["lbl_status"].setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
-                card["lbl_version"].setText("")
-                card["lbl_update"].setText("")
-                card["btn_install"].setText(tr("tools_install_btn"))
-                card["btn_install"].setEnabled(bool(card.get("methods")))
-                card["cmd_widget"].setVisible(False)
-                card["status"] = {}
-            else:
-                self._render_tool_card(key, entry)
-
-    def _render_tool_card(self, key, status):
-        """Zentrale UI-Logik einer Tool-Karte aus dem Status-Dict."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        if not isinstance(status, dict):
-            status = {}
-        card["status"] = status
-
-        appimage_inst = status.get("appimage_installed", False)
-        appimage_ver  = status.get("appimage_version", "")
-        appimage_upd  = status.get("appimage_has_update", False)
-        pm_inst       = status.get("pm_installed", False)
-        pm_helper     = status.get("pm_helper", "")
-        pm_ver        = status.get("pm_version", "")
-        pm_upd        = status.get("pm_has_update", False)
-        flatpak_inst  = status.get("flatpak_installed", False)
-        flatpak_ver   = status.get("flatpak_version", "")
-        config_ok     = status.get("config_present", False)
-
-        methods = card.get("methods") or []
-        combo = card.get("combo_method")
-
-        btn = card["btn_install"]
-        st = card["lbl_status"]
-
-        # Dropdown nur zeigen, wenn Auswahl besteht UND noch installiert/aktualisiert werden kann
-        show_combo = (combo is not None and len(methods) >= 2
-                      and not appimage_inst and not pm_inst and not flatpak_inst)
-        if combo is not None:
-            combo.setVisible(show_combo)
-
-        if appimage_inst:
-            card["lbl_version"].setText(appimage_ver or "")
-            st.setText(tr("tools_appimage_ok"))
-            st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-            card["cmd_widget"].setVisible(True)
-            if appimage_upd:
-                card["lbl_update"].setText(tr("tools_update"))
-                btn.setText(tr("tools_update_btn"))   # ⬆ Aktualisieren
-            else:
-                card["lbl_update"].setText("")
-                btn.setText(tr("tools_delete"))         # 🗑 Löschen
-            btn.setEnabled(True)
-
-        elif pm_inst:
-            card["lbl_version"].setText(f"v{pm_ver}" if pm_ver else "")
-            card["lbl_update"].setText("⬆ Update verfügbar" if pm_upd else "")
-            st.setText(tr("tools_pm_ok").format(helper=pm_helper))
-            st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-            # Per yay/paru installiert -> der Knopf wird zum Löschen-Knopf.
-            # Nach dem Entfernen erkennt _refresh_single_tool (yay -Q) den
-            # neuen Zustand und die Karte springt auf 'Nicht installiert'.
-            btn.setText(tr("tools_delete"))
-            btn.setEnabled(True)
-            card["cmd_widget"].setVisible(True)
-
-        elif flatpak_inst:
-            card["lbl_version"].setText(flatpak_ver or "")
-            card["lbl_update"].setText("")
-            st.setText(tr("tools_flatpak_ok"))
-            st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
-            btn.setText(tr("tools_already"))
-            btn.setEnabled(False)
-            card["cmd_widget"].setVisible(True)
-
-        elif config_ok:
-            card["lbl_version"].setText("")
-            card["lbl_update"].setText("")
-            st.setText(tr("tools_native"))
-            st.setStyleSheet("color: #ebcb8b; font-size: 12px; font-weight: bold;")
-            btn.setText(tr("tools_install_btn"))
-            btn.setEnabled(bool(methods))
-            card["cmd_widget"].setVisible(True)
-
-        else:
-            card["lbl_version"].setText("")
-            card["lbl_update"].setText("")
-            if methods:
-                st.setText(tr("tools_not_installed"))
-                st.setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
-                btn.setText(tr("tools_install_btn"))
-                btn.setEnabled(True)
-            else:
-                # keine Methode verfügbar (z. B. AUR-Tool ohne yay/paru / nicht Arch)
-                st.setText(tr("tools_no_method"))
-                st.setStyleSheet("color: #bf616a; font-size: 12px; font-style: italic;")
-                btn.setText(tr("tools_install_btn"))
-                btn.setEnabled(False)
-            card["cmd_widget"].setVisible(False)
-
-    def _apply_tool_status(self, key, status):
-        """Vom Worker pro Tool aufgerufen: Cache aktualisieren + rendern."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        if not isinstance(status, dict):
-            status = {}
-        cache = self._load_programs_cache()
-        cache[key] = status
-        self._save_programs_cache(cache)
-        self._render_tool_card(key, status)
-
-    def start_tools_update_check(self):
-        """Startet den echten Versions-Check im Hintergrund."""
-        import time
-        if hasattr(self, '_tools_status_worker') and self._tools_status_worker is not None:
-            if self._tools_status_worker.isRunning():
-                return  # Läuft bereits
-        self._last_tools_check_ts = time.time()
-
-        self.ui.btn_tools_check.setEnabled(False)
-        self.ui.btn_tools_check.setText("⏳ Prüfe...")
-
-        for key, card in self.ui.tool_cards.items():
-            card["lbl_status"].setText("Prüfe...")
-            card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px; font-style: italic;")
-
-        tools = {key: card.get("tool", {"pkg": card["pkg"]})
-                 for key, card in self.ui.tool_cards.items()}
-        self._tools_status_worker = ToolsStatusWorker(tools)
-        self._tools_status_worker.result_signal.connect(self._apply_tool_status)
-        self._tools_status_worker.finished.connect(self._on_tools_check_done)
-        self._tools_status_worker.start()
-
-    def _on_tools_check_done(self):
-        self.ui.btn_tools_check.setEnabled(True)
-        self.ui.btn_tools_check.setText("🔄 Nach Updates suchen")
-        self._tools_status_worker = None
-
-    def _load_programs_cache(self) -> dict:
-        path = os.path.expanduser("~/.config/yakuda-connect/config/programs.json")
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {}
-
-    def _save_programs_cache(self, data: dict):
-        path = os.path.expanduser("~/.config/yakuda-connect/config/programs.json")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        try:
-            with open(path, "w") as f:
-                json.dump(data, f, indent=4)
-        except Exception as e:
-            print(f"[Cache] Konnte programs.json nicht schreiben: {e}")
-
-    def _populate_method_combo(self, card):
-        """Füllt das Methoden-Dropdown einer Karte (AppImage/yay/paru) und wählt vor."""
-        tool = card.get("tool", {})
-        combo = card.get("combo_method")
-        if combo is None:
-            return
-        methods = appimg.detect_install_methods(tool)
-        card["methods"] = methods
-        labels = {"appimage": "AppImage", "yay": "yay", "paru": "paru",
-                  "flatpak": "Flatpak"}
-        combo.blockSignals(True)
-        combo.clear()
-        for mthd in methods:
-            combo.addItem(labels.get(mthd, mthd), mthd)
-        default = appimg.default_method(methods)
-        if default:
-            idx = combo.findData(default)
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
-        combo.blockSignals(False)
-        combo.setVisible(len(methods) >= 2)
-
-    def _selected_method(self, card):
-        """Aktuell im Dropdown gewählte Methode (oder die einzige verfügbare)."""
-        combo = card.get("combo_method")
-        methods = card.get("methods") or appimg.detect_install_methods(card.get("tool", {}))
-        if combo is not None and combo.count() > 0:
-            data = combo.currentData()
-            if data:
-                return data
-        return appimg.default_method(methods)
-
-    def on_tool_action(self, key):
-        """Dispatcher des Karten-Buttons: Installieren / Aktualisieren / Löschen."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        status = card.get("status", {}) or {}
-        # AppImage installiert + kein Update -> Löschen
-        if status.get("appimage_installed") and not status.get("appimage_has_update"):
-            self.delete_tool(key)
-        elif status.get("pm_installed"):
-            # Per yay/paru installiert -> Paket entfernen
-            self.remove_tool_pm(key)
-        else:
-            # sonst Installieren bzw. Aktualisieren (per gewählter Methode)
-            self.install_tool(key)
-
-    def install_tool(self, key):
-        """Installiert/aktualisiert ein Tool — per gewählter Methode (AppImage/yay/paru)."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        tool = card.get("tool", {})
-        status = card.get("status", {}) or {}
-        method = self._selected_method(card)
-        if not method:
-            QMessageBox.information(self, tool.get("name", key), tr("tools_no_method"))
-            return
-
-        updating = bool(status.get("appimage_installed") and status.get("appimage_has_update"))
-
-        # AppImage, aber Config-Ordner schon vorhanden -> vorher warnen (Konflikte vermeiden)
-        if method == "appimage" and status.get("config_present") and not status.get("appimage_installed"):
-            name = tool.get("name", key)
-            hint = appimg.config_path_hint(tool)
-            path = f" ({hint})" if hint else ""
-            reply = QMessageBox.question(
-                self, tr("tools_native_title"),
-                tr("tools_native_text").format(name=name, path=path),
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply != QMessageBox.Yes:
-                self._render_tool_card(key, status)
-                return
-
-        card["btn_install"].setEnabled(False)
-        card["btn_install"].setText(tr("tools_updating") if updating else tr("tools_installing"))
-        card["lbl_status"].setText("⏳ ...")
-        card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
-
-        if method == "appimage":
-            self.tool_worker = AppImageInstallWorker(tool)
-            self.tool_worker.status_signal.connect(
-                lambda msg, k=key: self._set_tool_status(k, msg)
-            )
-            self.tool_worker.finished_signal.connect(
-                lambda success, k=key: self.on_tool_installed(k, success)
-            )
-            self.tool_worker.start()
-        elif method == "flatpak":
-            self.tool_worker = InstallWorker([tool.get("flatpak_id", "")], helper="flatpak")
-            self.tool_worker.finished_signal.connect(
-                lambda success, k=key: self.on_tool_installed(k, success)
-            )
-            self.tool_worker.start()
-        else:
-            # method ist 'yay' oder 'paru'
-            self.tool_worker = InstallWorker([card["pkg"]], helper=method)
-            self.tool_worker.finished_signal.connect(
-                lambda success, k=key: self.on_tool_installed(k, success)
-            )
-            self.tool_worker.start()
-
-    def delete_tool(self, key):
-        """Entfernt eine AppImage-Installation; fragt zusätzlich nach dem Config-Ordner."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        tool = card.get("tool", {})
-        name = tool.get("name", key)
-        hint = appimg.config_path_hint(tool)
-        path = f" ({hint})" if hint else ""
-
-        # Vor dem Löschen fragen, ob auch der Konfigurationsordner mit entfernt werden soll
-        also_config = False
-        if tool.get("config_dirs"):
-            reply = QMessageBox.question(
-                self, tr("tools_delete_config_title"),
-                tr("tools_delete_config_text").format(name=name, path=path),
-                QMessageBox.Yes | QMessageBox.No
-            )
-            also_config = (reply == QMessageBox.Yes)
-
-        card["btn_install"].setEnabled(False)
-        card["btn_install"].setText(tr("tools_deleting"))
-
-        # AppImage, Symlink und Desktop-Eintrag immer entfernen
-        try:
-            appimg.uninstall(tool)
-        except Exception as e:
-            print(f"[AppImage] Löschen fehlgeschlagen: {e}")
-
-        # Config-Ordner nur auf Wunsch
-        if also_config:
-            try:
-                appimg.delete_config(tool)
-            except Exception as e:
-                print(f"[AppImage] Config-Löschen fehlgeschlagen: {e}")
-
-        # Status frisch berechnen und anzeigen
-        self._refresh_single_tool(key)
-
-    def remove_tool_pm(self, key):
-        """
-        Entfernt ein per yay/paru installiertes Tool (Tools-Tab, 'Löschen').
-
-        Öffnet ein Terminal mit '{helper} -Rns {pkg}' (sudo-Passwort + Übersicht
-        für den Nutzer). Danach wird der Status neu berechnet — yay -Q schlägt
-        dann fehl und die Karte springt auf 'Nicht installiert'.
-        """
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        tool = card.get("tool", {})
-        status = card.get("status", {}) or {}
-        name = tool.get("name", key)
-        pkg = tool.get("pkg") or card.get("pkg")
-        helper = status.get("pm_helper") or "yay"
-        if not pkg:
-            return
-
-        # Bestätigung vor dem Entfernen
-        reply = QMessageBox.question(
-            self, tr("tools_pm_remove_title"),
-            tr("tools_pm_remove_text").format(name=name, pkg=pkg, helper=helper),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply != QMessageBox.Yes:
-            return
-
-        # Optional den Config-Ordner mit entfernen (wie beim AppImage-Löschen)
-        also_config = False
-        if tool.get("config_dirs"):
-            hint = appimg.config_path_hint(tool)
-            path = f" ({hint})" if hint else ""
-            reply = QMessageBox.question(
-                self, tr("tools_delete_config_title"),
-                tr("tools_delete_config_text").format(name=name, path=path),
-                QMessageBox.Yes | QMessageBox.No)
-            also_config = (reply == QMessageBox.Yes)
-
-        card["btn_install"].setEnabled(False)
-        card["btn_install"].setText(tr("tools_deleting"))
-        card["lbl_status"].setText("⏳ ...")
-        card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
-
-        self.tool_worker = RemoveWorker([pkg], helper=helper)
-        self.tool_worker.finished_signal.connect(
-            lambda success, k=key, cfg=also_config: self._on_tool_removed(k, success, cfg)
-        )
-        self.tool_worker.start()
-
-    def _on_tool_removed(self, key, success, also_config):
-        """Callback nach dem Terminal-Entfernen: Config löschen (optional) + Status neu."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        tool = card.get("tool", {})
-        if success and also_config:
-            try:
-                appimg.delete_config(tool)
-            except Exception as e:
-                print(f"[Tools] Config-Löschen fehlgeschlagen: {e}")
-        # Immer neu prüfen — auch bei Abbruch im Terminal zeigt die Karte
-        # danach den echten Zustand (yay -Q entscheidet, nicht der Returncode).
-        self._refresh_single_tool(key)
-
-    def _refresh_single_tool(self, key):
-        """Berechnet den Status eines einzelnen Tools neu (lokal/PM) und rendert ihn."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        tool = card.get("tool", {})
-        try:
-            status = appimg.compute_status(tool)
-        except Exception:
-            status = {}
-        self._apply_tool_status(key, status)
-
-    def _set_tool_status(self, key, msg):
-        """Live-Statustext einer Tool-Karte aktualisieren (AppImage-Fortschritt)."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        card["lbl_status"].setText(msg)
-        card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
-
-    def on_tool_installed(self, key, success):
-        """Callback nach abgeschlossener Tool-Installation/-Aktualisierung."""
-        card = self.ui.tool_cards.get(key)
-        if not card:
-            return
-        if success:
-            self._refresh_single_tool(key)
-            # Nach WayVR-Installation: Hinweis auf das bessere UI-Design in den Settings
-            if key == "wayvr":
-                QMessageBox.information(self, tr("overlay_popup_title"), tr("overlay_popup_text"))
-        else:
-            card["lbl_status"].setText(tr("tools_install_error"))
-            card["lbl_status"].setStyleSheet("color: #bf616a; font-size: 12px;")
-            card["btn_install"].setText(tr("tools_retry"))
-            card["btn_install"].setEnabled(True)
-
     def fill_openxr_fields(self):
         """Füllt das Pfad-Feld und das Inhalt-Feld für die manuelle OpenXR-Reparatur."""
         try:
@@ -2227,8 +1037,8 @@ class VRApp(QMainWindow):
                                        "library_path": "/usr/lib/wivrn/libopenxr_wivrn.so",
                                        "MND_libmonado_path": "/usr/lib/wivrn/libmonado_wivrn.so"}}
             self.ui.txt_openxr_content.setPlainText(json.dumps(runtime, indent=4))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("fill_openxr_fields: ignoriert — %s", exc)
 
     def copy_openxr_path(self):
         QApplication.clipboard().setText(self.ui.txt_openxr_path.text())
@@ -2283,10 +1093,12 @@ class VRApp(QMainWindow):
         self.apply_translations()
         data = load_saved_settings()
         data["language"] = lang
-        path = os.path.expanduser("~/.config/yakuda-connect/config/config.json")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(data, f, indent=4)
+        # update_json statt json.dump: liest, aendert nur die Sprache und
+        # schreibt atomar zurueck. Vorher wurde die komplette Datei neu
+        # geschrieben — ein Absturz mitten im Sprachwechsel haette alle
+        # Einstellungen gekostet.
+        if not update_json(paths.config_file("config.json"), {"language": lang}):
+            log.warning("Sprache konnte nicht gespeichert werden.")
 
     def apply_translations(self):
         """Aktualisiert alle UI-Texte nach Sprachwechsel."""
@@ -2348,15 +1160,14 @@ class VRApp(QMainWindow):
         try:
             res = subprocess.run(
                 ["xdg-user-dir", "PICTURES"],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
-            )
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=proc.DEFAULT_TIMEOUT)
             if res.returncode == 0:
                 p = res.stdout.strip()
                 # xdg gibt das Home zurück, wenn nichts konfiguriert ist → das ignorieren
                 if p and pathlib.Path(p) != home:
                     return pathlib.Path(p)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("_get_pictures_dir: ignoriert — %s", exc)
 
         # 2. Fallback: bekannte Ordnernamen durchprobieren (existierender gewinnt)
         for name in ("Bilder", "Pictures"):
@@ -2372,7 +1183,6 @@ class VRApp(QMainWindow):
         auch im normalen Linux-Bilderordner (z. B. ~/Bilder/VRChat)."""
         import pathlib
 
-        home = pathlib.Path.home()
         # Prefix nativ ODER Flatpak-Steam automatisch finden
         prefix = pathlib.Path(venv.vrchat_proton_prefix())
         vrchat_proton_path = prefix / "Pictures" / "VRChat"
@@ -2491,60 +1301,62 @@ class VRApp(QMainWindow):
         self._rebuild_package_rows()
         self.check_system_packages()
 
+    # ------------------------------------------------------------------ #
+    #  Paketstatus im Installations-Tab                                    #
+    # ------------------------------------------------------------------ #
+    # Frueher lief hier beim Start je Paket ein "yay -Q" UND ein "yay -Qu",
+    # nacheinander und im GUI-Thread: bei sechs Paketen also bis zu zwoelf
+    # Aufrufe, von denen die Haelfte ("-Qu") das AUR abfragt und dabei ans
+    # Netz geht. Das Fenster erschien erst danach — auf einem langsamen
+    # Spiegelserver dauerte der Start dadurch mehrere Sekunden.
+    #
+    # Jetzt gilt:
+    #   1. Die Paketlisten werden EINMAL geholt und ausgewertet (2 Aufrufe
+    #      statt 12), egal wie viele Pakete geprueft werden.
+    #   2. Das laeuft in einem Hintergrund-Thread. Das Fenster ist sofort da,
+    #      die Statuszeilen fuellen sich Sekundenbruchteile spaeter.
+
     def check_system_packages(self):
+        """Paketstatus im Hintergrund ermitteln (blockiert die Oberflaeche nicht)."""
         method = self._install_method()
         groups = self._package_groups_for(method)
-        updates_available = False
 
-        for name, idents in groups.items():
-            if name not in self.prog_labels:
-                continue
-            installed = True
-            has_update = False
+        for name in groups:
+            if name in self.prog_labels:
+                self.prog_labels[name].setText(tr("pkg_checking"))
+                self.prog_labels[name].setStyleSheet("color: #7b88a1;")
 
-            if method == "dnf":
-                # Fedora: rpm -q ist schnell und braucht kein root
-                for pkg in idents:
-                    res = subprocess.run(["rpm", "-q", pkg],
-                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if res.returncode != 0:
-                        installed = False
-            elif method == "native" or not method:
-                # Selbst installiert (bzw. Ubuntu) -> nur prüfen, ob die Binary da ist
-                installed = shutil.which("wivrn-server") is not None
-            else:
-                if not shutil.which(method):
-                    installed = False
+        # Laeuft bereits eine Pruefung, diese zuerst beenden — sonst schreiben
+        # zwei Threads in dieselben Labels (z. B. bei schnellem Wechsel der
+        # Installationsmethode).
+        worker = getattr(self, "_pkgcheck_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.wait(2000)
+
+        self._pkgcheck_worker = PackageCheckWorker(method, groups)
+        self._pkgcheck_worker.result_signal.connect(self._on_package_check_done)
+        self._pkgcheck_worker.start()
+
+    def _on_package_check_done(self, results, updates_available):
+        """Ergebnis des Hintergrund-Threads in die Oberflaeche uebertragen."""
+        for name, state in results.items():
+            label = self.prog_labels.get(name)
+            if label is None:
+                continue                      # Methode wurde zwischenzeitlich gewechselt
+            if state["installed"]:
+                if state["has_update"]:
+                    label.setText(tr("pkg_installed") + " (Update available)")
+                    label.setStyleSheet("color: #d08770; font-weight: bold;")
                 else:
-                    for pkg in idents:
-                        res_check = subprocess.run(f"{method} -Q {pkg}", shell=True,
-                                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        if res_check.returncode != 0:
-                            installed = False
-                        else:
-                            res_update = subprocess.run(f"{method} -Qu {pkg}", shell=True,
-                                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                            if res_update.returncode == 0:
-                                has_update = True
-                                updates_available = True
-
-            if installed:
-                if has_update:
-                    self.prog_labels[name].setText(tr("pkg_installed") + " (Update available)")
-                    self.prog_labels[name].setStyleSheet("color: #d08770; font-weight: bold;")
-                else:
-                    self.prog_labels[name].setText(tr("pkg_installed"))
-                    self.prog_labels[name].setStyleSheet("color: #a3be8c; font-weight: bold;")
+                    label.setText(tr("pkg_installed"))
+                    label.setStyleSheet("color: #a3be8c; font-weight: bold;")
             else:
-                self.prog_labels[name].setText(tr("pkg_incomplete"))
-                self.prog_labels[name].setStyleSheet("color: #ebcb8b; font-weight: bold;")
+                label.setText(tr("pkg_incomplete"))
+                label.setStyleSheet("color: #ebcb8b; font-weight: bold;")
 
         self.ui.lbl_wivrn_ver.setText(f"<b>WiVRn Version:</b> {self.get_wivrn_version()}")
-        if updates_available:
-            self.ui.lbl_worker_status.setText(tr("install_updates_available"))
-        else:
-            self.ui.lbl_worker_status.setText(tr("install_check_done"))
-        # Aktualisieren-Knopf je nach Methode (bei 'native' deaktiviert)
+        self.ui.lbl_worker_status.setText(
+            tr("install_updates_available") if updates_available else tr("install_check_done"))
         self._update_update_button()
 
     def _show_ubuntu_install_guide(self):
@@ -2626,7 +1438,7 @@ class VRApp(QMainWindow):
                 self.ui.btn_update.setVisible(True)
                 self.ui.btn_update.setText(tr("update_btn_fedora"))
         except Exception as e:
-            print(f"[Distro-UI] {e}")
+            log.info(f"[Distro-UI] {e}")
 
     def _update_update_button(self):
         """Aktualisieren-Knopf: aktiv nur, wenn es eine Methode gibt und sie NICHT 'native' ist."""
@@ -2713,8 +1525,8 @@ class VRApp(QMainWindow):
             packages_to_process = []
             for pkgs in INSTALL_DNF.values():
                 for pkg in pkgs:
-                    res = subprocess.run(["rpm", "-q", pkg],
-                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    res = proc.run(["rpm", "-q", pkg],
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT)
                     if res.returncode != 0:
                         packages_to_process.append(pkg)
             if not packages_to_process:
@@ -2728,8 +1540,8 @@ class VRApp(QMainWindow):
             packages_to_process = []
             for prog_name, pkgs in self.required_packages.items():
                 for pkg in pkgs:
-                    result = subprocess.run(f"{method} -Q {pkg}", shell=True,
-                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    result = proc.run([method, "-Q", pkg],
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT)
                     if result.returncode != 0:
                         packages_to_process.append(pkg)
             if not packages_to_process:
@@ -2785,19 +1597,17 @@ class VRApp(QMainWindow):
             write_cmd = (
                 f"printf '{UFW_PROFILE_CONTENT}' > {UFW_PROFILE_PATH}"
             )
-            res_write = subprocess.run(
+            res_write = proc.run(
                 ["pkexec", "sh", "-c", write_cmd],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
 
             if res_write.returncode != 0:
                 errors.append(f"UFW Profil konnte nicht geschrieben werden:\n{res_write.stderr}")
             else:
                 # Schritt 2: Port über den Profilnamen freigeben — genau wie WiVRn
-                res_allow = subprocess.run(
+                res_allow = proc.run(
                     ["pkexec", "ufw", "allow", "wivrn"],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-                )
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
                 if res_allow.returncode == 0:
                     opened_any = True
                 else:
@@ -2805,16 +1615,14 @@ class VRApp(QMainWindow):
 
         elif shutil.which("firewall-cmd"):
             # Firewalld-Fallback (z.B. Fedora/openSUSE)
-            res_udp = subprocess.run(
+            res_udp = proc.run(
                 ["pkexec", "firewall-cmd", "--permanent", f"--add-port={WIVRN_PORT}/udp"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
-            res_tcp = subprocess.run(
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
+            res_tcp = proc.run(
                 ["pkexec", "firewall-cmd", "--permanent", f"--add-port={WIVRN_PORT}/tcp"],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
             if res_udp.returncode == 0 and res_tcp.returncode == 0:
-                subprocess.run(["pkexec", "firewall-cmd", "--reload"])
+                proc.run(["pkexec", "firewall-cmd", "--reload"], timeout=proc.LONG_TIMEOUT)
                 opened_any = True
             else:
                 errors.append(f"Firewalld Fehler:\n{res_udp.stderr}")
@@ -2954,11 +1762,11 @@ class VRApp(QMainWindow):
 
     def refresh_headset_list(self):
         self.ui.list_headsets.clear()
-        if subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode != 0:
+        if proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode != 0:
             self.ui.list_headsets.addItem(tr("dashboard_no_server"))
             return
         try:
-            res = subprocess.run(["wivrnctl", "list-paired"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            res = subprocess.run(["wivrnctl", "list-paired"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.DEFAULT_TIMEOUT)
             if res.returncode == 0:
                 for line in res.stdout.strip().split('\n'):
                     if not line.strip() or "Headset name" in line: continue
@@ -2971,16 +1779,16 @@ class VRApp(QMainWindow):
         if not item or "Keine" in item.text() or "Server" in item.text(): return
         match = re.match(r'^(\d+)', item.text())
         if match and QMessageBox.question(self, "Entkoppeln", f"Headset entkoppeln?\n{item.text()}", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            subprocess.run(["wivrnctl", "unpair", match.group(1)])
+            proc.run(["wivrnctl", "unpair", match.group(1)], timeout=proc.DEFAULT_TIMEOUT)
             self.refresh_headset_list()
 
     def disconnect_current_headset(self):
-        subprocess.run(["wivrnctl", "disconnect"])
+        proc.run(["wivrnctl", "disconnect"], timeout=proc.DEFAULT_TIMEOUT)
         self.refresh_headset_list()
 
     def toggle_pairing_mode(self, checked):
         if checked:
-            if subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode != 0:
+            if proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode != 0:
                 self.ui.chk_pairing.setChecked(False)
                 return
             self.pairing_process = subprocess.Popen(["wivrnctl", "pair"], stdout=subprocess.PIPE, text=True)
@@ -3006,8 +1814,8 @@ class VRApp(QMainWindow):
                                      text=True, timeout=2)
                 if "wivrn" in res.stdout.lower():
                     return True
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("is_headset_connected: ignoriert — %s", exc)
 
         # Signal B: aktive (ESTABLISHED) TCP-Verbindung auf dem WiVRn-Port 9757.
         try:
@@ -3016,8 +1824,8 @@ class VRApp(QMainWindow):
             for line in res.stdout.splitlines():
                 if "ESTAB" in line and ":9757" in line:
                     return True
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("is_headset_connected: ignoriert — %s", exc)
 
         return False
 
@@ -3035,19 +1843,19 @@ class VRApp(QMainWindow):
         """
         # Server nicht (mehr) aktiv? -> Timer entwaffnen, nichts starten.
         server_running = (self.server_process and self.server_process.poll() is None) or \
-            subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode == 0
+            proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode == 0
         if not server_running:
             self.autostart_timer.stop()
             return
 
         if self.is_headset_connected():
-            print("[Autostart] Headset verbunden – starte Programme aus der Sitzung.")
+            log.info("[Autostart] Headset verbunden – starte Programme aus der Sitzung.")
             self.launch_autostart_apps()
             self._autostart_launched = True
             self._headset_connected = True
             # Selbst-Beendigung: ab hier kein Polling mehr.
             self.autostart_timer.stop()
-            print("[Autostart] Programme gestartet – Timer beendet (kein weiteres Polling).")
+            log.info("[Autostart] Programme gestartet – Timer beendet (kein weiteres Polling).")
 
     def arm_autostart_timer(self):
         """
@@ -3060,11 +1868,11 @@ class VRApp(QMainWindow):
         has_apps = any(r["input"].text().strip() for r in self.autostart_rows)
         if not has_apps:
             self.autostart_timer.stop()
-            print("[Autostart] Keine Programme konfiguriert – Timer bleibt aus.")
+            log.info("[Autostart] Keine Programme konfiguriert – Timer bleibt aus.")
             return
         if not self.autostart_timer.isActive():
             self.autostart_timer.start()
-        print("[Autostart] Bereitschaft scharf – warte auf Headset-Verbindung.")
+        log.info("[Autostart] Bereitschaft scharf – warte auf Headset-Verbindung.")
 
     def reset_autostart_readiness(self):
         """
@@ -3074,7 +1882,7 @@ class VRApp(QMainWindow):
         Verbinden keine doppelten Instanzen gibt.
         """
         server_running = (self.server_process and self.server_process.poll() is None) or \
-            subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode == 0
+            proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode == 0
         if not server_running:
             QMessageBox.information(
                 self, tr("autostart_reset_title"), tr("autostart_reset_no_server"))
@@ -3099,7 +1907,7 @@ class VRApp(QMainWindow):
         """
         self.stop_autostart_apps()
         self._headset_connected = False   # keine aktive App-Sitzung mehr
-        print("[Autostart] Laufende Programme manuell beendet (Besen-Button).")
+        log.info("[Autostart] Laufende Programme manuell beendet (Besen-Button).")
 
         # Kurzes visuelles Feedback am Button.
         self.ui.btn_autostart_kill.setText(tr("autostart_kill_done"))
@@ -3132,7 +1940,7 @@ class VRApp(QMainWindow):
                                          stderr=subprocess.DEVNULL, start_new_session=True)
                 self._autostart_procs.append(p)
             except Exception as e:
-                print(f"[Autostart] Konnte '{cmd}' nicht starten: {e}")
+                log.warning(f"[Autostart] Konnte '{cmd}' nicht starten: {e}")
 
     # ------------------------------------------------------------------ #
     #  Eigene Kill-Befehle (Settings, ganz unten)
@@ -3144,7 +1952,7 @@ class VRApp(QMainWindow):
     # direkt VOR dem normalen Kill laufen.
     def _killcmd_add_row(self, label_text="", cmd_text=""):
         """Fügt eine neue Zeile ins UI ein und merkt sie in self.ui.killcmd_rows."""
-        from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QPushButton
+        from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton
         row_widget = QWidget()
         row_layout = QHBoxLayout(row_widget)
         row_layout.setContentsMargins(0, 0, 0, 0)
@@ -3180,8 +1988,8 @@ class VRApp(QMainWindow):
         """Entfernt eine Zeile aus UI und Liste (Speichern muss der Nutzer selbst)."""
         try:
             self.ui.killcmd_rows.remove(row_data)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            log.debug("_killcmd_remove_row: ignoriert — %s", exc)
         row_data["row_widget"].setParent(None)
         row_data["row_widget"].deleteLater()
 
@@ -3253,7 +2061,7 @@ class VRApp(QMainWindow):
         """Liefert die gemerkte Original-Default-Source (oder None)."""
         try:
             import json as _json
-            with open(self._mic_state_path(), "r") as f:
+            with open(self._mic_state_path()) as f:
                 return (_json.load(f) or {}).get("original_default_source") or None
         except Exception:
             return None
@@ -3269,15 +2077,15 @@ class VRApp(QMainWindow):
             os.makedirs(CONFIG_DIR, exist_ok=True)
             with open(self._mic_state_path(), "w") as f:
                 _json.dump({"original_default_source": name}, f, indent=4)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("_mic_save_original: ignoriert — %s", exc)
 
     def _mic_clear_original(self):
         """Löscht die gemerkte Original-Quelle (nach dem Zurücksetzen)."""
         try:
             os.remove(self._mic_state_path())
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("_mic_clear_original: ignoriert — %s", exc)
 
     def _pactl_available(self):
         from shutil import which
@@ -3419,9 +2227,9 @@ class VRApp(QMainWindow):
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                timeout=5)
             except subprocess.TimeoutExpired:
-                print(f"[Autostart] Zusatz-Kill-Befehl brauchte zu lange: {cmd}")
+                log.info(f"[Autostart] Zusatz-Kill-Befehl brauchte zu lange: {cmd}")
             except Exception as e:
-                print(f"[Autostart] Zusatz-Kill-Befehl fehlgeschlagen ({cmd}): {e}")
+                log.warning(f"[Autostart] Zusatz-Kill-Befehl fehlgeschlagen ({cmd}): {e}")
 
     def stop_autostart_apps(self):
         """Beendet alle zuvor gestarteten Autostart-Programme (samt Kindprozessen)."""
@@ -3439,8 +2247,8 @@ class VRApp(QMainWindow):
                     os.killpg(os.getpgid(p.pid), _signal.SIGTERM)
                 except Exception:
                     p.terminate()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("stop_autostart_apps: ignoriert — %s", exc)
         # kurz warten und notfalls hart beenden
         for p in self._autostart_procs:
             try:
@@ -3451,8 +2259,8 @@ class VRApp(QMainWindow):
                 except Exception:
                     try:
                         p.kill()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug("stop_autostart_apps: ignoriert — %s", exc)
         self._autostart_procs = []
 
     def start_wivrn_server(self):
@@ -3484,12 +2292,12 @@ class VRApp(QMainWindow):
             self.server_process = subprocess.Popen(
                 ["wivrn-server"], stdout=self._server_log_fh, stderr=subprocess.STDOUT)
         except Exception as e:
-            print(f"[Server] Konnte Logdatei nicht anlegen ({e}) – starte ohne Log.")
+            log.warning(f"[Server] Konnte Logdatei nicht anlegen ({e}) – starte ohne Log.")
             self._server_log_fh = None
             self.server_process = subprocess.Popen(
                 ["wivrn-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        print("[Autostart] Server gestartet – warte auf Headset-Verbindung, bevor Programme starten...")
+        log.info("[Autostart] Server gestartet – warte auf Headset-Verbindung, bevor Programme starten...")
         self._server_running = True
         self.update_server_status_ui()
         QTimer.singleShot(500, self.refresh_headset_list)
@@ -3505,12 +2313,12 @@ class VRApp(QMainWindow):
         if self._server_log_fh:
             try:
                 self._server_log_fh.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("stop_wivrn_server: ignoriert — %s", exc)
             self._server_log_fh = None
 
         if self.server_process: self.server_process.terminate()
-        else: subprocess.run(["pkill", "wivrn-server"])
+        else: proc.run(["pkill", "wivrn-server"], timeout=proc.DEFAULT_TIMEOUT)
         self.server_process = None
         self._server_running = False
         self.update_server_status_ui()
@@ -3544,21 +2352,60 @@ class VRApp(QMainWindow):
         self.ui.toggle_server.sync_offset()
         self._syncing_toggle = False
 
+    # Alle Hintergrund-Threads, die beim Schliessen noch laufen koennen.
+    # Wird ein QThread zerstoert, waehrend er laeuft, beendet Qt den Prozess
+    # hart mit SIGABRT ("QThread: Destroyed while thread is still running") —
+    # der Nutzer sieht dann beim Schliessen einen Absturz statt eines sauberen
+    # Beendens, und ungespeicherte Einstellungen koennen verloren gehen.
+    #
+    # Neue Worker bitte HIER eintragen. Der Smoke-Test wuerde ein Versaeumnis
+    # zwar bemerken (er endet dann mit Exitcode 134), aber erst nachtraeglich.
+    _BACKGROUND_WORKERS = (
+        "_cover_worker",            # Spiel-Cover vom Steam-CDN
+        "_pkgcheck_worker",         # Paketstatus im Installations-Tab
+        "_games_scan_worker",       # Steam-Bibliothek scannen
+        "_tools_status_worker",     # Statusabfrage der Tools
+        "_app_update_check_worker", # Versions-Check auf GitHub
+        "_app_update_worker",       # Selbst-Update
+        "_auto_backup_worker",      # automatisches Erst-Backup
+        "_oxr_health_worker",       # OpenXR-Manifest-Pruefung
+        "_pp_worker",               # ProtonPlus-Installation
+        "_games_db_worker",         # Spiele-Datenbank
+        "tool_worker",              # Tool-Installation
+        "apk_worker",               # WiVRn-APK per adb
+    )
+
     def closeEvent(self, event):
-        """Beim Schließen: laufenden Cover-Download sauber beenden."""
-        try:
-            if getattr(self, "_cover_worker", None) is not None and self._cover_worker.isRunning():
-                self._cover_worker.stop()
-                self._cover_worker.wait(2000)
-        except Exception:
-            pass
+        """Beim Schliessen alle Hintergrund-Threads geordnet beenden."""
+        for name in self._BACKGROUND_WORKERS:
+            worker = getattr(self, name, None)
+            if worker is None:
+                continue
+            try:
+                if not worker.isRunning():
+                    continue
+                # stop()/cancel() gibt es nur bei manchen Workern — wo
+                # vorhanden, beendet es die Schleife im Thread vorzeitig.
+                for stopper in ("stop", "cancel"):
+                    if hasattr(worker, stopper):
+                        getattr(worker, stopper)()
+                        break
+                if not worker.wait(3000):
+                    # Nach 3 s nicht fertig: nicht ewig blockieren, aber
+                    # protokollieren — sonst haengt das Fenster beim Schliessen.
+                    log.warning("Thread %s reagiert nicht — wird abgebrochen.", name)
+                    worker.terminate()
+                    worker.wait(1000)
+            except Exception as exc:
+                log.debug("closeEvent (%s): ignoriert — %s", name, exc)
+
         super().closeEvent(event)
 
     def manual_server_check(self):
         """Prüft auf Knopfdruck (oder beim Start) einmalig den echten Server-Zustand
         und gleicht Schalter + Anzeige daran an."""
         running = (self.server_process and self.server_process.poll() is None) or \
-            subprocess.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL).returncode == 0
+            proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode == 0
         self._server_running = running
         self._set_toggle_silently(running)
         self.update_server_status_ui()

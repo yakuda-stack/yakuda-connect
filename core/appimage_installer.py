@@ -46,6 +46,12 @@ import urllib.error
 
 from PySide6.QtCore import QThread, Signal
 
+from logging_setup import get_logger
+import proc
+
+log = get_logger("appimage_installer")
+
+
 HOME = os.path.expanduser("~")
 TOOLS_DIR        = os.path.join(HOME, ".config/yakuda-connect/tools")
 DESKTOP_SRC_DIR  = os.path.join(TOOLS_DIR, "desktop")
@@ -265,15 +271,15 @@ def is_package_managed_install():
 def is_arch_based():
     """True, wenn die Distro auf Arch basiert (pacman/yay/paru-Welt)."""
     try:
-        with open("/etc/os-release", "r") as f:
+        with open("/etc/os-release") as f:
             for line in f:
                 low = line.strip().lower()
                 if low.startswith("id=") and "arch" in low:
                     return True
                 if low.startswith("id_like=") and "arch" in low:
                     return True
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("is_arch_based: ignoriert — %s", exc)
     return shutil.which("pacman") is not None
 
 
@@ -281,15 +287,15 @@ def _os_release_ids():
     """(id, id_like) aus /etc/os-release, alles lowercase."""
     osid, idlike = "", ""
     try:
-        with open("/etc/os-release", "r") as f:
+        with open("/etc/os-release") as f:
             for line in f:
                 low = line.strip().lower()
                 if low.startswith("id="):
                     osid = low[3:].strip('"')
                 elif low.startswith("id_like="):
                     idlike = low[8:].strip('"')
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("_os_release_ids: ignoriert — %s", exc)
     return osid, idlike
 
 
@@ -356,7 +362,7 @@ def flathub_remote_present():
         return False
     try:
         res = subprocess.run(["flatpak", "remotes"],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=proc.LONG_TIMEOUT)
         return res.returncode == 0 and "flathub" in res.stdout.lower()
     except Exception:
         return False
@@ -370,7 +376,7 @@ def add_flathub_remote():
         res = subprocess.run(
             ["flatpak", "remote-add", "--if-not-exists", "--user",
              "flathub", "https://flathub.org/repo/flathub.flatpakrepo"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.LONG_TIMEOUT)
         return res.returncode == 0
     except Exception:
         return False
@@ -379,15 +385,15 @@ def add_flathub_remote():
 def is_nixos():
     """True, wenn das System NixOS ist (laut /etc/os-release)."""
     try:
-        with open("/etc/os-release", "r") as f:
+        with open("/etc/os-release") as f:
             for line in f:
                 low = line.strip().lower()
                 if low.startswith("id=") and "nixos" in low:
                     return True
                 if low.startswith("id_like=") and "nixos" in low:
                     return True
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("is_nixos: ignoriert — %s", exc)
     return False
 
 
@@ -396,8 +402,8 @@ def flatpak_query(tool):
     fid = tool.get("flatpak_id")
     if not fid or not flatpak_available():
         return False, ""
-    res = subprocess.run(["flatpak", "info", fid],
-                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    res = proc.run(["flatpak", "info", fid],
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=proc.LONG_TIMEOUT)
     if res.returncode != 0:
         return False, ""
     version = ""
@@ -459,13 +465,13 @@ def pm_query(tool, helper):
     pkg = tool.get("pkg")
     if not pkg or not shutil.which(helper):
         return False, "", False
-    res = subprocess.run(f"{helper} -Q {pkg}", shell=True,
-                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    res = proc.run([helper, "-Q", pkg],
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=proc.DEFAULT_TIMEOUT)
     if res.returncode != 0:
         return False, "", False
     version = res.stdout.strip().split()[-1] if res.stdout.strip() else ""
-    res_u = subprocess.run(f"{helper} -Qu {pkg}", shell=True,
-                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    res_u = proc.run([helper, "-Qu", pkg],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=proc.DEFAULT_TIMEOUT)
     has_update = res_u.returncode == 0 and bool(res_u.stdout.strip())
     return True, version, has_update
 
@@ -560,7 +566,7 @@ def status(tool):
     m = _marker(tool)
     if os.path.exists(m):
         try:
-            with open(m, "r") as f:
+            with open(m) as f:
                 version = json.load(f).get("version", "")
         except Exception:
             version = ""
@@ -583,7 +589,7 @@ def local_status(tool):
     m = _marker(tool)
     if os.path.exists(m):
         try:
-            with open(m, "r") as f:
+            with open(m) as f:
                 version = json.load(f).get("version", "")
         except Exception:
             version = ""
@@ -599,7 +605,7 @@ def delete_config(tool):
                 shutil.rmtree(p)
                 removed.append(p)
         except Exception as e:
-            print(f"[AppImage] Config konnte nicht gelöscht werden ({p}): {e}")
+            log.warning(f"[AppImage] Config konnte nicht gelöscht werden ({p}): {e}")
     return removed
 
 
@@ -609,23 +615,23 @@ def uninstall(tool):
         try:
             if os.path.islink(p) or os.path.exists(p):
                 os.remove(p)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("uninstall: ignoriert — %s", exc)
     # auch vom Programm selbst angelegte Einträge entfernen
     try:
         _remove_foreign_entries(tool)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("uninstall: ignoriert — %s", exc)
     try:
         if os.path.isdir(_tool_dir(tool)):
             shutil.rmtree(_tool_dir(tool))
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("uninstall: ignoriert — %s", exc)
     try:
         if os.path.exists(_desktop_src(tool)):
             os.remove(_desktop_src(tool))
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("uninstall: ignoriert — %s", exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -652,14 +658,14 @@ def _ensure_local_bin_on_path():
         try:
             existing = ""
             if os.path.exists(rc_path):
-                with open(rc_path, "r", errors="ignore") as f:
+                with open(rc_path, errors="ignore") as f:
                     existing = f.read()
             if marker in existing:
                 continue
             with open(rc_path, "a") as f:
                 f.write(block)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("_ensure_local_bin_on_path: ignoriert — %s", exc)
 
 
 def _force_symlink(src, dst):
@@ -668,8 +674,8 @@ def _force_symlink(src, dst):
     try:
         if os.path.islink(dst) or os.path.exists(dst):
             os.remove(dst)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("_force_symlink: ignoriert — %s", exc)
     os.symlink(src, dst)
 
 
@@ -685,18 +691,53 @@ if [ ! -x "$APPIMAGE" ]; then
     chmod +x "$APPIMAGE" 2>/dev/null
 fi
 
+# Kann dieses System eine AppImage per FUSE einhaengen?
+#
+# Frueher wurde hier nur libfuse.so.2 gesucht. Das war zu eng: AppImages mit
+# dem neueren type2-runtime linken libfuse3 STATISCH — sie brauchen gar kein
+# libfuse-Paket, sondern nur /dev/fuse und fusermount3. Auf einem modernen
+# System (Fedora 40+, Ubuntu 24.04, Bazzite) fand die alte Pruefung nichts und
+# entpackte deshalb JEDES Mal ins Temp-Verzeichnis — unnoetig langsam.
+#
+# Jetzt gilt: /dev/fuse muss da sein UND entweder ein fusermount-Programm
+# (beliebige Version) oder libfuse in Version 2 oder 3.
 have_fuse() {
+    [ -e /dev/fuse ] || return 1
+
+    command -v fusermount3 >/dev/null 2>&1 && return 0
+    command -v fusermount  >/dev/null 2>&1 && return 0
+
     if command -v ldconfig >/dev/null 2>&1; then
-        ldconfig -p 2>/dev/null | grep -qi 'libfuse\\.so\\.2' && return 0
+        ldconfig -p 2>/dev/null | grep -qiE 'libfuse\\.so\\.(2|3)' && return 0
     fi
     for d in /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /lib /lib64 /lib/x86_64-linux-gnu; do
         [ -e "$d/libfuse.so.2" ] && return 0
+        [ -e "$d/libfuse3.so.3" ] && return 0
+        [ -e "$d/libfuse.so.3" ] && return 0
     done
     return 1
 }
 
+if [ -n "${YAKUDA_APPIMAGE_EXTRACT:-}" ]; then
+    # Notausgang von Hand: YAKUDA_APPIMAGE_EXTRACT=1 <programm>
+    exec "$APPIMAGE" --appimage-extract-and-run "${LAUNCH_ARGS[@]}" "$@"
+fi
+
 if have_fuse; then
-    exec "$APPIMAGE" "${LAUNCH_ARGS[@]}" "$@"
+    # Normalfall: direkt starten. Scheitert der Start am Einhaengen (falsche
+    # libfuse-Version, fuse-Modul nicht geladen, kein Recht auf /dev/fuse),
+    # meldet sich die Runtime mit Exitcode 1 und einer Zeile, in der "fuse"
+    # vorkommt — dann wird einmalig entpackt gestartet. Ohne diesen Rueckfall
+    # saehe der Nutzer nur eine kryptische dlopen-Meldung.
+    ERR="$(mktemp)"
+    "$APPIMAGE" "${LAUNCH_ARGS[@]}" "$@" 2> >(tee "$ERR" >&2)
+    RC=$?
+    if [ $RC -ne 0 ] && grep -qi 'fuse' "$ERR"; then
+        rm -f "$ERR"
+        exec "$APPIMAGE" --appimage-extract-and-run "${LAUNCH_ARGS[@]}" "$@"
+    fi
+    rm -f "$ERR"
+    exit $RC
 else
     exec "$APPIMAGE" --appimage-extract-and-run "${LAUNCH_ARGS[@]}" "$@"
 fi
@@ -710,8 +751,8 @@ def _write_launcher(tool):
     try:
         if os.path.islink(link) or os.path.exists(link):
             os.remove(link)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("_write_launcher: ignoriert — %s", exc)
     args = (tool.get("launch_args") or "").strip()
     script = (_LAUNCHER_TEMPLATE
               .replace("__APPIMAGE__", _appimage_path(tool))
@@ -741,7 +782,7 @@ def _remove_foreign_entries(tool):
                     os.remove(p)
                     removed.append(p)
             except Exception as e:
-                print(f"[AppImage] Konnte Eintrag nicht entfernen ({p}): {e}")
+                log.warning(f"[AppImage] Konnte Eintrag nicht entfernen ({p}): {e}")
     return removed
 
 
@@ -780,9 +821,9 @@ def _refresh_desktop_db():
     if shutil.which("update-desktop-database"):
         try:
             subprocess.run(["update-desktop-database", APPLICATIONS_DIR],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT)
+        except Exception as exc:
+            log.debug("_refresh_desktop_db: ignoriert — %s", exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -879,7 +920,7 @@ class AppImageInstallWorker(QThread):
                 try:
                     self._download(_raw_github(icon_url), _icon_path(tool))
                 except Exception as e:
-                    print(f"[AppImage] Icon konnte nicht geladen werden: {e}")
+                    log.warning(f"[AppImage] Icon konnte nicht geladen werden: {e}")
 
             # 6. .desktop schreiben + für KDE verlinken
             self.status_signal.emit("🖥 Erstelle Desktop-Eintrag ...")
@@ -895,8 +936,8 @@ class AppImageInstallWorker(QThread):
             try:
                 with open(_marker(tool), "w") as f:
                     json.dump({"version": version or tool.get("version", "")}, f)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("prog: ignoriert — %s", exc)
 
             self.status_signal.emit("✔ Fertig installiert.")
             self.finished_signal.emit(True)

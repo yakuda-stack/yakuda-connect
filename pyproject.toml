@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yakuda-connect"
+description = "WiVRn VR management software with gaming optimization and OpenXR/OpenVR fixes"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+authors = [{ name = "yakuda", email = "yakuda@outlook.de" }]
+keywords = ["vr", "wivrn", "openxr", "openvr", "linux", "wayvr", "slimevr"]
+classifiers = [
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Games/Entertainment",
+]
+
+# PySide6 ist die einzige harte Abhaengigkeit. Alles andere (pactl, adb,
+# pkexec, git, ...) sind externe PROGRAMME, keine Python-Pakete — die stehen
+# in der PKGBUILD unter optdepends, nicht hier.
+dependencies = [
+    "PySide6>=6.5",
+]
+
+# Version wird aus core/version.py gelesen — eine Quelle der Wahrheit.
+dynamic = ["version"]
+
+[project.optional-dependencies]
+# Kosmetik: setzt den Prozessnamen in htop/btop. Fehlt das Paket, startet
+# die App trotzdem (starter.py faengt den ImportError ab).
+proctitle = ["setproctitle"]
+# Nur fuer Entwicklung/CI noetig, nicht fuer Nutzer.
+dev = ["ruff>=0.5", "pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/yakuda-stack/yakuda-connect"
+Changelog = "https://github.com/yakuda-stack/yakuda-connect/blob/main/CHANGELOG.md"
+
+[tool.setuptools.dynamic]
+version = { attr = "version.VERSION" }
+
+[tool.setuptools]
+# Das Projekt hat eine flache Struktur (core/, ui/) statt eines echten
+# Python-Pakets. Damit setuptools die Version aus core/version.py lesen kann,
+# wird core/ als Paketwurzel angegeben.
+package-dir = { "" = "core" }
+
+[tool.setuptools.packages.find]
+where = ["core"]
+
+# --------------------------------------------------------------------------- #
+#  ruff — Linter (ersetzt flake8 + isort, laeuft in Sekunden)
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+exclude = ["AppDir", "pkg", "build", ".git", "__pycache__"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle — Formfehler
+    "F",    # pyflakes — echte Bugs: ungenutzte/undefinierte Namen
+    "W",    # Warnungen
+    "B",    # bugbear — typische Fallstricke (z. B. mutable default args)
+    "UP",   # pyupgrade — veraltete Schreibweisen
+    "PLE",  # pylint-Fehler
+]
+ignore = [
+    "E501",   # Zeilenlaenge: viele erklaerende Kommentare sind bewusst lang
+    "E402",   # Import nicht ganz oben: noetig wegen der sys.path-Ergaenzungen
+    "B008",   # Funktionsaufruf im Default — bei Qt-Signalen ueblich
+    # --- Stilregeln, bewusst aus -------------------------------------------
+    # Diese Meldungen sind KEINE Fehler, sondern Geschmacksfragen. Sie
+    # abzustellen ist ehrlicher, als 42 Stellen funktionierenden Code
+    # umzuschreiben — und haelt die CI aussagekraeftig: schlaegt ruff an,
+    # ist wirklich etwas kaputt.
+    "E701",   # 'if x: return' auf einer Zeile — bei kurzen Waechtern lesbar
+    "UP022",  # stdout=PIPE, stderr=PIPE statt capture_output — gleichwertig
+    "UP031",  # %-Formatierung — Logger-Aufrufe nutzen sie absichtlich
+              # (log.info("x=%s", v) formatiert erst, wenn wirklich geloggt wird)
+    "B007",   # ungenutzte Schleifenvariable, z. B. 'for root, dirs, _files'
+    "E741",   # Variablenname 'l' an wenigen Stellen
+    "B904",   # 'raise ... from err' — der Kontext ist hier nicht relevant
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Der Smoke-Test manipuliert absichtlich HOME und mockt QMessageBox.
+"tests/*" = ["E402", "F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# core/ und ui/ liegen nicht im Paketpfad — fuer Tests dazunehmen.
+pythonpath = ["core", "ui"]

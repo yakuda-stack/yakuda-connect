@@ -26,6 +26,7 @@ import datetime
 import tempfile
 
 from PySide6.QtCore import QThread, Signal
+import proc
 
 HOME        = os.path.expanduser("~")
 WAYVR_DIR   = os.path.join(HOME, ".config/wayvr")
@@ -91,7 +92,7 @@ def _download_design(tmp):
     target = os.path.join(tmp, "repo")
 
     if shutil.which("git"):
-        r = subprocess.run(
+        r = proc.run(
             ["git", "clone", "--depth", "1", DESIGN_REPO, target],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=180)
         if r.returncode == 0:
@@ -104,9 +105,9 @@ def _download_design(tmp):
     url = f"{DESIGN_REPO}/archive/refs/heads/master.tar.gz"
     ok = False
     if shutil.which("curl"):
-        ok = subprocess.run(["curl", "-fsSL", url, "-o", tar], timeout=180).returncode == 0
+        ok = proc.run(["curl", "-fsSL", url, "-o", tar], timeout=180).returncode == 0
     if not ok and shutil.which("wget"):
-        ok = subprocess.run(["wget", "-q", url, "-O", tar], timeout=180).returncode == 0
+        ok = proc.run(["wget", "-q", url, "-O", tar], timeout=180).returncode == 0
     if not ok:
         raise RuntimeError("Download fehlgeschlagen — git, curl oder wget wird benötigt.")
 

@@ -3,6 +3,11 @@ import shutil
 import time
 from PySide6.QtCore import QThread, Signal
 
+from logging_setup import get_logger
+
+log = get_logger("install_worker")
+
+
 # Terminalemulatoren nach Priorität — erster gefundener wird benutzt.
 # Jeder Eintrag: (binary, argument_um_befehl_auszuführen)
 # Die meisten benutzen "-e", kitty/foot benutzen direkt den Befehl ohne Flag.
@@ -76,10 +81,10 @@ class RemoveWorker(QThread):
                 process = subprocess.Popen(cmd)
                 process.wait()
                 if process.returncode != 0:
-                    print(f"Fehler oder Abbruch beim Entfernen von: {pkg} (Terminal: {terminal})")
+                    log.warning(f"Fehler oder Abbruch beim Entfernen von: {pkg} (Terminal: {terminal})")
                     success = False
             except Exception as e:
-                print(f"Fehler beim Öffnen von '{terminal}' für {pkg}: {e}")
+                log.warning(f"Fehler beim Öffnen von '{terminal}' für {pkg}: {e}")
                 success = False
             time.sleep(0.5)
 
@@ -201,10 +206,10 @@ class InstallWorker(QThread):
                 process.wait()
 
                 if process.returncode != 0:
-                    print(f"Fehler oder Abbruch bei Paket: {pkg} (Terminal: {terminal})")
+                    log.warning(f"Fehler oder Abbruch bei Paket: {pkg} (Terminal: {terminal})")
                     success = False
             except Exception as e:
-                print(f"Fehler beim Öffnen von '{terminal}' für {pkg}: {e}")
+                log.warning(f"Fehler beim Öffnen von '{terminal}' für {pkg}: {e}")
                 success = False
 
             time.sleep(0.5)
@@ -331,8 +336,8 @@ class AppUpdateWorker(QThread):
         try:
             if os.path.exists(sentinel):
                 os.remove(sentinel)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("run: ignoriert — %s", exc)
 
         self.status_signal.emit("yakuda-connect Update läuft ...")
 
@@ -369,8 +374,8 @@ class AppUpdateWorker(QThread):
         try:
             if ok:
                 os.remove(sentinel)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("run: ignoriert — %s", exc)
 
         if ok:
             self.status_signal.emit("Update abgeschlossen.")

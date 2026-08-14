@@ -20,6 +20,11 @@ ist z. B. die Tastaturbeschriftung beim Hover unlesbar.
 import os
 import json
 
+from logging_setup import get_logger
+
+log = get_logger("palette_editor")
+
+
 HOME = os.path.expanduser("~")
 WAYVR_DIR    = os.path.join(HOME, ".config/wayvr")
 PALETTES_DIR = os.path.join(WAYVR_DIR, "palettes")
@@ -125,8 +130,8 @@ def derive(base):
         if fg not in base:
             try:
                 p[fg] = contrast_for(p[bg])
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("derive: ignoriert — %s", exc)
     return p
 
 
@@ -148,7 +153,7 @@ def validate(p):
 def load_palette():
     """Liest die Palette; faellt auf die Vorgabe zurueck, wenn nichts da ist."""
     try:
-        with open(PALETTE_PATH, "r") as f:
+        with open(PALETTE_PATH) as f:
             data = json.load(f)
         return {k: data.get(k, DEFAULTS[k]) for k in FIELDS}
     except Exception:

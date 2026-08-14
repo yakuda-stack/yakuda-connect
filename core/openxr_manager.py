@@ -22,6 +22,11 @@ import datetime
 
 import vr_environment as venv
 
+from logging_setup import get_logger
+
+log = get_logger("openxr_manager")
+
+
 HOME = os.path.expanduser("~")
 WIVRN_MANIFEST     = venv.find_wivrn_manifest()
 ACTIVE_RUNTIME_DIR = os.path.join(HOME, ".config/openxr/1")
@@ -43,7 +48,7 @@ _MONADO_SO = "libmonado_wivrn.so"
 def _resolve_from_manifest():
     """Liest das System-Manifest und löst dessen relative Pfade absolut auf."""
     try:
-        with open(WIVRN_MANIFEST, "r") as f:
+        with open(WIVRN_MANIFEST) as f:
             data = json.load(f)
         rt = data.get("runtime", {})
         base = os.path.dirname(WIVRN_MANIFEST)
@@ -134,7 +139,7 @@ def current_status():
     if not os.path.exists(ACTIVE_RUNTIME):
         return "missing", ""
     try:
-        with open(ACTIVE_RUNTIME, "r") as f:
+        with open(ACTIVE_RUNTIME) as f:
             data = json.load(f)
         lp = data.get("runtime", {}).get("library_path", "")
     except Exception:
@@ -199,7 +204,7 @@ def apply_openxr_fix():
         except Exception as e:
             if target == ACTIVE_RUNTIME:
                 return False, "write_failed", str(e)
-            print(f"[OpenXR] Konnte {target} nicht schreiben: {e}")
+            log.warning(f"[OpenXR] Konnte {target} nicht schreiben: {e}")
 
     if not wrote_any:
         return False, "write_failed", ""
@@ -267,8 +272,8 @@ def apply_openxr_fix_elevated():
     finally:
         try:
             os.remove(tmp.name)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("apply_openxr_fix_elevated: ignoriert — %s", exc)
 
     if result.returncode != 0:
         err = (result.stderr or result.stdout or "").strip()
@@ -357,7 +362,7 @@ def scan_runtime_manifests():
                      "expected_bits": _expected_bits(name), "found_bits": None,
                      "state": "ok"}
             try:
-                with open(path, "r") as f:
+                with open(path) as f:
                     data = json.load(f)
             except Exception:
                 entry["state"] = "unreadable"

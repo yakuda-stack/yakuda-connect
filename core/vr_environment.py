@@ -21,6 +21,12 @@ import os
 import json
 import shutil
 
+from logging_setup import get_logger
+from jsonio import update_json
+
+log = get_logger("vr_environment")
+
+
 HOME = os.path.expanduser("~")
 APP_CONFIG = os.path.join(HOME, ".config/yakuda-connect/config/config.json")
 
@@ -33,7 +39,7 @@ STEAM_FLATPAK_BASE = os.path.join(HOME, ".var/app/com.valvesoftware.Steam")
 def get_runtime_method():
     """Gemerkte Methode der WiVRn-Runtime: 'yay'|'paru'|'flatpak'|'nix'|''."""
     try:
-        with open(APP_CONFIG, "r") as f:
+        with open(APP_CONFIG) as f:
             return json.load(f).get("runtime_install_method", "") or ""
     except Exception:
         return ""
@@ -41,19 +47,8 @@ def get_runtime_method():
 
 def set_runtime_method(method):
     """Speichert die Methode der WiVRn-Runtime in der App-Config."""
-    try:
-        os.makedirs(os.path.dirname(APP_CONFIG), exist_ok=True)
-        data = {}
-        if os.path.exists(APP_CONFIG):
-            with open(APP_CONFIG, "r") as f:
-                content = f.read().strip()
-                if content:
-                    data = json.loads(content)
-        data["runtime_install_method"] = method
-        with open(APP_CONFIG, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"[vr_env] Konnte runtime_install_method nicht speichern: {e}")
+    if not update_json(APP_CONFIG, {"runtime_install_method": method}):
+        log.warning("runtime_install_method konnte nicht gespeichert werden.")
 
 
 # --------------------------------------------------------------------------- #
@@ -160,7 +155,7 @@ def find_wivrn_libs():
     """
     man = find_wivrn_manifest()
     try:
-        with open(man, "r") as f:
+        with open(man) as f:
             data = json.load(f)
         rt = data.get("runtime", {})
         base = os.path.dirname(man)
@@ -177,8 +172,8 @@ def find_wivrn_libs():
                 sib = os.path.join(os.path.dirname(lib_abs), "libmonado_wivrn.so")
                 mon_abs = sib if os.path.exists(sib) else None
             return lib_abs, mon_abs
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("find_wivrn_libs: ignoriert — %s", exc)
 
     # Reihenfolge bewusst: lib64 zuerst (Fedora/openSUSE), dann Arch/Debian.
     lib_dirs = [

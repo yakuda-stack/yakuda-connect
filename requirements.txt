@@ -1,0 +1,17 @@
+# Laufzeit-Abhaengigkeiten von yakuda-connect (Python-Seite).
+#
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# Auf Arch besser ueber pacman/AUR statt pip:
+#   sudo pacman -S pyside6 python-setproctitle
+#
+# ACHTUNG: Die App ruft ausserdem externe PROGRAMME auf (pactl, ss, pgrep,
+# adb, pkexec, git, curl, flatpak, ...). Die stehen NICHT hier, sondern als
+# optdepends in packaging/aur/PKGBUILD — pip kann sie nicht installieren.
+# Fehlt eines, laeuft die App weiter und schreibt eine Zeile ins Log.
+
+PySide6>=6.5
+
+# Optional: Prozessname in htop/btop. Fehlt es, startet die App trotzdem.
+setproctitle
