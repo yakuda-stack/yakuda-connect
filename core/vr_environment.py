@@ -22,7 +22,7 @@ import json
 import shutil
 
 from logging_setup import get_logger
-from jsonio import update_json
+from jsonio import read_json, update_json, write_json_atomic
 
 log = get_logger("vr_environment")
 
@@ -222,26 +222,171 @@ def find_wivrn_libs32():
 
 
 # --------------------------------------------------------------------------- #
-#  OpenVR-Kompatibilität (opencomposite / xrizer)
+#  OpenVR-Kompatibilität (xrizer / OpenComposite / VapoR)
 # --------------------------------------------------------------------------- #
+# Diese Liste ist KEINE eigene Erfindung, sondern exakt WiVRns
+# OVR_COMPAT_SEARCH_PATH aus dessen CMakeLists.txt — in derselben Reihenfolge:
+#
+#   /opt/xrizer:/usr/local/lib/OpenComposite:/usr/lib/OpenComposite:
+#   /opt/OpenComposite:/opt/opencomposite:/opt/VapoR:/usr/local/lib/VapoR
+#
+# Warum das wichtig ist: Steht in WiVRns config.json KEIN
+# 'openvr-compat-path', sucht WiVRn genau diese Orte ab und nimmt den ersten,
+# der existiert (server/active_runtime.cpp). Wer wissen will, was "Standard"
+# bedeutet, muss also dieselbe Liste in derselben Reihenfolge kennen.
+#
+# Hinweis: Distributionen können die Liste beim Bauen überschreiben
+# (CACHE STRING). Deshalb ist sie hier nur die Grundlage der Anzeige, nie eine
+# Garantie — gesetzt wird immer ein absoluter Pfad.
+WIVRN_OVR_SEARCH_PATH = (
+    "/opt/xrizer",
+    "/usr/local/lib/OpenComposite",
+    "/usr/lib/OpenComposite",
+    "/opt/OpenComposite",
+    "/opt/opencomposite",
+    "/opt/VapoR",
+    "/usr/local/lib/VapoR",
+)
+
+# Orte, die WiVRn NICHT von sich aus absucht, an denen Distributionen die
+# Bibliotheken aber trotzdem ablegen. Wird hier etwas gefunden, ist es
+# auswählbar — aber nur, weil wir den Pfad dann explizit eintragen. Genau das
+# sagt die Oberfläche dazu auch.
+EXTRA_OVR_PATHS = (
+    "/usr/lib64/xrizer",                              # Fedora (COPR @xr-sig/xrizer)
+    "/usr/lib/xrizer",
+    "/usr/lib64/opencomposite",                       # Fedora (offizielle Repos)
+    "/usr/lib/opencomposite",
+    "/usr/lib64/OpenComposite",
+    os.path.join(HOME, ".local/share/xrizer"),        # Selbstbau
+    os.path.join(HOME, ".local/share/opencomposite"),
+)
+
+
+def openvr_lib_file(path):
+    """
+    Pfad der vrclient.so, die WiVRn in einem Kompatibilitäts-Ordner erwartet.
+
+    WiVRn prüft (server/active_runtime.cpp) auf x86_64 genau
+    ``<ordner>/bin/linux64/vrclient.so`` und schreibt sonst eine Warnung in
+    sein Log. Dieselbe Prüfung hier — damit die App genau das anzeigt, was
+    WiVRn später auch bemängeln würde.
+    """
+    return os.path.join(path, "bin", "linux64", "vrclient.so")
+
+
+def looks_like_openvr_compat(path):
+    """
+    Enthält der Ordner wirklich eine OpenVR-Ersatzbibliothek?
+
+    Ein leerer Ordner (Paket entfernt, Reste geblieben) darf nicht als
+    "installiert" durchgehen — WiVRn würde sonst auf einen Pfad zeigen, unter
+    dem kein Spiel startet, und im Log steht nur eine Zeile, die niemand liest.
+    """
+    if not path or not os.path.isdir(path):
+        return False
+    if os.path.exists(openvr_lib_file(path)):
+        return True
+    # Andere Architektur (arm64) oder ungewöhnliches Layout: WiVRn prüft dort
+    # gar nicht erst, deshalb hier großzügiger — irgendeine vrclient.so reicht.
+    for rel in ("bin/vrclient.so", "bin/linux32/vrclient.so"):
+        if os.path.exists(os.path.join(path, rel)):
+            return True
+    return False
+
+
+def normalize_compat_path(path):
+    """
+    Räumt einen vom Nutzer gewählten Ordner auf.
+
+    Wer im Dateidialog sucht, landet fast zwangsläufig eine oder zwei Ebenen
+    zu tief — die interessante Datei liegt ja in ``bin/linux64``. WiVRns
+    eigenes Dashboard schneidet genau diese beiden Endungen wieder ab
+    (dashboard/qml/SettingsPage.qml), hier passiert dasselbe.
+    """
+    cleaned = (path or "").rstrip("/")
+    for suffix in ("/linux64", "/linux32", "/bin"):
+        if cleaned.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)]
+    return cleaned
+
+
+def openvr_compat_candidates():
+    """
+    Alle gefundenen Kompatibilitäts-Ordner, in WiVRns Suchreihenfolge.
+
+    Rückgabe je Eintrag:
+        path        absoluter Pfad
+        label       Anzeigename (xrizer / OpenComposite / VapoR + Pfad)
+        autodetect  True, wenn WiVRn diesen Ordner auch ohne Eintrag fände
+        complete    True, wenn bin/linux64/vrclient.so existiert
+
+    Wie WiVRns Dashboard werden nur EXISTIERENDE Orte gelistet — eine
+    Auswahl, die es nicht gibt, hilft niemandem.
+    """
+    seen = set()
+    result = []
+    for path, autodetect in ([(p, True) for p in WIVRN_OVR_SEARCH_PATH] +
+                             [(p, False) for p in EXTRA_OVR_PATHS]):
+        real = os.path.realpath(path)
+        if real in seen or not os.path.isdir(path):
+            continue
+        seen.add(real)
+        result.append({
+            "path": path,
+            "label": _compat_label(path),
+            "autodetect": autodetect,
+            "complete": looks_like_openvr_compat(path),
+        })
+    return result
+
+
+def _compat_label(path):
+    """Klarname aus dem Pfad ableiten (xrizer / OpenComposite / VapoR)."""
+    low = os.path.basename(path.rstrip("/")).lower()
+    if "xrizer" in low:
+        return "xrizer"
+    if "opencomposite" in low:
+        return "OpenComposite"
+    if "vapor" in low:
+        return "VapoR"
+    return os.path.basename(path.rstrip("/")) or path
+
+
+def wivrn_autodetect_path():
+    """
+    Welchen Ordner nähme WiVRn ohne Eintrag in der config.json?
+
+    Bildet server/active_runtime.cpp nach: der erste EXISTIERENDE Eintrag aus
+    WIVRN_OVR_SEARCH_PATH gewinnt. "" heißt: WiVRn fände von selbst nichts.
+    """
+    for path in WIVRN_OVR_SEARCH_PATH:
+        if os.path.exists(path):
+            return path
+    return ""
+
+
+def find_openvr_compat(name):
+    """
+    Erster gefundener Ordner eines bestimmten Werkzeugs ("xrizer",
+    "opencomposite", "vapor") oder "" — nur wenn dort auch wirklich eine
+    vrclient.so liegt.
+    """
+    wanted = name.lower().replace(" ", "")
+    for entry in openvr_compat_candidates():
+        if entry["label"].lower() == wanted and entry["complete"]:
+            return entry["path"]
+    return ""
+
+
 def find_opencomposite():
-    for p in ["/opt/opencomposite",                                    # Arch (AUR)
-              "/usr/lib64/opencomposite",                              # Fedora (dnf)
-              "/usr/lib/opencomposite",
-              os.path.join(HOME, ".local/share/opencomposite")]:       # Selbstbau
-        if os.path.isdir(p):
-            return p
-    return "/opt/opencomposite"
+    """Alter Name — bleibt für backup_manager.py & Co. erhalten."""
+    return find_openvr_compat("opencomposite") or "/opt/opencomposite"
 
 
 def find_xrizer():
-    for p in ["/opt/xrizer",                                           # Arch (AUR)
-              "/usr/lib64/xrizer",                                     # Fedora (COPR)
-              "/usr/lib/xrizer",
-              os.path.join(HOME, ".local/share/xrizer")]:              # Selbstbau
-        if os.path.isdir(p):
-            return p
-    return "/opt/xrizer"
+    """Alter Name — bleibt für main.py (Fedora-COPR-Hinweis) erhalten."""
+    return find_openvr_compat("xrizer") or "/opt/xrizer"
 
 
 # --------------------------------------------------------------------------- #
@@ -306,10 +451,112 @@ def wivrn_config_file():
     return os.path.join(wivrn_config_dir(), "config.json")
 
 
-def openvr_compat_path(choice):
+# --------------------------------------------------------------------------- #
+#  'openvr-compat-path' in WiVRns config.json lesen/schreiben
+# --------------------------------------------------------------------------- #
+# WiVRn kennt für diesen Schlüssel DREI Zustände (server/driver/configuration.h:
+# std::variant<std::monostate, std::string, std::nullptr_t>):
+#
+#   Schlüssel fehlt   -> Standard: WiVRn sucht selbst (OVR_COMPAT_SEARCH_PATH)
+#   Schlüssel = Text  -> genau dieser Ordner wird benutzt
+#   Schlüssel = null  -> WiVRn fasst die OpenVR-Konfiguration gar nicht an
+#
+# Ein LEERER Text ist kein vorgesehener Zustand. Er wirkt zwar zufällig wie
+# "aus" (der zusammengesetzte Pfad ist leer), steht aber in keiner
+# Dokumentation und kann sich jederzeit ändern — deshalb wird für "aus"
+# echtes JSON-null geschrieben, genau wie WiVRns eigenes Dashboard es tut
+# (dashboard/settings.cpp: set_openvr).
+OPENVR_DEFAULT = "default"     # Schlüssel entfernen
+OPENVR_DISABLED = "disabled"   # null schreiben
+OPENVR_PATH = "path"           # Ordner eintragen
+
+
+def current_openvr_compat():
     """
-    Wert für 'openvr-compat-path' — immer der native Host-Pfad
-    (/opt/opencomposite bzw. /opt/xrizer, mit ~/.local-Fallbacks).
+    Aktueller Zustand aus WiVRns config.json als ``(modus, pfad)``:
+
+        ("default", "")      Schlüssel fehlt — WiVRn entscheidet selbst
+        ("disabled", "")     null — WiVRn lässt OpenVR in Ruhe
+        ("path", "/opt/...") fester Ordner
     """
-    return find_opencomposite() if choice == "opencomposite" else find_xrizer()
+    data = read_json(wivrn_config_file(), default=None)
+    if not isinstance(data, dict) or "openvr-compat-path" not in data:
+        return OPENVR_DEFAULT, ""
+    value = data.get("openvr-compat-path")
+    if value is None:
+        return OPENVR_DISABLED, ""
+    if isinstance(value, str) and value:
+        return OPENVR_PATH, value
+    # Leerer String: Altbestand aus früheren Versionen dieser App.
+    return OPENVR_DISABLED, ""
+
+
+def set_openvr_compat(mode, path=""):
+    """
+    Schreibt den Zustand in WiVRns config.json.
+
+    Das ist die Konfiguration eines FREMDEN Programms: sie wird gelesen, an
+    genau dieser Stelle geändert und atomar zurückgeschrieben — niemals neu
+    aufgebaut.
+
+    Wirksam wird die Änderung erst beim nächsten Start des WiVRn-Servers:
+    der Pfad wird in active_runtime beim Hochfahren einmal ausgewertet.
+    """
+    file_path = wivrn_config_file()
+    data = read_json(file_path, default={})
+    if not isinstance(data, dict):
+        log.warning("WiVRn-config.json enthält kein Objekt — wird neu aufgebaut.")
+        data = {}
+
+    if mode == OPENVR_DEFAULT:
+        data.pop("openvr-compat-path", None)
+    elif mode == OPENVR_DISABLED:
+        data["openvr-compat-path"] = None
+    else:
+        data["openvr-compat-path"] = normalize_compat_path(path)
+
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    if write_json_atomic(file_path, data):
+        log.info("openvr-compat-path -> %s", {
+            OPENVR_DEFAULT: "entfernt (WiVRn entscheidet)",
+            OPENVR_DISABLED: "null (abgeschaltet)",
+        }.get(mode, f"'{path}'"))
+        return True
+    log.warning("WiVRn-config.json konnte nicht geschrieben werden (%s).", file_path)
+    return False
+
+
+# --------------------------------------------------------------------------- #
+#  WiVRn-Version (entscheidet über das Format der config.json)
+# --------------------------------------------------------------------------- #
+def wivrn_version():
+    """
+    Version des installierten wivrn-server als Tupel, z. B. (25, 12) — oder
+    ``None``, wenn sie sich nicht ermitteln lässt.
+
+    ``wivrn-server --version`` gibt "WiVRn version 25.12" aus; bei
+    Zwischenständen aus Git steht dort ein git-describe wie "25.12-30-gabc123".
+    Beides wird auf die führenden Zahlen reduziert.
+    """
+    import re
+
+    from proc import output_of
+
+    out = output_of(["wivrn-server", "--version"], timeout=10)
+    m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", out or "")
+    if not m:
+        return None
+    return tuple(int(g) for g in m.groups() if g is not None)
+
+
+def wivrn_at_least(major, minor):
+    """
+    Ist der installierte Server mindestens so neu? ``None`` (unbekannt) gilt
+    als "ja" — neue Versionen sind der Normalfall, und das neue Format ist
+    für alte Server bloß ein unbekannter Schlüssel, den sie ignorieren.
+    """
+    version = wivrn_version()
+    if version is None:
+        return True
+    return version[:2] >= (major, minor)
 

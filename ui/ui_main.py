@@ -82,6 +82,16 @@ log = get_logger("ui_main")
 
 
 class Ui_MainWindow:
+    # WiVRn im Meta Horizon Store — die kabellose Alternative zur
+    # APK-Installation per adb (Quest 2/3/3S/Pro).
+    META_STORE_URL = "https://www.meta.com/experiences/wivrn/7959676140827574/"
+
+    def _apk_meta_text(self):
+        """Hinweistext mit anklickbarem Store-Link (HTML, daher hier gebaut)."""
+        return tr("dashboard_apk_meta").format(
+            link=f'<a href="{self.META_STORE_URL}" style="color:#88c0d0;">'
+                 f'{tr("dashboard_apk_meta_link")}</a>')
+
     def setupUi(self, main_window):
         main_window.setWindowTitle("yakuda-connect")
 
@@ -423,6 +433,7 @@ class Ui_MainWindow:
         self.apk_info_lbl.setText(tr("dashboard_apk_info"))
         self.btn_apk_install.setText(tr_amp("dashboard_apk_btn"))
         self.btn_apk_cancel.setText(tr("dashboard_apk_cancel"))
+        self.lbl_apk_meta.setText(self._apk_meta_text())
         # Backup
         self.btn_vr_backup.setText(tr("backup_create_btn"))
         self.btn_vr_restore.setText(tr("backup_restore_btn"))
@@ -615,6 +626,17 @@ class Ui_MainWindow:
         self.lbl_apk_status.setWordWrap(True)
         apk_box.addWidget(self.lbl_apk_status)
 
+        # --- Alternative fuer Meta-Nutzer --------------------------------
+        # Der Weg per adb setzt USB-Debugging und einen Entwickler-Account
+        # voraus. Auf Quest-Brillen gibt es WiVRn inzwischen regulaer im
+        # Meta-Store — ein Klick statt Kabel, Treiber und Freigabe.
+        self.lbl_apk_meta = QLabel(self._apk_meta_text())
+        self.lbl_apk_meta.setStyleSheet("color: #a3be8c; font-size: 11px;")
+        self.lbl_apk_meta.setWordWrap(True)
+        self.lbl_apk_meta.setOpenExternalLinks(True)
+        self.lbl_apk_meta.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        apk_box.addWidget(self.lbl_apk_meta)
+
         layout.addWidget(apk_card)
 
         layout.addStretch()
@@ -759,28 +781,45 @@ class Ui_MainWindow:
         self.check_usb_autoconnect = QCheckBox(tr("streaming_usb_autoconnect"))
         self.check_usb_autoconnect.setToolTip(tr("streaming_usb_autoconnect_tip"))
 
-        self.lbl_usb_hint = QLabel("")
-        self.lbl_usb_hint.setWordWrap(True)
-        self.lbl_usb_hint.setStyleSheet("color:#ebcb8b; font-size:11px;")
-        self.lbl_usb_hint.setVisible(False)
+        # Der Hinweis "das WiVRn-Dashboard laeuft gerade und schreibt seine
+        # Einstellungen beim Beenden zurueck" stand frueher als gelbe Zeile
+        # darunter. Er gilt nur in einem Sonderfall und hat dauerhaft Platz
+        # gekostet — jetzt haengt er im Tooltip des Hakens und wird von
+        # main.py._update_usb_tooltip() bei Bedarf ergaenzt.
 
         self.lbl_tracker_note = QLabel(tr("dashboard_steam_hint"))
         self.lbl_tracker_note.setStyleSheet("color: #d08770; font-style: italic; font-weight: bold; margin-bottom: 5px;")
 
+        # --- Bildwiederholrate: reine Information -------------------------
+        # WiVRns Server-Konfiguration kennt KEINEN refresh_rate-Schluessel
+        # (nachgesehen in server/driver/configuration.cpp, zurueck bis v0.22;
+        # in docs/configuration.md stand er ebenfalls nie). Die Rate waehlt
+        # der Client IM HEADSET und schickt sie an den Server — seit WiVRn
+        # 25.12 gilt das fuer alle Video-Einstellungen.
+        #
+        # Ein Auswahlfeld an dieser Stelle haette also nur so getan, als
+        # wuerde es wirken. Stattdessen steht hier, was die erkannte Brille
+        # kann und wo man es einstellt. Der frueher hier geschriebene
+        # Config-Wert bleibt in unserer eigenen Config erhalten (siehe
+        # core/config_manager.py), damit nichts verloren geht.
         refresh_layout = QHBoxLayout()
         self.lbl_refresh = QLabel(tr("dashboard_refresh"))
-        self.combo_refresh = QComboBox()
-        self.combo_refresh.addItems(["Auto", "72", "90"])
-        self.combo_refresh.setFixedWidth(100)
+        self.lbl_refresh_value = QLabel("")
+        self.lbl_refresh_value.setStyleSheet(
+            "color:#88c0d0; font-weight:bold; font-size:12px;")
         refresh_layout.addWidget(self.lbl_refresh)
-        refresh_layout.addWidget(self.combo_refresh)
+        refresh_layout.addWidget(self.lbl_refresh_value)
         refresh_layout.addStretch()
 
+        self.lbl_refresh_hint = QLabel(tr("refresh_where"))
+        self.lbl_refresh_hint.setWordWrap(True)
+        self.lbl_refresh_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
+
         tracking_layout.addWidget(self.check_usb_autoconnect)
-        tracking_layout.addWidget(self.lbl_usb_hint)
         tracking_layout.addWidget(self.chk_steamvr_tracker)
         tracking_layout.addWidget(self.lbl_tracker_note)
         tracking_layout.addLayout(refresh_layout)
+        tracking_layout.addWidget(self.lbl_refresh_hint)
         layout.addWidget(self.tracking_group)
 
         self.pairing_group = QGroupBox(tr("dashboard_pairing"))
@@ -836,8 +875,21 @@ class Ui_MainWindow:
         autostart_layout.addWidget(self.autostart_container)
         layout.addWidget(self.autostart_group)
 
+        # --- Gekoppelte Headsets ------------------------------------------
+        # Hier steht auch der USB-Zustand: haengt eine erkannte Brille am
+        # Kabel, bekommt ihr Eintrag in der Liste ein "· USB" angehaengt.
+        # Eine eigene Ampel-Zeile unter "Automatisch per USB verbinden" gab
+        # es frueher — sie hat viel Platz fuer eine Information gebraucht,
+        # die hier direkt am Geraet steht. Uebrig bleibt die Statuszeile
+        # unten, und die zeigt sich NUR, wenn es etwas zu sagen gibt
+        # (Kabel steckt, aber USB-Debugging fehlt o. ae.).
         self.headset_group = QGroupBox(tr("dashboard_headsets"))
-        headset_layout = QHBoxLayout(self.headset_group)
+        headset_box = QVBoxLayout(self.headset_group)
+        headset_box.setContentsMargins(9, 9, 9, 9)
+        headset_box.setSpacing(6)
+        headset_row = QWidget()
+        headset_layout = QHBoxLayout(headset_row)
+        headset_layout.setContentsMargins(0, 0, 0, 0)
 
         self.list_headsets = QListWidget()
         self.list_headsets.setMinimumHeight(80)
@@ -861,6 +913,23 @@ class Ui_MainWindow:
 
         headset_layout.addWidget(self.list_headsets, 75)
         headset_layout.addLayout(right_btn_layout, 25)
+        headset_box.addWidget(headset_row)
+
+        # Kompakte USB-Statuszeile: standardmaessig unsichtbar.
+        usb_state_row = QHBoxLayout()
+        usb_state_row.setContentsMargins(0, 0, 0, 0)
+        self.lbl_usb_led = QLabel("●")
+        self.lbl_usb_led.setStyleSheet("color:#4c566a; font-size:14px;")
+        self.lbl_usb_state = QLabel("")
+        self.lbl_usb_state.setWordWrap(True)
+        self.lbl_usb_state.setStyleSheet("color:#d8dee9; font-size:11px;")
+        usb_state_row.addWidget(self.lbl_usb_led)
+        usb_state_row.addWidget(self.lbl_usb_state, 1)
+        self.usb_state_widget = QWidget()
+        self.usb_state_widget.setLayout(usb_state_row)
+        self.usb_state_widget.setVisible(False)
+        headset_box.addWidget(self.usb_state_widget)
+
         layout.addWidget(self.headset_group)
 
         layout.addStretch()

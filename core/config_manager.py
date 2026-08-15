@@ -35,6 +35,7 @@ DEFAULT_SETTINGS = {
     "first_time_vr_setup": 0,
     "language": "en",
     "openvr_compat": "Auto",
+    "openvr_compat_custom": "",
     "render_resolution": 100,
     "foveated_encoding": 50,
     "encoder": "Auto",
@@ -129,14 +130,24 @@ def sync_with_wivrn(config_data):
     # nur noch in WiVRn selbst setzen kann. Der Schluessel bleibt in UNSERER
     # Config erhalten, damit alte Konfigurationen unveraendert bleiben.
 
-    # --- refresh_rate (int, 0 = auto) ---
-    refresh_rate = config_data.get("refresh_rate", "Auto")
-    if refresh_rate == "72":
-        wivrn_data["refresh_rate"] = 72
-    elif refresh_rate == "90":
-        wivrn_data["refresh_rate"] = 90
-    else:
-        wivrn_data["refresh_rate"] = 0  # 0 = automatisch laut WiVRn
+    # --- refresh_rate: WiVRn kennt diesen Schluessel NICHT ---------------
+    # Nachgesehen in WiVRns Quelltext: server/driver/configuration.cpp liest
+    # aus der config.json genau diese Schluessel — grip-surface, encoder,
+    # application, hid-forwarding, debug-gui, use-steamvr-lh,
+    # lh-stick-deadzone, bit-depth, tcp-only, port, hostname,
+    # publish-service, openvr-compat-path. Ein "refresh_rate" ist in KEINER
+    # Version dabei (geprueft bis zurueck zu v0.22), es stand auch nie in
+    # docs/configuration.md.
+    #
+    # Die Bildwiederholrate kommt vom Headset: der Client schickt sie als
+    # 'settings_changed' (preferred_refresh_rate) an den Server. Seit WiVRn
+    # 25.12 sind alle Video-Einstellungen dorthin umgezogen ("Moved video
+    # settings from dashboard to headset").
+    #
+    # Frueher hat diese App den Schluessel trotzdem geschrieben — er lag
+    # wirkungslos in der Datei und erweckte den Eindruck, die Einstellung
+    # greife. Er wird jetzt nicht mehr geschrieben und einmalig aufgeraeumt.
+    wivrn_data.pop("refresh_rate", None)
 
     # --- application (Autostart) ---
     # Autostart läuft NICHT mehr über WiVRn.
@@ -158,17 +169,20 @@ def sync_with_wivrn(config_data):
     except Exception as exc:
         log.debug("sync_with_wivrn: ignoriert — %s", exc)
 
-    # --- scale (float, render resolution) ---
-    # 100% -> 1.0, 150% -> 1.5
-    res_percent = config_data.get("render_resolution", 100)
-    wivrn_data["scale"] = round(res_percent / 100.0, 2)
-
-    # --- encoders (Liste von Objekten laut WiVRn-Doku) ---
-    # Format: [{"encoder": "vaapi", "codec": "h265"}, ...]
-    # Bitrate: in Bits/s angeben (100 Mbps = 100_000_000)
+    # --- Encoder: Schlüsselname hängt an der WiVRn-Version ----------------
+    # Bis einschließlich WiVRn 25.11 hieß der Schlüssel "encoders" (Liste),
+    # dazu gab es "scale" und "bitrate" auf oberster Ebene.
+    #
+    # Seit 25.12 heißt er "encoder" (String, Objekt oder Liste), und "scale"
+    # sowie "bitrate" gibt es nicht mehr — die Video-Einstellungen werden im
+    # Headset gesetzt (Release-Notes 25.12: "Moved video settings from
+    # dashboard to headset"). Nachzulesen in server/driver/configuration.cpp.
+    #
+    # Bisher schrieb diese App IMMER "encoders" und löschte dabei sogar
+    # "encoder" — auf aktuellen Versionen wurde die Encoder-Auswahl also
+    # doppelt wirkungslos. Jetzt entscheidet die erkannte Serverversion.
     encoder_name = config_data.get("encoder", "Auto").lower()
     codec_name = config_data.get("codec", "Automatic")
-    bitrate_mbps = config_data.get("bitrate", 100)
 
     # Codec-Name normalisieren
     if "av1" in codec_name.lower():
@@ -180,26 +194,39 @@ def sync_with_wivrn(config_data):
     else:
         codec = None  # auto — kein codec-Key setzen
 
-    # Bitrate in Bits/s (WiVRn erwartet das so)
-    bitrate_bps = int(bitrate_mbps) * 1_000_000
-    wivrn_data["bitrate"] = bitrate_bps
-
-    # Encoder-Objekt aufbauen
+    encoder_obj = None
     if encoder_name != "auto":
         encoder_obj = {"encoder": encoder_name}
         if codec:
             encoder_obj["codec"] = codec
-        wivrn_data["encoders"] = [encoder_obj]
-    else:
-        # Auto: WiVRn wählt selbst — kein "encoders" key setzen
-        wivrn_data.pop("encoders", None)
 
-    # --- openvr-compat-path (wird von streaming_tab.py direkt gesetzt, hier nicht überschreiben) ---
-    # Nicht anfassen — streaming_tab.py schreibt das direkt
+    if venv.wivrn_at_least(25, 12):
+        # Neues Format: ein einzelnes Objekt unter "encoder".
+        if encoder_obj:
+            wivrn_data["encoder"] = encoder_obj
+        else:
+            wivrn_data.pop("encoder", None)   # Auto: WiVRn wählt selbst
+        # "encoders"/"scale"/"bitrate" werden von dieser Version ignoriert.
+        # Sie bleiben unangetastet stehen, falls jemand zurückwechselt —
+        # gelöscht wird fremde Konfiguration hier grundsätzlich nicht.
+    else:
+        # Altes Format (<= 25.11)
+        res_percent = config_data.get("render_resolution", 100)
+        wivrn_data["scale"] = round(res_percent / 100.0, 2)
+        wivrn_data["bitrate"] = int(config_data.get("bitrate", 100)) * 1_000_000
+        if encoder_obj:
+            wivrn_data["encoders"] = [encoder_obj]
+        else:
+            wivrn_data.pop("encoders", None)
+
+    # --- openvr-compat-path (setzt streaming_tab.py direkt) ---------------
+    # Hier bewusst nicht anfassen.
 
     # --- Ungültige Keys aus alten Versionen entfernen ---
-    for old_key in ["encoder", "codec", "scale_percent", "foveated_factor",
-                     "openvr_runtime", "apps"]:
+    # "encoder" steht NICHT mehr in dieser Liste: seit 25.12 ist das der
+    # gültige Schlüssel.
+    for old_key in ["codec", "scale_percent", "foveated_factor",
+                    "openvr_runtime", "apps"]:
         wivrn_data.pop(old_key, None)
 
     if write_json_atomic(wivrn_path, wivrn_data):

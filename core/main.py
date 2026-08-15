@@ -20,7 +20,7 @@ import webbrowser
 # Diese Zeile hier ist eine ZUSAETZLICHE Kopie und existiert aus einem einzigen
 # Grund: Der Update-Checker aller bereits ausgelieferten Versionen (bis v1.1.4)
 # laedt diese Datei von GitHub und sucht darin per regulaerem Ausdruck nach
-# genau dem Muster  APP_VERSION = "v1.1.6".
+# genau dem Muster  APP_VERSION = "v1.1.7".
 #
 # Faellt die Zeile weg, findet der Ausdruck nichts, und JEDE bereits
 # installierte Version meldet fuer immer "du bist aktuell" — die Nutzer
@@ -76,6 +76,7 @@ from install_worker import (InstallWorker, UpdateWorker, AppUpdateCheckWorker, A
 import appimage_installer as appimg
 import vr_environment as venv
 import wivrn_dashboard as wivrn_dash
+import usb_headsets as usbhs
 from config_manager import load_saved_settings, save_all_settings
 from streaming_tab import StreamingTab
 from backup_manager import (create_vr_backup, restore_vr_environment,
@@ -275,6 +276,33 @@ class ApkWorker(QThread):
             self.finished_signal.emit(False)
 
 
+class UsbHeadsetWorker(QThread):
+    """
+    Sucht im Hintergrund nach einer per USB angeschlossenen Brille.
+
+    Warum ein eigener Thread: der Teil ueber sysfs ist zwar sofort fertig,
+    der anschliessende ``adb devices``-Aufruf kann aber Sekunden brauchen —
+    adb startet dabei ggf. erst seinen Daemon. Im GUI-Thread wuerde das
+    Fenster genau so lange haengen, und zwar alle paar Sekunden erneut.
+    """
+    result_signal = QtSignal(dict)
+
+    def run(self):
+        try:
+            info = usbhs.scan()
+            # Gleich mitnehmen: laeuft das WiVRn-Dashboard? Das ist ein
+            # pgrep-Aufruf, der im GUI-Thread nichts verloren hat, und der
+            # Tooltip des USB-Hakens haengt davon ab.
+            info["dashboard_running"] = wivrn_dash.dashboard_is_running()
+            self.result_signal.emit(info)
+        except Exception as exc:  # noqa: BLE001 — Anzeige darf nie abstuerzen
+            log.debug("USB-Erkennung fehlgeschlagen: %s", exc)
+            self.result_signal.emit({"devices": [], "headset": None,
+                                     "state": "none", "adb_state": "",
+                                     "dashboard_running": False,
+                                     "profile": usbhs.profile_for(None)})
+
+
 class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     """
     Hauptfenster.
@@ -344,6 +372,21 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.autostart_timer = QTimer(self)
         self.autostart_timer.setInterval(1000)   # 1x pro Sekunde
         self.autostart_timer.timeout.connect(self._poll_headset_for_autostart)
+
+        # --- USB-Ampel im Dashboard ---
+        # Laeuft NUR, solange der Dashboard-Tab offen ist (siehe
+        # on_tab_changed). Im Games- oder Tools-Tab braucht niemand die
+        # Anzeige, und ein adb-Aufruf alle paar Sekunden waere reine
+        # Beschaeftigung fuer die Platte.
+        self._usb_worker = None
+        self._usb_last_info = None           # zuletzt erkannter Zustand
+        # Gespeicherter refresh_rate-Wert ohne Bedienelement (siehe
+        # apply_loaded_settings) — wird beim Speichern unveraendert
+        # weitergereicht.
+        self._stored_refresh_rate = "Auto"
+        self.usb_poll_timer = QTimer(self)
+        self.usb_poll_timer.setInterval(4000)
+        self.usb_poll_timer.timeout.connect(self.check_usb_headset)
 
         self.is_loading = True  # Verhindert das Speichern während des Ladens
 
@@ -592,15 +635,30 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.ui.check_usb_autoconnect.blockSignals(True)
         self.ui.check_usb_autoconnect.setChecked(wivrn_dash.get_auto_connect_usb())
         self.ui.check_usb_autoconnect.blockSignals(False)
-        self._update_usb_hint()
+        self._update_usb_tooltip()
 
-    def _update_usb_hint(self):
-        """Warnt, solange das Dashboard laeuft — es wuerde die Datei beim
-        Beenden mit seinem eigenen Stand ueberschreiben."""
-        running = wivrn_dash.dashboard_is_running()
-        self.ui.lbl_usb_hint.setText(
-            tr("streaming_usb_dashboard_running") if running else "")
-        self.ui.lbl_usb_hint.setVisible(running)
+    def _update_usb_tooltip(self, running=None):
+        """
+        Tooltip des Hakens "Automatisch per USB verbinden".
+
+        Laeuft das WiVRn-Dashboard gerade, wird der Hinweis angehaengt, dass
+        es seine Einstellungen beim Beenden zurueckschreibt und diese
+        Aenderung damit wieder kassieren kann. Frueher stand das als
+        dauerhafte gelbe Zeile im Dashboard — fuer einen Sonderfall zu viel
+        Platz. Im Tooltip steht es genau dort, wo man ohnehin hinschaut,
+        bevor man den Haken setzt.
+
+        ``running=None`` heisst "selbst nachsehen". Der Aufrufer kann das
+        Ergebnis auch mitgeben, wenn er es (etwa aus dem Hintergrund-Thread)
+        schon hat — dann laeuft hier kein zweites pgrep.
+        """
+        if running is None:
+            running = wivrn_dash.dashboard_is_running()
+        tip = tr("streaming_usb_autoconnect_tip")
+        if running:
+            # Der uebersetzte Text bringt sein Warnzeichen selbst mit.
+            tip = f"{tip}\n\n{tr('streaming_usb_dashboard_running')}"
+        self.ui.check_usb_autoconnect.setToolTip(tip)
 
     def on_usb_autoconnect_toggled(self, checked):
         """Schreibt die Option direkt in die Dashboard-Konfiguration."""
@@ -614,7 +672,102 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                                 tr("streaming_usb_write_failed").format(
                                     path=wivrn_dash.dashboard_config_file()))
             return
-        self._update_usb_hint()
+        self._update_usb_tooltip()
+
+    # ------------------------------------------------------------------ #
+    #  USB-Ampel: haengt eine Brille am Kabel — und wuerde sie verbinden?  #
+    # ------------------------------------------------------------------ #
+    def check_usb_headset(self):
+        """
+        Startet einen Erkennungslauf im Hintergrund. Laeuft noch einer, wird
+        NICHT nachgelegt — sonst stapeln sich bei langsamem adb die Threads.
+        """
+        if self._usb_worker is not None and self._usb_worker.isRunning():
+            return
+        self._usb_worker = UsbHeadsetWorker()
+        self._usb_worker.result_signal.connect(self._on_usb_scan_done)
+        self._usb_worker.start()
+
+    def _on_usb_scan_done(self, info):
+        self._render_usb_state(info)
+
+    def _render_usb_state(self, info):
+        """
+        Zeichnet die kompakte USB-Zeile unter den gekoppelten Headsets.
+
+        Sichtbar wird sie NUR, wenn es etwas zu tun gibt: Kabel steckt, aber
+        WiVRn kaeme per adb nicht dran. Laeuft alles (gruen) oder haengt gar
+        nichts am Kabel (grau), bleibt die Zeile weg — dass eine Brille per
+        USB da ist, steht dann schon als "· USB" an ihrem Listeneintrag.
+
+        Bewusst getrennt vom Scan: nach einem Sprachwechsel wird nur neu
+        gezeichnet, ohne erneut zu suchen — dafuer merkt sich diese Methode
+        den zuletzt gezeichneten Zustand.
+        """
+        vorher = self._usb_device_names()
+        if info:
+            self._usb_last_info = info
+
+        info = self._usb_last_info
+        state = (info or {}).get("state", "none")
+        headset = (info or {}).get("headset") or {}
+        name = headset.get("name", "")
+
+        if state == "unauthorized":
+            color, text = "#ebcb8b", tr("usb_state_unauthorized").format(name=name)
+        elif state == "usb_only":
+            color, text = "#ebcb8b", tr("usb_state_usb_only").format(name=name)
+        elif state == "no_adb":
+            color, text = "#ebcb8b", tr("usb_state_no_adb").format(name=name)
+        elif state == "ready":
+            color, text = "#a3be8c", ""
+        else:
+            color, text = "#4c566a", ""
+
+        self.ui.lbl_usb_led.setStyleSheet(f"color:{color}; font-size:14px;")
+        self.ui.lbl_usb_state.setText(text)
+        self.ui.usb_state_widget.setVisible(bool(text))
+
+        self._apply_refresh_profile((info or {}).get("profile"))
+        # Tooltip des USB-Hakens aktuell halten (Dashboard kann zwischendurch
+        # gestartet oder beendet worden sein).
+        if info is not None and "dashboard_running" in info:
+            self._update_usb_tooltip(info["dashboard_running"])
+
+        # Liste nur dann neu einlesen, wenn sich am Kabel wirklich etwas
+        # geaendert hat — sonst liefe alle vier Sekunden ein wivrnctl-Aufruf
+        # ins Leere.
+        if self._usb_device_names() != vorher:
+            self.refresh_headset_list()
+
+    def _usb_device_names(self):
+        """Namen der aktuell per USB erkannten Brillen (klein geschrieben)."""
+        info = self._usb_last_info or {}
+        return tuple(sorted(
+            (d.get("name") or "").strip().lower()
+            for d in info.get("devices", []) if d.get("name")))
+
+    def _apply_refresh_profile(self, profile):
+        """
+        Zeigt, welche Bildwiederholraten die erkannte Brille beherrscht.
+
+        Bewusst nur eine Anzeige: Die Rate laesst sich vom PC aus gar nicht
+        setzen — WiVRns Server-Konfiguration hat dafuer keinen Schluessel,
+        der Client im Headset bestimmt sie (siehe core/config_manager.py).
+        Frueher stand hier ein Auswahlfeld, dessen Wert wirkungslos in WiVRns
+        config.json landete.
+        """
+        rates = (profile or {}).get("rates") or usbhs.ALL_RATES
+        model = (profile or {}).get("model", "")
+
+        if model:
+            self.ui.lbl_refresh_value.setText(
+                tr("refresh_supported").format(
+                    name=model,
+                    rates=", ".join(f"{r}" for r in rates)))
+        else:
+            self.ui.lbl_refresh_value.setText(tr("refresh_no_headset"))
+        self.ui.lbl_refresh_hint.setText(tr("refresh_where"))
 
     def open_log_file(self):
         """Oeffnet die Logdatei im Standardprogramm des Systems."""
@@ -892,6 +1045,12 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         # eigener Einstellungsdatei, nicht aus unserer Config.
         self.ui.check_usb_autoconnect.clicked.connect(self.on_usb_autoconnect_toggled)
         self.load_usb_autoconnect()
+        # USB-Erkennung: einmal beim Start pruefen. Der Dauerlauf startet
+        # erst, wenn der Dashboard-Tab sichtbar ist. Einen eigenen Knopf gibt
+        # es nicht mehr — "Liste aktualisieren" bei den gekoppelten Headsets
+        # prueft beides.
+        self._render_usb_state(None)
+        QTimer.singleShot(800, self.check_usb_headset)
         self.ui.btn_log_open.clicked.connect(self.open_log_file)
         self.ui.btn_log_copy.clicked.connect(self.copy_log_to_clipboard)
         self.ui.btn_community_donate.clicked.connect(self.open_paypal_link)
@@ -934,7 +1093,6 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
         # Autosave Trigger
         self.ui.chk_steamvr_tracker.clicked.connect(self.trigger_auto_save)
-        self.ui.combo_refresh.activated.connect(self.trigger_auto_save)
         self.ui.chk_pairing.toggled.connect(self.toggle_pairing_mode)
 
         # Autostart Zeilen-Generierung
@@ -946,7 +1104,10 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.ui.btn_autostart_kill.clicked.connect(self.kill_autostart_apps)
 
         # Headset Management
+        # "Liste aktualisieren" prueft beides: gekoppelte Headsets UND das
+        # USB-Kabel — der frueher eigene USB-Knopf ist damit ueberfluessig.
         self.ui.btn_refresh_list.clicked.connect(self.refresh_headset_list)
+        self.ui.btn_refresh_list.clicked.connect(self.check_usb_headset)
         self.ui.btn_remove_headset.clicked.connect(self.remove_selected_headset)
         self.ui.btn_disconnect_headset.clicked.connect(self.disconnect_current_headset)
 
@@ -1014,6 +1175,12 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             QMessageBox.critical(self, tr("msg_locked_title"), tr("msg_locked_text"))
             return
         self.ui.pages.setCurrentIndex(index)
+        # USB-Ampel nur im Dashboard mitlaufen lassen (spart adb-Aufrufe).
+        if index == 1:
+            self.check_usb_headset()
+            self.usb_poll_timer.start()
+        else:
+            self.usb_poll_timer.stop()
         if index == 1: self.refresh_headset_list()
         if index == 3: self.check_tools_status()
         if index == 4: self.on_games_tab_opened()
@@ -1124,6 +1291,11 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
         # Status-Label der OpenXR-Box neu setzen
         self.refresh_openxr_status()
+
+        # USB-Ampel + Raten-Hinweis stehen in der alten Sprache da — der
+        # zuletzt erkannte Zustand wird einfach neu gezeichnet (kein neuer
+        # Scan noetig).
+        self._render_usb_state(self._usb_last_info)
 
         # --- Ab hier nur noch DYNAMISCHE Texte, die vom aktuellen Zustand abhängen ---
 
@@ -1392,7 +1564,10 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         if getattr(self, "_fedora_xrizer_hinted", False):
             return
         self._fedora_xrizer_hinted = True
-        if venv.find_xrizer() and os.path.isdir(venv.find_xrizer()):
+        # find_openvr_compat prueft, ob dort auch wirklich eine vrclient.so
+        # liegt — ein leerer Restordner (Paket entfernt) darf den Hinweis
+        # nicht unterdruecken.
+        if venv.find_openvr_compat("xrizer"):
             return   # xrizer ist schon da
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Information)
@@ -1755,7 +1930,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             hand,
             fbt,
             self.ui.chk_steamvr_tracker.isChecked(),
-            self.ui.combo_refresh.currentText(),
+            self._stored_refresh_rate,
             self.ui.num_apps.text(),
             apps_data
         )
@@ -1773,11 +1948,13 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.apply_translations()
 
         self.ui.chk_steamvr_tracker.blockSignals(True)
-        self.ui.combo_refresh.blockSignals(True)
         self.ui.num_apps.blockSignals(True)
 
         self.ui.chk_steamvr_tracker.setChecked(data.get("steam_tracker", False))
-        self.ui.combo_refresh.setCurrentText(data.get("refresh_rate", "Auto"))
+        # refresh_rate hat kein Bedienelement mehr (die Rate wird im Headset
+        # gesetzt). Der gespeicherte Wert wird nur noch durchgereicht, damit
+        # er beim naechsten Speichern nicht verloren geht.
+        self._stored_refresh_rate = data.get("refresh_rate", "Auto")
 
         # Autostart-Einträge befüllen (über self.ui aufrufen!)
         autostart_count = int(data.get("autostart_count", "0"))
@@ -1795,10 +1972,14 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                 self.autostart_rows[i]["chk_debug"].setChecked(app.get("debug", False))
 
         self.ui.chk_steamvr_tracker.blockSignals(False)
-        self.ui.combo_refresh.blockSignals(False)
         self.ui.num_apps.blockSignals(False)
 
     def refresh_headset_list(self):
+        """
+        Gekoppelte Headsets auflisten. Haengt eines davon gerade am USB-Kabel,
+        bekommt sein Eintrag ein "· USB" angehaengt — die Information steht
+        damit direkt am Geraet statt in einer eigenen Zeile weiter oben.
+        """
         self.ui.list_headsets.clear()
         if proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode != 0:
             self.ui.list_headsets.addItem(tr("dashboard_no_server"))
@@ -1808,9 +1989,26 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             if res.returncode == 0:
                 for line in res.stdout.strip().split('\n'):
                     if not line.strip() or "Headset name" in line: continue
-                    self.ui.list_headsets.addItem(line.strip())
-            if self.ui.list_headsets.count() == 0: self.ui.list_headsets.addItem("Keine gekoppelten Headsets gefunden.")
+                    self.ui.list_headsets.addItem(self._tag_usb(line.strip()))
+            if self.ui.list_headsets.count() == 0:
+                self.ui.list_headsets.addItem(tr("dashboard_no_paired"))
         except Exception as e: self.ui.list_headsets.addItem(tr("err_generic").format(err=e))
+
+    def _tag_usb(self, line):
+        """
+        Haengt "· USB" an, wenn der Name des Listeneintrags zu einer per USB
+        erkannten Brille passt.
+
+        Verglichen wird ueber den Namen, nicht ueber die Reihenfolge: sind
+        mehrere Brillen gekoppelt, darf die Markierung nicht an der falschen
+        landen. Passt kein Name, bleibt der Eintrag unveraendert — dann sagt
+        die Statuszeile unter der Liste, was am Kabel haengt.
+        """
+        low = line.lower()
+        for name in self._usb_device_names():
+            if name and name in low:
+                return f"{line}   · USB"
+        return line
 
     def remove_selected_headset(self):
         item = self.ui.list_headsets.currentItem()
@@ -2551,10 +2749,16 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         "_games_db_worker",         # Spiele-Datenbank
         "tool_worker",              # Tool-Installation
         "apk_worker",               # WiVRn-APK per adb
+        "_usb_worker",              # USB-Ampel im Dashboard
     )
 
     def closeEvent(self, event):
         """Beim Schliessen alle Hintergrund-Threads geordnet beenden."""
+        # Zuerst die Timer anhalten: ein Tick waehrend des Aufraeumens wuerde
+        # einen frischen Worker starten, auf den niemand mehr wartet.
+        self.usb_poll_timer.stop()
+        self.autostart_timer.stop()
+
         for name in self._BACKGROUND_WORKERS:
             worker = getattr(self, name, None)
             if worker is None:

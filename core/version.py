@@ -30,7 +30,7 @@ bevorzugt diese Datei hier.
 # --------------------------------------------------------------------- #
 #  HIER wird die Version gepflegt (ohne fuehrendes 'v').
 # --------------------------------------------------------------------- #
-VERSION = "1.1.6"
+VERSION = "1.1.7"
 
 # Mit 'v' davor — so, wie die App sie anzeigt und wie die Git-Tags heissen.
 APP_VERSION = "v" + VERSION
