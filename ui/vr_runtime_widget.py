@@ -22,7 +22,6 @@ Oeffentliche Methoden:
     retranslate()  — Texte nach Sprachwechsel neu setzen
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -34,7 +33,9 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMessageBox,
 # core/ liegt auf dem sys.path (starter.py haengt ihn an) — zur Sicherheit
 # hier trotzdem nochmal, damit das Widget auch standalone importierbar ist.
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
+import openxr_manager as oxr
 import proc
+import vr_autotune as autotune
 import vr_environment as venv
 from logging_setup import get_logger
 from translations import tr
@@ -195,34 +196,125 @@ class VrRuntimeWidget(QWidget):
         self.lbl_active_runtime.setStyleSheet(
             f"font-weight:bold; color:{color}; font-size:13px;")
 
-    def _write_active_runtime(self, library_path):
-        """Schreibt active_runtime.json in alle bekannten OpenXR-Verzeichnisse
-        (Host + Steam-Flatpak-Sandbox)."""
-        data = {"file_format_version": "1.0.0", "runtime": {"library_path": library_path}}
-        for d in venv.openxr_config_dirs():
-            os.makedirs(d, exist_ok=True)
-            with open(os.path.join(d, "active_runtime.json"), "w") as f:
-                json.dump(data, f, indent=4)
+    def _notify_openvr_changed(self):
+        """
+        Sagt dem Streaming-Tab Bescheid, dass die OpenVR-Auswahl von aussen
+        geaendert wurde — sonst zeigt sie bis zum naechsten Neustart einen
+        Wert an, der nicht mehr in WiVRns config.json steht.
+
+        Das Widget kennt das Hauptfenster nicht (ui_main.py haengt es ohne
+        Referenz ein), deshalb der Weg ueber die Top-Level-Fenster statt
+        eines zusaetzlichen Konstruktor-Arguments.
+        """
+        from PySide6.QtWidgets import QApplication
+
+        for win in QApplication.topLevelWidgets():
+            refresh = getattr(win, "refresh_openvr_ui", None)
+            if callable(refresh):
+                try:
+                    refresh()
+                except Exception as exc:                        # noqa: BLE001
+                    log.debug("refresh_openvr_ui: ignoriert — %s", exc)
+
+    def _apply_runtime(self, writer):
+        """
+        Schaltet die aktive OpenXR-Runtime um und meldet Fehler einheitlich.
+
+        ``writer`` ist eine Funktion aus openxr_manager, die
+        ``(erfolg, code, detail)`` zurueckgibt. Beide Wege schreiben den Pfad
+        einer BIBLIOTHEK in die active_runtime.json — nie den eines weiteren
+        Manifests (siehe openxr_manager.apply_steamvr_runtime).
+
+        Rueckgabe: True, wenn geschrieben wurde.
+        """
+        try:
+            ok, code, detail = writer()
+        except Exception as e:                                  # noqa: BLE001
+            log.warning("OpenXR-Runtime-Wechsel: %s", e)
+            QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(e))
+            return False
+
+        self.check_active_openxr_runtime()
+        if ok:
+            return True
+
+        if code == "libs_not_found":
+            QMessageBox.warning(self, tr("openxr_group"), tr("openxr_fix_no_libs"))
+        elif code == "steamvr_not_found":
+            QMessageBox.warning(self, tr("openxr_group"),
+                                tr("streaming_rt_steam_missing").format(path=detail))
+        elif code == "not_elf":
+            QMessageBox.warning(self, tr("openxr_group"),
+                                tr("openxr_fix_not_elf").format(path=detail))
+        else:
+            QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(detail))
+        return False
 
     def set_openxr_runtime_wivrn(self):
-        """Schaltet die OpenXR-Runtime auf WiVRn um."""
-        try:
-            self._write_active_runtime(venv.find_wivrn_manifest())
-            self.check_active_openxr_runtime()
-            QMessageBox.information(self, tr("streaming_rt_switched"), tr("streaming_rt_wivrn_ok"))
-        except Exception as e:
-            log.warning("OpenXR-Runtime WiVRn: %s", e)
-            QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(e))
+        """
+        Schaltet die OpenXR-Runtime auf WiVRn um.
+
+        War die OpenVR-Kompatibilitaet zuvor fuer SteamVR abgeschaltet
+        worden (siehe set_openxr_runtime_steamvr), wird hier angeboten,
+        genau die vorherige Auswahl wiederherzustellen. Ohne das bliebe
+        WiVRn nach dem Zurueckschalten ohne OpenVR-Ersatz — OpenVR-Spiele
+        wie VRChat starten dann gar nicht mehr, und der Grund dafuer steht
+        in einem anderen Tab.
+        """
+        if not self._apply_runtime(oxr.apply_openxr_fix):
+            return
+
+        note = ""
+        previous = autotune.previous_compat()
+        mode, _path = venv.current_openvr_compat()
+        if previous and mode == venv.OPENVR_DISABLED:
+            prev_mode, prev_path = previous
+            label = autotune.compat_label(prev_mode, prev_path)
+            answer = QMessageBox.question(
+                self, tr("rt_compat_restore_title"),
+                tr("rt_compat_restore_ask").format(name=label),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if answer == QMessageBox.Yes:
+                if venv.set_openvr_compat(prev_mode, prev_path):
+                    autotune.forget_compat()
+                    self._notify_openvr_changed()
+                    note = "\n\n" + tr("rt_compat_restored").format(name=label)
+                else:
+                    note = "\n\n" + tr("rt_compat_restore_failed")
+            else:
+                note = "\n\n" + tr("rt_compat_kept_off")
+
+        QMessageBox.information(self, tr("streaming_rt_switched"),
+                                tr("streaming_rt_wivrn_ok") + note)
 
     def set_openxr_runtime_steamvr(self):
-        """Schaltet die OpenXR-Runtime auf SteamVR um."""
-        try:
-            self._write_active_runtime(venv.find_steamvr_manifest())
-            self.check_active_openxr_runtime()
-            QMessageBox.information(self, tr("streaming_rt_switched"), tr("streaming_rt_steam_ok"))
-        except Exception as e:
-            log.warning("OpenXR-Runtime SteamVR: %s", e)
-            QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(e))
+        """
+        Schaltet die OpenXR-Runtime auf SteamVR um — und stellt dabei die
+        OpenVR-Kompatibilitaet auf "Deaktiviert".
+
+        Warum automatisch: SteamVR bringt sein eigenes OpenVR mit. Bleibt
+        WiVRns ``openvr-compat-path`` gesetzt, biegt WiVRn beim naechsten
+        Serverstart die openvrpaths auf xrizer/OpenComposite um, und
+        SteamVR-Spiele landen in einer Ersatzbibliothek statt in SteamVR
+        selbst. Der vorherige Wert wird gemerkt und beim Zurueckschalten auf
+        WiVRn wieder angeboten.
+        """
+        if not self._apply_runtime(oxr.apply_steamvr_runtime):
+            return
+
+        note = ""
+        mode, path = venv.current_openvr_compat()
+        if mode != venv.OPENVR_DISABLED:
+            label = autotune.compat_label(mode, path)
+            autotune.remember_compat()
+            if venv.set_openvr_compat(venv.OPENVR_DISABLED):
+                self._notify_openvr_changed()
+                note = "\n\n" + tr("rt_compat_disabled").format(name=label)
+            else:
+                note = "\n\n" + tr("rt_compat_disable_failed")
+
+        QMessageBox.information(self, tr("streaming_rt_switched"),
+                                tr("streaming_rt_steam_ok") + note)
 
     # ----------------------------------------------------------------------
     #  VR-Prioritaet (CAP_SYS_NICE)

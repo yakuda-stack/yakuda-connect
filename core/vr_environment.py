@@ -401,6 +401,53 @@ def find_steamvr_manifest():
     return os.path.join(HOME, ".local/share/Steam/steamapps/common/SteamVR/steamxr_linux64.json")
 
 
+def resolve_manifest_libs(manifest):
+    """
+    ``(library_path, MND_libmonado_path)`` eines Runtime-Manifests, absolut.
+
+    Relative Angaben werden auf den Ordner des Manifests bezogen — genau so,
+    wie es die OpenXR-Spezifikation vorsieht. SteamVRs eigenes
+    ``steamxr_linux64.json`` enthaelt z. B. ``./bin/linux64/steamxr_linux64.so``.
+    Nicht existierende oder nicht-64-Bit-Dateien werden als ``None`` gemeldet.
+    """
+    try:
+        with open(manifest) as f:
+            data = json.load(f)
+        rt = data.get("runtime", {})
+    except Exception as exc:
+        log.debug("resolve_manifest_libs (%s): %s", manifest, exc)
+        return None, None
+
+    base = os.path.dirname(manifest)
+
+    def _abs(value):
+        if not value:
+            return None
+        path = value if os.path.isabs(value) else os.path.normpath(os.path.join(base, value))
+        return path if os.path.exists(path) and is_elf64(path) else None
+
+    return _abs(rt.get("library_path")), _abs(rt.get("MND_libmonado_path"))
+
+
+def find_steamvr_lib():
+    """
+    Absoluter Pfad zu SteamVRs OpenXR-Bibliothek (``steamxr_linux64.so``) —
+    oder "" , wenn SteamVR nicht (vollstaendig) installiert ist.
+
+    Warum ueberhaupt: in ``active_runtime.json`` gehoert der Pfad einer
+    Bibliothek, KEIN Pfad auf ein weiteres Manifest. Steht dort eine .json,
+    versucht der Loader sie als Bibliothek zu oeffnen — das ist genau der
+    Fehler "invalid `Elf' handle", an dem Steams pressure-vessel scheitert.
+    """
+    manifest = find_steamvr_manifest()
+    lib, _mon = resolve_manifest_libs(manifest)
+    if lib:
+        return lib
+    # Fallback: fester Ort innerhalb der SteamVR-Installation
+    cand = os.path.join(os.path.dirname(manifest), "bin", "linux64", "steamxr_linux64.so")
+    return cand if os.path.exists(cand) and is_elf64(cand) else ""
+
+
 # --------------------------------------------------------------------------- #
 #  wivrn-server-Binary + CAP_SYS_NICE-Tauglichkeit
 # --------------------------------------------------------------------------- #

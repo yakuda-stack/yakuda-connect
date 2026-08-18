@@ -156,6 +156,91 @@ def is_openxr_fix_applied():
     return state == "ok"
 
 
+def active_runtime_name():
+    """
+    Welche Runtime steht gerade in der active_runtime.json?
+
+        'wivrn' | 'steamvr' | 'other' | 'none'
+
+    Gebraucht vom Steam-Fix: der schreibt IMMER WiVRn hinein. Hat der Nutzer
+    gerade bewusst auf SteamVR umgestellt, wuerde der Fix diese Auswahl
+    stillschweigend rueckgaengig machen — deshalb wird vorher gefragt.
+    """
+    path = venv.primary_active_runtime()
+    if not os.path.exists(path):
+        return "none"
+    try:
+        with open(path) as f:
+            content = f.read().lower()
+    except Exception:
+        return "other"
+    if "wivrn" in content:
+        return "wivrn"
+    if "steamvr" in content or "steamxr" in content:
+        return "steamvr"
+    return "other"
+
+
+# --------------------------------------------------------------------------- #
+#  Runtime auf SteamVR umstellen
+# --------------------------------------------------------------------------- #
+def apply_steamvr_runtime():
+    """
+    Schreibt SteamVR als aktive OpenXR-Runtime — mit dem Pfad der
+    BIBLIOTHEK, nicht dem des Manifests.
+
+    Frueher stand hier der Pfad der ``steamxr_linux64.json``. Das sieht auf
+    den ersten Blick richtig aus (es ist ja SteamVRs Runtime-Datei), ist
+    aber genau der Fehler, gegen den der Steam-Fix in dieser Datei
+    existiert: ``library_path`` wird vom Loader per ``dlopen`` geoeffnet.
+    Zeigt er auf eine .json, endet das in
+    "gelf_getehdr(...): invalid `Elf' handle" — und die Statusanzeige der App
+    meldete den Zustand folgerichtig als "defekt", direkt nachdem der Nutzer
+    ihn selbst eingestellt hatte.
+
+    Rueckgabe wie apply_openxr_fix: ``(erfolg, code, detail)``
+        code: 'ok' | 'steamvr_not_found' | 'write_failed'
+        detail bei Erfolg: Pfad der Sicherung (oder "")
+    """
+    lib = venv.find_steamvr_lib()
+    if not lib:
+        return False, "steamvr_not_found", venv.find_steamvr_manifest()
+
+    runtime = {
+        "file_format_version": "1.0.0",
+        "runtime": {
+            "name": "SteamVR",
+            "library_path": lib,
+        },
+    }
+
+    backup = ""
+    wrote_any = False
+    for d in venv.openxr_config_dirs():
+        target = os.path.join(d, "active_runtime.json")
+        try:
+            os.makedirs(d, exist_ok=True)
+            if os.path.exists(target):
+                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                bak = target + f".bak.{stamp}"
+                shutil.copy2(target, bak)
+                if target == ACTIVE_RUNTIME:
+                    backup = bak
+            with open(target, "w") as f:
+                json.dump(runtime, f, indent=4)
+            wrote_any = True
+        except Exception as e:
+            if target == ACTIVE_RUNTIME:
+                return False, "write_failed", str(e)
+            log.warning(f"[OpenXR] Konnte {target} nicht schreiben: {e}")
+
+    if not wrote_any:
+        return False, "write_failed", ""
+
+    log.info("[OpenXR] Aktive Runtime -> SteamVR (%s)", lib)
+    return True, "ok", backup
+
+
 # --------------------------------------------------------------------------- #
 #  Fix anwenden
 # --------------------------------------------------------------------------- #

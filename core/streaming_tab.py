@@ -401,6 +401,27 @@ class StreamingTab(QWidget):
                 text += f"  ⚠ {tr('streaming_openvr_active_broken')}"
         self.lbl_openvr_active.setText(f"{text}\n{tr('streaming_openvr_restart_hint')}")
 
+    def refresh_openvr_from_system(self):
+        """
+        Auswahl neu aus WiVRns config.json einlesen.
+
+        Noetig, weil der Wert auch ausserhalb dieses Tabs gesetzt wird: von
+        der Runtime-Umschaltung unter Einstellungen -> VR & OpenXR (SteamVR
+        schaltet OpenVR ab) und von der einmaligen xrizer-Automatik
+        (core/vr_autotune.py). Ohne diesen Abgleich zeigte die Liste bis zum
+        naechsten Programmstart einen Wert an, der so gar nicht mehr in der
+        Datei steht.
+        """
+        mode, path = venv.current_openvr_compat()
+        if mode == venv.OPENVR_PATH:
+            key = f"path:{path}"
+        elif mode == venv.OPENVR_DISABLED:
+            key = "disabled"
+        else:
+            key = "default"
+        self._openvr_applied_key = self._migrate_key(key)
+        self.reload_openvr_options(select=self._openvr_applied_key)
+
     def apply_openvr_compatibility(self, *_args):
         """Setzt die Auswahl in WiVRns config.json um und speichert sie."""
         choice = self.current_openvr_key()

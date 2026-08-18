@@ -20,7 +20,7 @@ import webbrowser
 # Diese Zeile hier ist eine ZUSAETZLICHE Kopie und existiert aus einem einzigen
 # Grund: Der Update-Checker aller bereits ausgelieferten Versionen (bis v1.1.4)
 # laedt diese Datei von GitHub und sucht darin per regulaerem Ausdruck nach
-# genau dem Muster  APP_VERSION = "v1.1.7".
+# genau dem Muster  APP_VERSION = "v1.1.8".
 #
 # Faellt die Zeile weg, findet der Ausdruck nichts, und JEDE bereits
 # installierte Version meldet fuer immer "du bist aktuell" — die Nutzer
@@ -80,8 +80,8 @@ import usb_headsets as usbhs
 from config_manager import load_saved_settings, save_all_settings
 from streaming_tab import StreamingTab
 from backup_manager import (create_vr_backup, restore_vr_environment,
-                            sync_backup_from_github,
-                            auto_backup_on_start)
+                            sync_backup_from_github)
+import vr_autotune as autotune
 from programs import (INSTALL_PACKAGES, INSTALL_DNF, FEDORA_XRIZER_COPR,
                       TOOLS_APPS, TOOLS_OSC)
 import games as games_db
@@ -801,25 +801,59 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     #  Automatisches Erst-Backup beim Start (siehe backup_manager.py)
     # ------------------------------------------------------------------ #
     def _start_auto_backup_check(self):
-        """Startet den stillen Auto-Backup-Check im Hintergrund-Thread."""
+        """
+        Startet den stillen Auto-Check im Hintergrund-Thread.
+
+        Er macht zweierlei (siehe core/vr_autotune.py): das automatische
+        Erst-Backup wie bisher — und danach EINMALIG die Umstellung der
+        OpenVR-Kompatibilitaet auf xrizer, sofern erkennbar ist, dass auf
+        diesem Rechner schon einmal VR lief.
+
+        Aufgerufen wird das an genau zwei Stellen, ohne Timer:
+          * kurz nach dem Start der App,
+          * nachdem der WiVRn-Server beendet wurde.
+        Waehrend der Server laeuft, wird nichts geschrieben — WiVRn liest den
+        Pfad nur beim Hochfahren.
+        """
+        worker = getattr(self, "_auto_backup_worker", None)
+        if worker is not None and worker.isRunning():
+            return      # laeuft schon — nicht zweimal parallel
+
         class _AutoBackupWorker(QThread):
-            done = QtSignal(bool)
+            done = QtSignal(dict)
 
             def run(self):
                 try:
-                    created = auto_backup_on_start()
+                    result = autotune.run_auto_setup()
                 except Exception as e:
-                    log.warning(f"[Backup] Auto-Backup-Check fehlgeschlagen: {e}")
-                    created = False
-                self.done.emit(bool(created))
+                    log.warning(f"[Backup] Auto-Check fehlgeschlagen: {e}")
+                    result = {}
+                self.done.emit(result or {})
 
         self._auto_backup_worker = _AutoBackupWorker()
         self._auto_backup_worker.done.connect(self._on_auto_backup_done)
         self._auto_backup_worker.start()
 
-    def _on_auto_backup_done(self, created):
-        if created:
+    def _on_auto_backup_done(self, result):
+        if result.get("backup_created"):
             log.info("[Backup] Automatisches Erst-Backup der VR-Umgebung wurde angelegt.")
+        if result.get("skipped"):
+            log.debug("[Autotune] xrizer-Umstellung uebersprungen: %s", result["skipped"])
+        if result.get("switched"):
+            # Die Auswahl im Streaming-Tab zeigt sonst noch den alten Wert.
+            self.refresh_openvr_ui()
+            QMessageBox.information(
+                self, tr("autotune_xrizer_title"),
+                tr("autotune_xrizer_text").format(path=result.get("path", ""),
+                                                  previous=result.get("previous", "")))
+
+    def refresh_openvr_ui(self):
+        """Liest die OpenVR-Auswahl im Streaming-Tab neu aus WiVRns config.json.
+        Wird von der Runtime-Umschaltung (ui/vr_runtime_widget.py) und von der
+        xrizer-Automatik aufgerufen."""
+        tab = getattr(self, "streaming_settings", None)
+        if tab is not None and hasattr(tab, "refresh_openvr_from_system"):
+            tab.refresh_openvr_from_system()
 
     # ------------------------------------------------------------------ #
     #  Steam-Schutz: defekte System-OpenXR-Manifeste erkennen
@@ -899,9 +933,17 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         """Zeigt an, ob die active_runtime.json ok / kaputt / nicht vorhanden ist."""
         try:
             state, _detail = oxr.current_status()
+            which = oxr.active_runtime_name()
         except Exception:
-            state = "missing"
-        if state == "ok":
+            state, which = "missing", "none"
+        if state == "ok" and which == "steamvr":
+            # Gueltig, aber eben nicht WiVRn. Ohne diesen Fall stand hier
+            # "bereit fuer Steam" — richtig, aber nicht die Information, die
+            # jemand sucht, der gerade auf SteamVR umgestellt hat.
+            self.ui.lbl_openxr_status.setText(tr("openxr_status_steamvr"))
+            self.ui.lbl_openxr_status.setStyleSheet(
+                "color: #81a1c1; font-size: 11px; font-weight: bold;")
+        elif state == "ok":
             self.ui.lbl_openxr_status.setText(tr("openxr_status_ok"))
             self.ui.lbl_openxr_status.setStyleSheet(
                 "color: #a3be8c; font-size: 11px; font-weight: bold;")
@@ -918,6 +960,16 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         """Schreibt die korrekte active_runtime.json (mit automatischem Backup).
         Scheitert der normale Schreibzugriff (Rechteproblem), wird der Fix per
         pkexec mit Root-Passwortabfrage wiederholt."""
+        # Der Fix schreibt IMMER WiVRn als aktive Runtime. Steht dort gerade
+        # bewusst SteamVR, wuerde ein Klick hier die Auswahl stillschweigend
+        # rueckgaengig machen — deshalb vorher fragen.
+        if oxr.active_runtime_name() == "steamvr":
+            reply = QMessageBox.question(
+                self, tr("openxr_group"), tr("openxr_fix_steamvr_ask"),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply != QMessageBox.Yes:
+                return
+
         # Zuerst die System-Manifeste pruefen: solange dort ein Manifest auf
         # eine fehlende/falsch-bittige .so zeigt, startet Steam gar nicht erst.
         try:
@@ -954,6 +1006,9 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                                  f"{tr('openxr_fix_error')}\n{detail}")
         self.refresh_openxr_status()
         self.fill_openxr_fields()
+        # Die Runtime-Anzeige unter VR & OpenXR steht jetzt auf WiVRn.
+        if hasattr(self.ui, "vr_runtime_widget"):
+            self.ui.vr_runtime_widget.refresh()
 
     def toggle_openxr_manual(self):
         """Klappt den manuellen Fix-Bereich ein/aus."""
@@ -1182,6 +1237,9 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         else:
             self.usb_poll_timer.stop()
         if index == 1: self.refresh_headset_list()
+        # Die OpenVR-Auswahl kann sich ausserhalb dieses Tabs geaendert haben
+        # (Runtime-Umschaltung, xrizer-Automatik, WiVRn-Dashboard).
+        if index == 2: self.refresh_openvr_ui()
         if index == 3: self.check_tools_status()
         if index == 4: self.on_games_tab_opened()
         # Runtime/Prioritaet koennen sich ausserhalb der App geaendert haben
@@ -2700,6 +2758,12 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.update_server_status_ui()
         self.ui.list_headsets.clear()
         self.ui.list_headsets.addItem(tr("dashboard_no_server"))
+
+        # Zweiter (und letzter) Pruefzeitpunkt der Einmal-Automatik: jetzt ist
+        # der Server aus, also darf in WiVRns config.json geschrieben werden.
+        # Die anderthalb Sekunden geben dem Prozess Zeit, wirklich zu enden —
+        # sonst sieht der pgrep im Worker ihn noch und ueberspringt alles.
+        QTimer.singleShot(1500, self._start_auto_backup_check)
 
     def update_server_status_ui(self):
         """Passt die Statusanzeige an den GEMERKTEN Zustand an (kein Subprozess)."""
