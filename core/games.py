@@ -138,9 +138,12 @@ def game(name, protons, launch_params=None, fixes=None, toggles=None, default_on
 
 def game_toggle(key, arg, position="after", default=False):
     """Ein spiel-spezifischer Startparameter-Schalter (wie LAUNCH_TOGGLES).
-      position "before" -> Wrapper (vor %command%), "after" -> Spiel-Argument.
-      default           -> beim ersten Öffnen des Spiels bereits an.
-    Beschriftung/Tooltip kommen über tr("games_toggle_<key>") / _tip.
+      position "before" -> Wrapper (vor %command%), "after" -> Spiel-Argument,
+                           "wrap"   -> umschliesst die ganze restliche Zeile
+                                       (endet auf '--', danach folgt alles
+                                       Weitere als Argumentliste)
+      default           -> beim ersten Oeffnen des Spiels bereits an.
+    Beschriftung/Tooltip kommen ueber tr("games_toggle_<key>") / _tip.
     """
     return {"key": key, "arg": arg, "position": position, "default": default}
 
@@ -246,7 +249,8 @@ def _norm_desc(desc):
     return {"de": desc or "", "en": desc or ""}
 
 
-def _proton_entry(pv_map, pd_map, key, role, desc=None, cachyos_only=False):
+def _proton_entry(pv_map, pd_map, key, role, desc=None, cachyos_only=False,
+                  hide_on_cachyos=False):
     version = pv_map.get(key, key)
     # Beschreibung: per-Spiel-Override (desc) hat Vorrang, sonst die zentrale
     # Standardbeschreibung der Proton-Version aus proton_descriptions.
@@ -261,6 +265,8 @@ def _proton_entry(pv_map, pd_map, key, role, desc=None, cachyos_only=False):
     if cachyos_only:
         # Nur auf CachyOS anzeigen (Nicht-CachyOS sieht nur Default + Alternative).
         entry["cachyos_only"] = True
+    if hide_on_cachyos:
+        entry["hide_on_cachyos"] = True
     return entry
 
 
@@ -281,15 +287,32 @@ def build_games_from_config(cfg):
         appid = str(appid)
         p = g.get("proton", {}) or {}
         protons = []
+        # Empfiehlt ein Spiel auf CachyOS DIESELBE Version wie ueberall sonst
+        # (bei VRChat seit 1.1.9 der Fall: RTSP-Proton, weil proton-cachyos die
+        # MediaFoundation-Patches fuer AVPro nicht hat), stuende sie doppelt in
+        # der Liste. Der Default-Eintrag wird auf CachyOS dann ausgeblendet —
+        # sichtbar bleibt der main_cachyos-Eintrag, der dort auch das
+        # "Empfohlen"-Badge traegt.
+        same_on_cachyos = bool(p.get("cachyos")) and p.get("cachyos") == p.get("default")
+
         if p.get("cachyos"):
             protons.append(_proton_entry(pv, pd, p["cachyos"], "main_cachyos",
                                          p.get("cachyos_desc"), cachyos_only=True))
         if p.get("default"):
             protons.append(_proton_entry(pv, pd, p["default"], "main",
-                                         p.get("default_desc")))
+                                         p.get("default_desc"),
+                                         hide_on_cachyos=same_on_cachyos))
         if p.get("alternative"):
             protons.append(_proton_entry(pv, pd, p["alternative"], "alternative",
-                                         p.get("alt_desc")))
+                                         p.get("alt_desc"),
+                                         hide_on_cachyos=bool(p.get("alternative_cachyos"))))
+        # Optionale eigene Alternative fuer CachyOS: dort ist die
+        # "Performance statt Kompatibilitaet"-Option proton-cachyos, nicht
+        # Valves Proton. Ohne diesen Slot muesste man sich fuer einen der
+        # beiden entscheiden und der jeweils andere Nutzerkreis saehe Unsinn.
+        if p.get("alternative_cachyos"):
+            protons.append(_proton_entry(pv, pd, p["alternative_cachyos"], "alternative",
+                                         p.get("alt_cachyos_desc"), cachyos_only=True))
 
         launch = {}
         if g.get("amd_start") or g.get("nvidia_start"):
@@ -302,6 +325,23 @@ def build_games_from_config(cfg):
             toggles.append(game_toggle("vrc_hw_video_decoding",
                                        "--enable-hw-video-decoding",
                                        position="after", default=True))
+        if g.get("toggle_proton_log"):
+            # Umgebungsvariable, kein Spiel-Argument -> muss VOR %command%
+            # stehen. Schreibt ~/steam-<appid>.log mit den Wine-/GStreamer-
+            # Meldungen; die einzige Stelle, an der man sieht, WORAN ein
+            # Videoplayer scheitert. Standardmaessig aus, weil das Log bei
+            # laengeren Sitzungen schnell dreistellige MB erreicht.
+            toggles.append(game_toggle("proton_log", "PROTON_LOG=1",
+                                       position="before", default=False))
+        if g.get("toggle_vrcvideocacher"):
+            # Startet VRCVideoCacher zusammen mit dem Spiel und beendet es
+            # wieder mit. Der Befehl bleibt hier LEER und wird erst in
+            # resolved_toggles() gefuellt: diese Tabelle entsteht beim Import,
+            # da waere ein einmal gesuchter Pfad fuer die ganze Laufzeit
+            # eingefroren. So genuegt es, das Panel neu zu oeffnen, nachdem
+            # man VRCVideoCacher installiert hat.
+            toggles.append(game_toggle("vrcvideocacher", "",
+                                       position="wrap", default=False))
         default_on = []
         if g.get("toggle_gamemoderun"):
             default_on.append("gamemoderun")
@@ -381,6 +421,105 @@ def apply_remote_games_config(raw_text):
         f.write(raw_text)
     reload_games_config()
     return games_config_version()
+
+# --------------------------------------------------------------------------- #
+#  VRCVideoCacher (Steam-AppID 4296960) — Autostart zusammen mit VRChat
+# --------------------------------------------------------------------------- #
+# VRCVideoCacher ersetzt VRChats abgespecktes yt-dlp beim Start durch ein
+# vollwertiges und stellt es beim Beenden wieder her. Damit das greift, muss
+# es LAUFEN, bevor VRChat ein Video anfordert. Statt es jedes Mal von Hand zu
+# starten, haengen wir es an VRChats Startparameter.
+VRCVIDEOCACHER_APPID = "4296960"
+
+
+def find_vrcvideocacher():
+    """Pfad zur VRCVideoCacher-Binary oder "" wenn nicht gefunden.
+
+    Gesucht wird in dieser Reihenfolge:
+      1. Eigene Installation (Knopf "Videoplayer Fix" -> Installieren)
+      2. PATH             (manuelle Installation, z. B. ~/.bin)
+      3. Steam-Bibliotheken (steamapps/common/VRCVideoCacher)
+
+    Die eigene Installation zuerst: hat der Nutzer sie ueber die App
+    eingerichtet, ist das die Fassung, die die App auch aktuell haelt.
+
+    Der gefundene Pfad wird fest in die Startparameter geschrieben. Das ist
+    Absicht: die Startparameter sind ein statischer Text in Steams Config,
+    dort kann nichts zur Laufzeit nachschauen. Verschiebt der Nutzer das
+    Programm, muss der Schalter einmal aus- und wieder eingeschaltet werden —
+    der Tooltip sagt das.
+    """
+    from shutil import which
+    try:
+        import vrcvideocacher_install as vci
+        if vci.is_installed():
+            return vci.BINARY_PATH
+    except Exception:
+        pass
+
+    found = which("VRCVideoCacher")
+    if found:
+        return found
+
+    for sa in _steamapps_dirs():
+        for name in ("VRCVideoCacher/VRCVideoCacher",
+                     "VRCVideoCacher/VRCVideoCacher.exe"):
+            path = os.path.join(sa, "common", name)
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+    return ""
+
+
+# Gefundener VRCVideoCacher-Pfad, gemerkt fuer die Laufzeit des Panels.
+# Ohne den Cache wuerde bei JEDEM Tastendruck im Feld fuer eigene Parameter
+# erneut die PATH-Suche und das Einlesen aller libraryfolders.vdf anlaufen —
+# _update_final_params haengt an textEdited.
+_VC_PATH_CACHE = None
+
+
+def refresh_vrcvideocacher_path():
+    """Cache verwerfen. Aufrufen, wenn das Detailpanel neu aufgebaut wird —
+    dann genuegt Panel zu, Panel auf, nachdem man das Programm installiert
+    hat, statt die ganze App neu zu starten."""
+    global _VC_PATH_CACHE
+    _VC_PATH_CACHE = None
+
+
+_LEGACY_WRAPPER_RE = re.compile(
+    r"""bash\s+-c\s+'[^']*VRCVideoCacher[^']*'\s+--\s*""")
+
+
+def strip_legacy_vrcvideocacher_wrapper(text):
+    """Entfernt den Autostart-Wrapper aus v1.1.9-Vorabstaenden.
+
+    Der Wrapper startete VRCVideoCacher ueber VRChats Startparameter. In der
+    Praxis war das unzuverlaessig — Steams Quoting und das Zeitfenster, bis
+    der yt-dlp-Austausch steht. Ersetzt wurde er durch einen Knopf im
+    Dashboard.
+
+    Wer den Schalter schon gesetzt hatte, hat den Wrapper aber in Steams
+    Config stehen, und dort verschwindet er nicht von selbst: die
+    Startparameter sind gespeicherter Text, kein Schalter, den wir einfach
+    nicht mehr anbieten. Ohne diese Bereinigung startete VRChat weiterhin
+    ueber den kaputten Wrapper — mit einem Programm, dessen Pfad womoeglich
+    gar nicht mehr stimmt.
+    """
+    if not text or "VRCVideoCacher" not in text:
+        return text
+    return _LEGACY_WRAPPER_RE.sub("", text).strip()
+
+
+def resolved_toggles(game):
+    """Die Toggles eines Spiels mit zur Laufzeit aufgeloesten Befehlen.
+
+    Aktuell hat kein Schalter einen dynamischen Befehl — der einzige, der
+    einen hatte (VRCVideoCacher-Autostart), ist entfernt. Die Funktion
+    bleibt als eine Stelle bestehen, an der solche Faelle behandelt werden,
+    damit die UI nicht an zwei Orten zwischen game["toggles"] und einer
+    aufgeloesten Fassung unterscheiden muss.
+    """
+    return list(game.get("toggles", []))
+
 
 # --------------------------------------------------------------------------- #
 #  Steam-Bibliotheken finden + installierte Spiele scannen
@@ -699,9 +838,23 @@ def is_cachyos():
         return False
 
 
-def recommended_role():
-    """Welche 'role' auf diesem System die Haupt-Empfehlung ist."""
-    return "main_cachyos" if is_cachyos() else "main"
+def recommended_role(game=None):
+    """Welche 'role' auf diesem System die Haupt-Empfehlung ist.
+
+    Ohne ``game`` die alte Bedeutung (fuer Aufrufer, die kein Spiel zur Hand
+    haben). Mit ``game`` zusaetzlich ein Rueckfall: hat ein Spiel gar keinen
+    eigenen CachyOS-Eintrag, weil dort dieselbe Version empfohlen wird wie
+    ueberall — bei VRChat seit 1.1.9 der Fall —, dann traegt der normale
+    'main'-Eintrag die Empfehlung. Ohne diesen Rueckfall stuende auf CachyOS
+    ueberhaupt kein "Empfohlen" an der Liste, weil die gesuchte Rolle
+    schlicht nicht vorkommt.
+    """
+    if not is_cachyos():
+        return "main"
+    if game is None:
+        return "main_cachyos"
+    has_cachy = any(p.get("role") == "main_cachyos" for p in game.get("protons", []))
+    return "main_cachyos" if has_cachy else "main"
 
 
 def visible_protons(game):
@@ -712,7 +865,7 @@ def visible_protons(game):
     Die Empfehlung für dieses System steht immer zuerst.
     """
     cachy = is_cachyos()
-    rec = recommended_role()
+    rec = recommended_role(game)
     protons = [p for p in game.get("protons", [])
                if not (cachy and p.get("hide_on_cachyos"))
                and not ((not cachy) and p.get("cachyos_only"))]
@@ -1034,6 +1187,30 @@ _TOOL_PREFIXES = {
 }
 
 
+def installed_builds(proton):
+    """Alle installierten Ordner in compatibilitytools.d, die zu diesem
+    Proton-Eintrag gehoeren — neueste zuletzt. Leere Liste = nicht da."""
+    runner = proton.get("protonplus_runner")
+    if runner is None:
+        return []
+    version = proton.get("version", "")
+    prefixes = _TOOL_PREFIXES.get(runner, [version])
+    found = []
+    for d in compat_tools_dirs():
+        try:
+            names = os.listdir(d)
+        except Exception:
+            continue
+        for name in names:
+            if not os.path.isdir(os.path.join(d, name)):
+                continue
+            if any(p and name.lower().startswith(p.lower()) for p in prefixes):
+                if name not in found:
+                    found.append(name)
+    found.sort(key=_natural_key)
+    return found
+
+
 def resolve_steam_tool(proton):
     """
     Übersetzt einen Proton-Eintrag in den Tool-Namen für Steams
@@ -1041,6 +1218,13 @@ def resolve_steam_tool(proton):
     Rückgabe: (tool_name_oder_None, gefunden: bool, art: str)
       tool None + gefunden True  -> Steam-Standard (Mapping entfernen)
       gefunden False             -> Version nicht installiert
+
+    Es gewinnt immer die NEUESTE installierte passende Version, nicht die in
+    der games.json eingetragene. Die Datenbank nennt zwangslaeufig einen
+    Stand von gestern — proton-rtsp und GE erscheinen im Wochentakt. Wuerde
+    die eingetragene Version bevorzugt, bliebe man auf ihr sitzen, obwohl
+    laengst eine neuere daneben liegt. Der Eintrag in der games.json dient
+    damit nur noch als Hinweis, WELCHE Sorte gemeint ist.
     """
     runner = proton.get("protonplus_runner")
     if runner is None:
@@ -1048,27 +1232,11 @@ def resolve_steam_tool(proton):
         # Mapping entfernen, Steam nutzt seinen Standard.
         return None, True, "steam_default"
 
-    version = proton.get("version", "")
-    # 1) Exakter Ordner (kuratierte Profile nennen den Ordnernamen direkt)
-    for d in compat_tools_dirs():
-        if version and os.path.isdir(os.path.join(d, version)):
-            return version, True, "exact"
-    # 2) Präfix-Suche (dynamische Einträge wie "Proton-GE"): neueste Version
-    candidates = []
-    for d in compat_tools_dirs():
-        try:
-            for name in os.listdir(d):
-                if not os.path.isdir(os.path.join(d, name)):
-                    continue
-                for pref in _TOOL_PREFIXES.get(runner, [version]):
-                    if pref and name.lower().startswith(pref.lower()):
-                        candidates.append(name)
-                        break
-        except Exception:
-            continue
-    if candidates:
-        candidates.sort(key=_natural_key)
-        return candidates[-1], True, "prefix"
+    builds = installed_builds(proton)
+    if builds:
+        newest = builds[-1]
+        kind = "exact" if newest == proton.get("version", "") else "newer"
+        return newest, True, kind
     return None, False, "not_installed"
 
 
@@ -1280,8 +1448,18 @@ def compose_launch_options(base, enabled_keys, custom="", extra_toggles=None):
     enabled = set(enabled_keys or ())
     prefix, suffix = _split_command(base)
 
+    # Wrapper, die die GANZE restliche Zeile umschliessen (position "wrap"),
+    # z. B. der VRCVideoCacher-Autostart. Sie sind kein normaler Prefix-Token:
+    # sie muessen VOR gamemoderun & Co. stehen, weil hinter ihrem '--' alles
+    # Weitere als Argumentliste landet.
+    wraps = []
+
     for t in list(LAUNCH_TOGGLES) + list(extra_toggles or ()):
         if t["key"] not in enabled:
+            continue
+        if t["position"] == "wrap":
+            if t["arg"] and t["arg"] not in wraps:
+                wraps.append(t["arg"])
             continue
         target = prefix if t["position"] == "before" else suffix
         if t["arg"] not in target:
@@ -1297,7 +1475,22 @@ def compose_launch_options(base, enabled_keys, custom="", extra_toggles=None):
             if s not in suffix:
                 suffix.append(s)
 
-    return " ".join(prefix + [COMMAND_TOKEN] + suffix)
+    # Reihenfolge: Umgebungsvariablen, dann die umschliessenden Wrapper,
+    # dann die normalen Wrapper, dann %command% und die Spiel-Argumente.
+    # Env-Zuweisungen ganz nach vorne, damit sie fuer alles darunter gelten.
+    env = [p for p in prefix if _is_env_assignment(p)]
+    rest = [p for p in prefix if not _is_env_assignment(p)]
+    return " ".join(env + wraps + rest + [COMMAND_TOKEN] + suffix)
+
+
+def _is_env_assignment(token):
+    """True fuer 'PROTON_LOG=1', False fuer 'gamemoderun' oder '--flag=wert'.
+    Ein Gleichheitszeichen allein reicht nicht: Optionen wie '--foo=bar'
+    sind Argumente, keine Zuweisungen. Shell-Regel: der Name vor dem '='
+    besteht aus Buchstaben, Ziffern und Unterstrich und faengt nicht mit
+    einer Ziffer an."""
+    name, sep, _ = (token or "").partition("=")
+    return bool(sep) and bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name))
 
 
 def has_saved_launch_toggles(appid):
@@ -1321,7 +1514,12 @@ def load_launch_toggles(appid, extra_toggles=None):
         return [], ""
     known = {t["key"] for t in LAUNCH_TOGGLES} | {t["key"] for t in (extra_toggles or ())}
     keys = [k for k in entry.get("toggles", []) if k in known]
-    return keys, entry.get("custom", "") or ""
+    # Den Autostart-Wrapper aus Vorabstaenden herausnehmen. Der Schalter
+    # selbst faellt schon durch den known-Filter oben weg, aber wer ihn
+    # ueber das Feld fuer eigene Parameter uebernommen hatte, haette ihn
+    # sonst dauerhaft drin.
+    custom = strip_legacy_vrcvideocacher_wrapper(entry.get("custom", "") or "")
+    return keys, custom
 
 
 def save_launch_toggles(appid, enabled_keys, custom):

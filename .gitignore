@@ -16,3 +16,7 @@ src/
 *.pkg.tar.zst
 *.pkg.tar.xz
 *.src.tar.gz
+
+# Linter-/Test-Caches
+.ruff_cache/
+.pytest_cache/

@@ -131,6 +131,53 @@ def main():
     except Exception as exc:
         check("Games-Tab rendert", False, f"{type(exc).__name__}: {exc}")
 
+    # Die drei Fix-Knoepfe im VRChat-Panel (v1.1.9). Sie entstehen dynamisch
+    # aus game["fixes"] — verschwindet ein Eintrag aus der games.json oder
+    # benennt jemand einen Locale-Schluessel um, faellt der Knopf lautlos weg
+    # und niemand merkt es, weil die App weiterhin startet.
+    try:
+        from PySide6.QtWidgets import QPushButton, QCheckBox
+        from translations import tr
+        # Der Block oben hat das Panel absichtlich wieder eingeklappt
+        # (_collapse_detail), damit auch dieser Pfad einmal laeuft. Fuer die
+        # Inhaltspruefung muss es neu aufgebaut werden.
+        w._on_game_tile_clicked("438100")
+        panel = getattr(w, "_games_detail_widget", None)
+        texts = " ".join(b.text() for b in panel.findChildren(QPushButton)) if panel else ""
+        boxes = " ".join(c.text() for c in panel.findChildren(QCheckBox)) if panel else ""
+        for label, needle in (("Picture Fix", tr("games_fix_pictures_btn")),
+                              ("Videoplayer Fix", tr("games_fix_video_btn")),
+                              ("Videoplayer Check", tr("games_fix_check_btn"))):
+            check(f"VRChat-Knopf: {label}", needle in texts,
+                  f"nicht im Panel gefunden (gefunden: {texts[:80]})")
+        check("VRChat-Toggle: PROTON_LOG",
+              tr("games_toggle_proton_log") in boxes,
+              f"nicht gefunden (gefunden: {boxes[:80]})")
+        # Der Autostart-Schalter ist entfernt (v1.1.9, unzuverlaessig).
+        # Falls er je zurueckkehrt, soll das auffallen.
+        check("Kein VRCVideoCacher-Autostart-Schalter mehr",
+              "VRCVideoCacher" not in boxes, f"wieder da: {boxes[:80]}")
+        # Handler muessen existieren, sonst knallt erst der Klick beim Nutzer
+        for meth in ("create_vrchat_symlink", "show_vrchat_videoplayer_fix",
+                     "run_vrchat_check", "_on_vrchat_check_done"):
+            check(f"Handler {meth}", callable(getattr(w, meth, None)))
+    except Exception as exc:
+        check("VRChat-Fix-Knoepfe", False, f"{type(exc).__name__}: {exc}")
+
+    # Die Diagnose selbst: darf auf JEDEM System durchlaufen, auch ohne Steam
+    # und ohne VRChat (Build-Server!) — sie ist rein lesend.
+    try:
+        import vrchat_check
+        results = vrchat_check.run_all()
+        check("vrchat_check.run_all() laeuft durch",
+              len(results) == len(vrchat_check.CHECKS),
+              f"{len(results)} von {len(vrchat_check.CHECKS)} Ergebnissen")
+        leaks = [r for r in results if re.search(r"\bip=|&sig=|expire=", r.get("detail", ""))]
+        check("Diagnose gibt keine IP/Signatur aus", not leaks,
+              f"verdaechtig: {leaks[:1]}")
+    except Exception as exc:
+        check("vrchat_check", False, f"{type(exc).__name__}: {exc}")
+
     try:
         w.check_tools_status()
         for key in list(w.ui.tool_cards)[:4]:

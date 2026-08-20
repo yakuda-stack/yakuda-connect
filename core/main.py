@@ -20,7 +20,7 @@ import webbrowser
 # Diese Zeile hier ist eine ZUSAETZLICHE Kopie und existiert aus einem einzigen
 # Grund: Der Update-Checker aller bereits ausgelieferten Versionen (bis v1.1.4)
 # laedt diese Datei von GitHub und sucht darin per regulaerem Ausdruck nach
-# genau dem Muster  APP_VERSION = "v1.1.8".
+# genau dem Muster  APP_VERSION = "v1.1.9".
 #
 # Faellt die Zeile weg, findet der Ausdruck nichts, und JEDE bereits
 # installierte Version meldet fuer immer "du bist aktuell" — die Nutzer
@@ -334,6 +334,8 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         # --- Games-Tab ---
         self._games_scan_worker = None       # laufender Scan-Thread
         self._pp_worker = None               # laufender ProtonPlus-Install-Thread
+        self._vrc_check_worker = None        # laufende VRChat-Videoplayer-Diagnose
+        self._vci_worker = None              # laufende VRCVideoCacher-Installation
         self._games_tab_visited = False      # erster Klick auf den Tab -> Auto-Scan
         self._games_untested_names = {}      # appid -> Anzeigename (ungetestete Spiele)
         self._games_tile_pos = {}            # appid -> (grid, zeile, spalte) fürs Inline-Panel
@@ -1092,6 +1094,9 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.ui.btn_openxr_copy_content.clicked.connect(self.copy_openxr_content)
         # OpenXR: automatischer Fix + Ein-/Ausklappen des manuellen Bereichs
         self.ui.btn_openxr_fix.clicked.connect(self.apply_openxr_fix_clicked)
+        self.ui.btn_vrcvideocacher.clicked.connect(self.toggle_vrcvideocacher)
+        # Beschriftung beim Start an den tatsaechlichen Zustand anpassen
+        self.refresh_vrcvideocacher_button()
         self.ui.btn_openxr_manual_toggle.clicked.connect(self.toggle_openxr_manual)
         # Community & Updates (Settings, ganz oben)
         self.ui.btn_community_check.clicked.connect(self.manual_check_app_update)
@@ -1492,6 +1497,47 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         except Exception as e:
             self.ui.lbl_vrchat_status.setText(tr("err_generic").format(err=e))
             self.ui.lbl_vrchat_status.setStyleSheet("color: #bf616a; font-size: 11px;")
+
+    def toggle_vrcvideocacher(self):
+        """Startet bzw. beendet VRCVideoCacher ueber den Dashboard-Knopf.
+
+        Bewusst ein manueller Knopf statt eines Autostarts ueber VRChats
+        Startparameter: dort war es unzuverlaessig. Hier sieht der Nutzer,
+        ob es laeuft, und kann es jederzeit wieder beenden.
+        """
+        import vrcvideocacher_install as vci
+
+        if not vci.is_installed():
+            QMessageBox.information(self, tr("dashboard_vci_title"),
+                                    tr("dashboard_vci_not_installed"))
+            return
+
+        if vci.is_running():
+            vci.stop()
+            QMessageBox.information(self, tr("dashboard_vci_title"),
+                                    tr("dashboard_vci_stopped"))
+        else:
+            ok, msg = vci.start()
+            if ok:
+                QMessageBox.information(self, tr("dashboard_vci_title"),
+                                        tr("dashboard_vci_started"))
+            else:
+                QMessageBox.warning(self, tr("dashboard_vci_title"),
+                                    tr("dashboard_vci_failed").format(err=msg))
+        self.refresh_vrcvideocacher_button()
+
+    def refresh_vrcvideocacher_button(self):
+        """Beschriftung des Dashboard-Knopfs an den Zustand anpassen."""
+        btn = getattr(self.ui, "btn_vrcvideocacher", None)
+        if btn is None:
+            return
+        import vrcvideocacher_install as vci
+        if not vci.is_installed():
+            btn.setText(tr("dashboard_vci_btn"))
+        elif vci.is_running():
+            btn.setText(tr("dashboard_vci_btn_stop"))
+        else:
+            btn.setText(tr("dashboard_vci_btn_start"))
 
     def trigger_vr_backup(self):
         if create_vr_backup():

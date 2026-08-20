@@ -1,7 +1,7 @@
 {
   "info": {
-    "version": "1.0.0",
-    "last_updated": "2026-07-25"
+    "version": "1.2.3",
+    "last_updated": "2026-08-20"
   },
   "picture_template": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg",
   "proton_versions": {
@@ -33,26 +33,31 @@
       "name": "VRChat",
       "toggle_enable_hardware_decoding": true,
       "toggle_gamemoderun": true,
-      "fixes": ["vrchat_pictures"],
+      "fixes": [
+        "vrchat_pictures",
+        "vrchat_videoplayer",
+        "vrchat_check"
+      ],
       "proton": {
-        "cachyos": "CachyOSPro11",
-        "cachyos_desc": {
-          "de": "Alle Videoplayer funktionieren außer der alte Unity-Player. Maximale Performance/Latenz, Social-Liste und Einladungen funktionieren.",
-          "en": "All video players work except the old Unity player. Maximum performance/latency, social list and invites work."
-        },
         "default": "Pro11GERTSP",
         "default_desc": {
-          "de": "Alle Videoplayer funktionieren, aber Social-Liste, Einladungen und Performance sind etwas schlechter.",
-          "en": "All video players work, but social list, invites and performance are slightly worse."
+          "de": "Die sichere Wahl für Videoplayer: bringt zusätzliche MediaFoundation-Patches mit, die speziell für VRChat gebaut wurden. Etwas weniger Performance als proton-cachyos.",
+          "en": "The safe choice for video players: carries extra MediaFoundation patches built specifically for VRChat. Slightly less performance than proton-cachyos."
         },
         "alternative": "Pro11",
         "alt_desc": {
-          "de": "Maximale Performance, aber Videoplayer sind kaputt.",
-          "en": "Maximum performance, but video players are broken."
+          "de": "Valves Standard-Proton. Videoplayer funktionieren hier meist nicht.",
+          "en": "Valve's stock Proton. Video players usually don't work here."
+        },
+        "alternative_cachyos": "CachyOSPro11",
+        "alt_cachyos_desc": {
+          "de": "Beste Performance und Latenz auf CachyOS. Videoplayer funktionieren hier oft ebenfalls — wenn bei dir alles abspielt, gibt es keinen Grund zu wechseln. Der „Videoplayer Check“ sagt dir, ob es klappt.",
+          "en": "Best performance and latency on CachyOS. Video players often work here too — if everything plays for you, there's no reason to switch. The “Video Player Check” tells you whether it works."
         }
       },
       "amd_start": "%command% --enable-avpro-in-proton --disable-amd-stutter-workaround",
-      "nvidia_start": "%command% --enable-avpro-in-proton"
+      "nvidia_start": "%command% --enable-avpro-in-proton",
+      "toggle_proton_log": true
     },
     "1540210": {
       "name": "Arizona Sunshine 2",

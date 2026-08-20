@@ -382,6 +382,8 @@ class Ui_MainWindow:
         self.chk_steamvr_tracker.setText(tr("dashboard_steam"))
         self.btn_openxr_shortcut.setText(tr_amp("dashboard_openxr_btn"))
         self.btn_openxr_shortcut.setToolTip(tr("dashboard_openxr_btn_tip"))
+        if hasattr(self, "btn_vrcvideocacher"):
+            self.btn_vrcvideocacher.setToolTip(tr("dashboard_vci_btn_tip"))
         self.lbl_tracker_note.setText(tr("dashboard_steam_hint"))
         self.lbl_refresh.setText(tr("dashboard_refresh"))
         self.pairing_group.setTitle(tr("dashboard_pairing"))
@@ -759,6 +761,18 @@ class Ui_MainWindow:
             QPushButton:hover { background-color: #434c5e; border-color: #5e81ac; }
         """)
         shortcut_row.addWidget(self.btn_openxr_shortcut)
+
+        # --- VRCVideoCacher starten/stoppen --------------------------------
+        # Bewusst ein Knopf und KEIN Autostart ueber VRChats Startparameter:
+        # der Wrapper dort war in der Praxis unzuverlaessig (Steams Quoting,
+        # das Zeitfenster bis der yt-dlp-Austausch steht). Hier startet das
+        # Programm im eigenen Prozess, sichtbar und jederzeit stoppbar.
+        self.btn_vrcvideocacher = QPushButton(tr_amp("dashboard_vci_btn"))
+        self.btn_vrcvideocacher.setCursor(Qt.PointingHandCursor)
+        self.btn_vrcvideocacher.setToolTip(tr("dashboard_vci_btn_tip"))
+        self.btn_vrcvideocacher.setStyleSheet(self.btn_openxr_shortcut.styleSheet())
+        shortcut_row.addWidget(self.btn_vrcvideocacher)
+
         shortcut_row.addStretch()
         layout.addLayout(shortcut_row)
 

@@ -22,8 +22,10 @@ import subprocess
 from PySide6.QtWidgets import (QApplication, QLabel, QMessageBox, QHBoxLayout,
                                QVBoxLayout, QLineEdit, QPushButton,
                                QFrame, QCheckBox)
-from PySide6.QtCore import Qt, QTimer, QSize, QPointF, QThread, Signal as QtSignal
-from PySide6.QtGui import QPixmap, QIcon, QPainter, QPolygonF, QColor
+from PySide6.QtCore import (Qt, QTimer, QSize, QPointF, QThread, QUrl,
+                            Signal as QtSignal)
+from PySide6.QtGui import (QPixmap, QIcon, QPainter, QPolygonF, QColor,
+                           QDesktopServices)
 
 import games as games_db
 from install_worker import CoverDownloadWorker, GamesDbWorker
@@ -90,6 +92,48 @@ class GameScanWorker(QThread):
             log.warning(f"[Games] Scan fehlgeschlagen: {e}")
             result = ([], [])
         self.result_signal.emit(result)
+
+
+class VRCVideoCacherInstallWorker(QThread):
+    """Laedt VRCVideoCacher herunter und legt die Desktop-Verknuepfung an.
+
+    Die Binary ist einige Dutzend MB gross — im GUI-Thread waere die App
+    waehrenddessen eingefroren.
+    """
+    progress_signal = QtSignal(int, int)      # geladen, gesamt (Bytes)
+    done_signal = QtSignal(bool, str, bool)   # ok, meldung, desktop_ok
+
+    def run(self):
+        try:
+            import vrcvideocacher_install as vci
+            ok, msg = vci.download(
+                progress=lambda d, t: self.progress_signal.emit(d, t))
+            desktop_ok = False
+            if ok:
+                desktop_ok, _ = vci.create_desktop_entry()
+        except Exception as e:
+            log.warning(f"[Games] VRCVideoCacher-Installation: {e}")
+            ok, msg, desktop_ok = False, str(e), False
+        self.done_signal.emit(ok, msg, desktop_ok)
+
+
+class VRChatCheckWorker(QThread):
+    """Fuehrt die VRChat-Videoplayer-Diagnose im Hintergrund aus.
+
+    Die Pruefungen lesen Logdateien (bis einige MB) und rufen pgrep/timedatectl
+    auf. Einzeln schnell, zusammen aber genug, um die GUI sichtbar haengen zu
+    lassen — deshalb ein eigener Thread.
+    """
+    result_signal = QtSignal(object)   # Liste von Pruefergebnissen
+
+    def run(self):
+        try:
+            import vrchat_check
+            results = vrchat_check.run_all()
+        except Exception as e:
+            log.warning(f"[Games] VRChat-Check fehlgeschlagen: {e}")
+            results = []
+        self.result_signal.emit(results)
 
 
 class ProtonPlusInstallWorker(QThread):
@@ -559,6 +603,13 @@ class GamesTabMixin:
         if not found:
             self._detail_status(tr("games_tool_missing"), "#ebcb8b")
             return
+
+        # Vor dem Wechsel sichern anbieten. Steam legt beim naechsten Start
+        # haeufig ein frisches Prefix an — Spielstaende und Einstellungen sind
+        # dann weg. Nur fragen, wenn ueberhaupt etwas zu sichern ist.
+        if not self._offer_config_backup(appid, proton):
+            return          # Nutzer hat abgebrochen
+
         ok, err = games_db.set_steam_compat_tool(appid, tool)
         if not ok:
             self._detail_status(f"Steam-Config: {err}", "#bf616a")
@@ -598,7 +649,8 @@ class GamesTabMixin:
             base = params.get(gpu) or params.get("amd") or next(iter(params.values()), "")
         else:
             base = ""
-        game_toggles = game.get("toggles", [])
+        # resolved_toggles(): fuellt dynamische Befehle (VRCVideoCacher-Pfad).
+        game_toggles = games_db.resolved_toggles(game)
         keys, custom = games_db.load_launch_toggles(appid, game_toggles)
         # Noch nie gespeichert -> Spiel-Vorgaben anwenden (gleiche Logik wie im Panel),
         # damit z. B. VRChat auch über den ▶-Knopf mit gamemoderun + HW-Dekodierung startet.
@@ -670,7 +722,9 @@ class GamesTabMixin:
           * Spiel-spezifische Fixes (z. B. VRChat Picture Folder Fix)
         """
         lang = get_language()
-        rec_role = games_db.recommended_role()
+        # game mitgeben: Spiele ohne eigenen CachyOS-Eintrag (VRChat seit
+        # 1.1.9) sollen dort trotzdem ein "Empfohlen" an der Liste haben.
+        rec_role = games_db.recommended_role(game)
         gpu = games_db.detect_gpu_vendor()
         pp_available = games_db.find_protonplus() is not None
 
@@ -735,7 +789,14 @@ class GamesTabMixin:
             row.setSpacing(4)
 
             head = QHBoxLayout()
-            ver_text = proton.get("version", "")
+            # Die INSTALLIERTE Version anzeigen, nicht die in der games.json
+            # eingetragene. Die Datenbank nennt zwangslaeufig einen Stand von
+            # gestern — proton-rtsp und GE erscheinen im Wochentakt. Stuende
+            # hier der gepinnte Name, waehrend ein neuerer Build daneben
+            # liegt und auch benutzt wird, zeigte die App etwas anderes an
+            # als sie tut.
+            installed_tool, _found, _kind = games_db.resolve_steam_tool(proton)
+            ver_text = installed_tool or proton.get("version", "")
             if proton.get("untested"):
                 ver_text = f"{ver_text} {tr('games_untested_suffix')}"
             lbl_ver = QLabel(ver_text)
@@ -755,7 +816,8 @@ class GamesTabMixin:
             head.addWidget(lbl_badge)
 
             # Per "Use" als aktiv gewählte Version markieren
-            is_active = self._selected_proton.get(appid) == proton.get("version")
+            is_active = self._selected_proton.get(appid) in (
+                proton.get("version"), installed_tool)
             if is_active:
                 lbl_active = QLabel(tr("games_active_badge"))
                 lbl_active.setStyleSheet(
@@ -840,7 +902,11 @@ class GamesTabMixin:
         lbl_params.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_params)
 
-        game_toggles = game.get("toggles", [])
+        # Panel wird neu aufgebaut -> Pfadsuche einmal frisch machen.
+        # Dadurch reicht Panel zu / Panel auf, nachdem man
+        # VRCVideoCacher installiert hat.
+        games_db.refresh_vrcvideocacher_path()
+        game_toggles = games_db.resolved_toggles(game)
         self._detail_game_toggles = game_toggles
         saved_keys, saved_custom = games_db.load_launch_toggles(appid, game_toggles)
 
@@ -859,8 +925,13 @@ class GamesTabMixin:
         lbl_toggles.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_toggles)
 
-        toggle_row = QHBoxLayout()
-        toggle_row.setSpacing(16)
+        # Zwei Zeilen statt einer: bei schmalem Fenster schob die einzelne
+        # QHBoxLayout-Reihe die hinteren Schalter aus dem sichtbaren Bereich —
+        # "VRCVideoCacher Autostart" als letzter war praktisch nicht mehr
+        # erreichbar. Ab dem vierten Schalter wird jetzt umgebrochen.
+        TOGGLES_PER_ROW = 4
+        toggle_rows = [QHBoxLayout()]
+        toggle_rows[0].setSpacing(16)
         self._detail_toggles = {}
         for t in list(games_db.LAUNCH_TOGGLES) + list(game_toggles):
             cb = QCheckBox(tr(f"games_toggle_{t['key']}"))
@@ -869,11 +940,28 @@ class GamesTabMixin:
             cb.setToolTip(tr(f"games_toggle_{t['key']}_tip"))
             cb.setStyleSheet(
                 "QCheckBox { color: #d8dee9; font-size: 11px; font-family: monospace; border: none; }")
+            # Ein Schalter ohne Befehl kann nichts tun (z. B. VRCVideoCacher-
+            # Autostart, wenn das Programm gar nicht installiert ist). Ihn
+            # anklickbar zu lassen waere die schlechtere Variante: der Nutzer
+            # setzt den Haken, in den Startparametern passiert nichts, und er
+            # sucht den Fehler beim Spiel. Also ausgrauen und sagen warum.
+            if not t.get("arg"):
+                cb.setChecked(False)
+                cb.setEnabled(False)
+                cb.setToolTip(tr(f"games_toggle_{t['key']}_missing"))
+                cb.setStyleSheet(
+                    "QCheckBox { color: #7b88a1; font-size: 11px; "
+                    "font-family: monospace; border: none; }")
             cb.toggled.connect(lambda _, a=appid: self._on_launch_opts_changed(a))
             self._detail_toggles[t["key"]] = cb
-            toggle_row.addWidget(cb)
-        toggle_row.addStretch()
-        box.addLayout(toggle_row)
+            if toggle_rows[-1].count() >= TOGGLES_PER_ROW:
+                row = QHBoxLayout()
+                row.setSpacing(16)
+                toggle_rows.append(row)
+            toggle_rows[-1].addWidget(cb)
+        for row in toggle_rows:
+            row.addStretch()
+            box.addLayout(row)
 
         # Eigene Parameter (auch der Platz für ungetestete Spiele ohne Profil)
         lbl_custom = QLabel(tr("games_custom_params"))
@@ -913,42 +1001,107 @@ class GamesTabMixin:
 
         self._update_final_params()   # Startwert berechnen
 
+        # --- Config-Backup: gilt fuer JEDES Spiel, nicht nur VRChat -------- #
+        # Steht bewusst vor den spielspezifischen Fixes: nach einem
+        # Proton-Wechsel ist "Config zurueckspielen" der naechste Schritt,
+        # den man sucht.
+        import game_backup
+        lbl_bk_head = QLabel(tr("backup_cfg_section"))
+        lbl_bk_head.setStyleSheet(
+            "color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+        box.addWidget(lbl_bk_head)
+
+        bk_row = QHBoxLayout()
+        bk_row.setSpacing(8)
+
+        btn_bk = QPushButton(tr("backup_cfg_btn"))
+        btn_bk.setCursor(Qt.PointingHandCursor)
+        btn_bk.setToolTip(tr("backup_cfg_btn_tip"))
+        btn_bk.setStyleSheet(self._fix_button_style())
+        btn_bk.clicked.connect(lambda _=False, a=appid: self._manual_config_backup(a))
+        bk_row.addWidget(btn_bk)
+
+        btn_rs = QPushButton(tr("restore_cfg_btn"))
+        btn_rs.setCursor(Qt.PointingHandCursor)
+        btn_rs.setStyleSheet(self._fix_button_style())
+        btn_rs.clicked.connect(lambda _=False, a=appid: self.restore_game_config(a))
+        # Ohne Backup gibt es nichts zurueckzuspielen -> ausgrauen statt
+        # den Nutzer auf eine Fehlermeldung laufen zu lassen.
+        if game_backup.has_backup(appid):
+            info = game_backup.backup_info(appid)
+            btn_rs.setToolTip(tr("restore_cfg_btn_tip").format(
+                created=info.get("created", "?"), files=info.get("files", "?")))
+        else:
+            btn_rs.setEnabled(False)
+            btn_rs.setToolTip(tr("restore_cfg_btn_none"))
+        bk_row.addWidget(btn_rs)
+
+        bk_row.addStretch()
+        box.addLayout(bk_row)
+
         # --- Spiel-spezifische Fixes (Umzug aus Settings -> "General") ---
-        if "vrchat_pictures" in game.get("fixes", []):
+        fixes = game.get("fixes", [])
+        if fixes:
             lbl_fix_head = QLabel(tr("games_fixes_section"))
             lbl_fix_head.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
             box.addWidget(lbl_fix_head)
 
             fix_row = QHBoxLayout()
-            btn_fix = QPushButton(tr("settings_vrchat_btn"))
-            btn_fix.setCursor(Qt.PointingHandCursor)
-            btn_fix.setToolTip(tr("settings_vrchat_desc_short"))
-            btn_fix.setStyleSheet("""
-                QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
-                              padding: 6px 12px; border-radius: 4px; border: none; font-size: 11px; }
-                QPushButton:hover { background-color: #81a1c1; }
-                QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-            """)
-            lbl_fix_status = QLabel("")
-            lbl_fix_status.setStyleSheet("font-size: 11px; border: none;")
-            lbl_fix_status.setWordWrap(True)
+            fix_row.setSpacing(8)
 
-            # Die bestehende Symlink-Logik (create_vrchat_symlink) schreibt in
-            # self.ui.btn_vrchat_symlink / self.ui.lbl_vrchat_status — wir
-            # hängen die dynamischen Widgets einfach dort ein, dann läuft
-            # alles unverändert weiter.
-            self.ui.btn_vrchat_symlink = btn_fix
-            self.ui.lbl_vrchat_status = lbl_fix_status
-            btn_fix.clicked.connect(self.create_vrchat_symlink)
+            # --- Picture Fix (frueher "Symlink erstellen") ---------------- #
+            # Umbenannt, weil "Symlink erstellen" beschreibt, WIE es gemacht
+            # wird, nicht WAS es bringt. Was es bringt, steht jetzt im Tooltip.
+            if "vrchat_pictures" in fixes:
+                btn_pic = QPushButton(tr("games_fix_pictures_btn"))
+                btn_pic.setCursor(Qt.PointingHandCursor)
+                btn_pic.setToolTip(tr("games_fix_pictures_tip"))
+                btn_pic.setStyleSheet(self._fix_button_style())
+                # Die bestehende Symlink-Logik (create_vrchat_symlink) schreibt
+                # in self.ui.btn_vrchat_symlink / self.ui.lbl_vrchat_status —
+                # wir haengen die dynamischen Widgets dort ein, dann laeuft
+                # alles unveraendert weiter.
+                self.ui.btn_vrchat_symlink = btn_pic
+                btn_pic.clicked.connect(self.create_vrchat_symlink)
+                fix_row.addWidget(btn_pic)
 
-            fix_row.addWidget(btn_fix)
+            # --- Videoplayer Fix (Info-Popup zu VRCVideoCacher) ----------- #
+            if "vrchat_videoplayer" in fixes:
+                btn_vp = QPushButton(tr("games_fix_video_btn"))
+                btn_vp.setCursor(Qt.PointingHandCursor)
+                btn_vp.setToolTip(tr("games_fix_video_tip"))
+                btn_vp.setStyleSheet(self._fix_button_style())
+                btn_vp.clicked.connect(self.show_vrchat_videoplayer_fix)
+                fix_row.addWidget(btn_vp)
+
+            # --- Videoplayer Check (Diagnose) ----------------------------- #
+            if "vrchat_check" in fixes:
+                btn_chk = QPushButton(tr("games_fix_check_btn"))
+                btn_chk.setCursor(Qt.PointingHandCursor)
+                btn_chk.setToolTip(tr("games_fix_check_tip"))
+                btn_chk.setStyleSheet(self._fix_button_style())
+                self.ui.btn_vrchat_check = btn_chk
+                btn_chk.clicked.connect(self.run_vrchat_check)
+                fix_row.addWidget(btn_chk)
+
             fix_row.addStretch()
             box.addLayout(fix_row)
 
-            lbl_fix_desc = QLabel(tr("settings_vrchat_desc_short"))
-            lbl_fix_desc.setStyleSheet("color: #d8dee9; font-size: 10px; border: none;")
-            lbl_fix_desc.setWordWrap(True)
-            box.addWidget(lbl_fix_desc)
+            # Hinweis statt Autostart-Schalter. Der Wrapper ueber VRChats
+            # Startparameter war unzuverlaessig und ist entfernt; stattdessen
+            # startet man VRCVideoCacher im Dashboard, VOR VRChat.
+            if "vrchat_videoplayer" in fixes:
+                lbl_vci = QLabel(tr("games_vci_note"))
+                lbl_vci.setStyleSheet("color: #7b88a1; font-size: 10px; border: none;")
+                lbl_vci.setWordWrap(True)
+                box.addWidget(lbl_vci)
+
+            # Gemeinsame Statuszeile: Symlink-Rueckmeldung UND Check-Ergebnis
+            lbl_fix_status = QLabel("")
+            lbl_fix_status.setStyleSheet("font-size: 11px; border: none;")
+            lbl_fix_status.setWordWrap(True)
+            lbl_fix_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self.ui.lbl_vrchat_status = lbl_fix_status
             box.addWidget(lbl_fix_status)
 
         # Statuszeile für Use-/Play-Feedback (Steam-Neustart-Hinweis usw.)
@@ -958,6 +1111,276 @@ class GamesTabMixin:
         box.addWidget(self._detail_status_lbl)
 
         return card
+
+    # ----------------------------------------------------------------- #
+    #  VRChat-Fixes
+    # ----------------------------------------------------------------- #
+    @staticmethod
+    def _widen_dialog_buttons(box):
+        """Verhindert abgeschnittene Beschriftungen in QMessageBox.
+
+        Qt verteilt die Knoepfe auf die Dialogbreite, die sich am Text
+        orientiert — bei drei Knoepfen mit laengeren Beschriftungen reicht
+        das nicht und die Texte werden beschnitten ("Sichern und fortfa...").
+        Jeder Knopf bekommt deshalb mindestens die Breite, die sein eigener
+        Text braucht, plus Innenabstand.
+        """
+        from PySide6.QtWidgets import QPushButton
+        for btn in box.findChildren(QPushButton):
+            needed = btn.fontMetrics().horizontalAdvance(btn.text()) + 32
+            btn.setMinimumWidth(max(needed, 96))
+
+    @staticmethod
+    def _fix_button_style():
+        """Einheitlicher Stil der Fix-Knoepfe (dreimal derselbe String war
+        vorher dreimal dieselbe Stelle zum Vergessen beim Aendern)."""
+        return """
+            QPushButton { background-color: #5e81ac; color: white; font-weight: bold;
+                          padding: 6px 12px; border-radius: 4px; border: none; font-size: 11px; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """
+
+    def show_vrchat_videoplayer_fix(self):
+        """Erklaert VRCVideoCacher und verlinkt darauf.
+
+        Bewusst nur Information + Link, kein Ein-Klick-Installer: das Tool
+        greift in VRChats Tools-Ordner ein und kann optional Browser-Cookies
+        einlesen. Solche Entscheidungen trifft der Nutzer selbst, nachdem er
+        gelesen hat, worum es geht — nicht wir im Hintergrund fuer ihn.
+        """
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("games_video_fix_title"))
+        box.setTextFormat(Qt.RichText)
+        box.setText(tr("games_video_fix_text"))
+        box.setIcon(QMessageBox.Information)
+
+        import vrcvideocacher_install as vci
+        btn_install = None
+        if not vci.is_installed():
+            # Der bequemste Weg zuerst: die App kann es selbst einrichten.
+            btn_install = box.addButton(tr("vci_install_btn"), QMessageBox.YesRole)
+        btn_open = box.addButton(tr("games_video_fix_open"), QMessageBox.AcceptRole)
+        btn_steam = box.addButton(tr("games_video_fix_steam"), QMessageBox.ActionRole)
+        box.addButton(tr("close"), QMessageBox.RejectRole)
+        self._widen_dialog_buttons(box)
+        box.exec()
+
+        clicked = box.clickedButton()
+        if btn_install is not None and clicked is btn_install:
+            self.install_vrcvideocacher()
+        elif clicked is btn_open:
+            QDesktopServices.openUrl(QUrl("https://github.com/EllyVR/VRCVideoCacher"))
+        elif clicked is btn_steam:
+            QDesktopServices.openUrl(
+                QUrl("https://store.steampowered.com/app/4296960/VRCVideoCacher/"))
+
+    def install_vrcvideocacher(self):
+        """Laedt VRCVideoCacher und richtet die Verknuepfung ein."""
+        if getattr(self, "_vci_worker", None) and self._vci_worker.isRunning():
+            return
+        self._detail_status(tr("vci_downloading"), "#88c0d0")
+        self._vci_worker = VRCVideoCacherInstallWorker()
+        self._vci_worker.progress_signal.connect(self._on_vci_progress)
+        self._vci_worker.done_signal.connect(self._on_vci_done)
+        self._vci_worker.start()
+
+    def _on_vci_progress(self, done, total):
+        if total:
+            pct = int(done * 100 / total)
+            self._detail_status(tr("vci_progress").format(
+                pct=pct, mb=f"{done / 1048576:.0f}", total=f"{total / 1048576:.0f}"),
+                "#88c0d0")
+        else:
+            self._detail_status(tr("vci_progress_nosize").format(
+                mb=f"{done / 1048576:.0f}"), "#88c0d0")
+
+    def _on_vci_done(self, ok, msg, desktop_ok):
+        if not ok:
+            key = "vci_failed_notbinary" if msg == "not_a_binary" else "vci_failed"
+            self._detail_status(tr(key).format(err=msg), "#bf616a")
+            return
+
+        # Pfadsuche verwerfen, sonst bliebe der Autostart-Schalter ausgegraut,
+        # obwohl das Programm jetzt da ist.
+        games_db.refresh_vrcvideocacher_path()
+        note = tr("vci_done")
+        if desktop_ok:
+            note += " " + tr("vci_done_desktop")
+        self._detail_status(note, "#a3be8c")
+
+        # Panel neu aufbauen -> der Autostart-Schalter wird benutzbar.
+        appid = getattr(self, "_expanded_appid", None)
+        if appid:
+            self._on_game_tile_clicked(appid)
+            self._on_game_tile_clicked(appid)
+
+    def run_vrchat_check(self):
+        """Startet die Diagnose im Hintergrund."""
+        if getattr(self, "_vrc_check_worker", None) and self._vrc_check_worker.isRunning():
+            return
+        if hasattr(self.ui, "btn_vrchat_check"):
+            self.ui.btn_vrchat_check.setEnabled(False)
+        self.ui.lbl_vrchat_status.setText(tr("games_check_running"))
+        self.ui.lbl_vrchat_status.setStyleSheet("color: #88c0d0; font-size: 11px; border: none;")
+
+        self._vrc_check_worker = VRChatCheckWorker()
+        self._vrc_check_worker.result_signal.connect(self._on_vrchat_check_done)
+        self._vrc_check_worker.start()
+
+    def _on_vrchat_check_done(self, results):
+        """Ergebnis als Dialog anzeigen und in der Statuszeile zusammenfassen."""
+        if hasattr(self.ui, "btn_vrchat_check"):
+            self.ui.btn_vrchat_check.setEnabled(True)
+
+        if not results:
+            self.ui.lbl_vrchat_status.setText(tr("games_check_failed"))
+            self.ui.lbl_vrchat_status.setStyleSheet("color: #bf616a; font-size: 11px; border: none;")
+            return
+
+        import vrchat_check as vc
+
+        symbols = {vc.OK: "✔", vc.WARN: "⚠", vc.ERR: "✘", vc.INFO: "•"}
+        colors = {vc.OK: "#a3be8c", vc.WARN: "#ebcb8b", vc.ERR: "#bf616a", vc.INFO: "#7b88a1"}
+
+        lines = []
+        for r in results:
+            sym = symbols.get(r["status"], "•")
+            col = colors.get(r["status"], "#d8dee9")
+            title = tr(r["key"])
+            detail = r.get("detail", "")
+            row = (f'<div style="margin-bottom:6px;">'
+                   f'<span style="color:{col};"><b>{sym} {title}</b></span>')
+            if detail:
+                row += f'<br><span style="color:#d8dee9;font-family:monospace;">{detail}</span>'
+            if r.get("hint"):
+                row += f'<br><span style="color:#7b88a1;">{tr(r["hint"])}</span>'
+            row += "</div>"
+            lines.append(row)
+
+        status, count = vc.summarize(results)
+        if status == vc.OK:
+            head = tr("games_check_head_ok")
+        elif status == vc.WARN:
+            head = tr("games_check_head_warn").format(n=count)
+        else:
+            head = tr("games_check_head_err").format(n=count)
+
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("games_check_title"))
+        box.setTextFormat(Qt.RichText)
+        box.setText(f"<b>{head}</b><br><br>" + "".join(lines))
+        box.setIcon(QMessageBox.Information if status == vc.OK else QMessageBox.Warning)
+        box.exec()
+
+        self.ui.lbl_vrchat_status.setText(head)
+        self.ui.lbl_vrchat_status.setStyleSheet(
+            f"color: {colors.get(status, '#d8dee9')}; font-size: 11px; border: none;")
+
+    # ----------------------------------------------------------------- #
+    #  Config-Backup / -Restore (alle Spiele)
+    # ----------------------------------------------------------------- #
+    def _offer_config_backup(self, appid, proton):
+        """Fragt vor einem Proton-Wechsel, ob gesichert werden soll.
+
+        Rueckgabe False = Nutzer hat abgebrochen, der Wechsel unterbleibt.
+        Gibt es nichts zu sichern (Prefix noch gar nicht vorhanden), wird
+        kommentarlos durchgewinkt — dann kann auch nichts verloren gehen.
+        """
+        import game_backup
+
+        files, size = game_backup.estimate_size(appid)
+        if not files:
+            return True
+
+        g = self._game_data_for(appid) or {}
+        mb = size / 1048576
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("backup_cfg_title"))
+        box.setIcon(QMessageBox.Question)
+        text = tr("backup_cfg_text").format(
+            game=g.get("name", appid), files=files, size=f"{mb:.0f}")
+        if size > game_backup.LARGE_BACKUP_BYTES:
+            text += "\n\n" + tr("backup_cfg_large")
+        box.setText(text)
+        btn_yes = box.addButton(tr("backup_cfg_yes"), QMessageBox.AcceptRole)
+        btn_no = box.addButton(tr("backup_cfg_no"), QMessageBox.DestructiveRole)
+        box.addButton(tr("cancel"), QMessageBox.RejectRole)
+        box.setDefaultButton(btn_yes)
+        self._widen_dialog_buttons(box)
+        box.exec()
+
+        clicked = box.clickedButton()
+        if clicked is btn_no:
+            return True
+        if clicked is not btn_yes:
+            return False           # Abbrechen
+
+        ok, msg = game_backup.create_backup(
+            appid, g.get("name", ""), proton.get("version", ""))
+
+        # Bei VRChat zusaetzlich die Screenshots sichern — die liegen nicht
+        # unter AppData, sondern in Pictures/VRChat im Prefix.
+        pics = 0
+        if str(appid) == "438100":
+            _pok, pics = game_backup.backup_vrchat_pictures(self._get_pictures_dir())
+
+        if ok:
+            note = tr("backup_cfg_done").format(files=msg)
+            if pics:
+                note += " " + tr("backup_cfg_pics").format(n=pics)
+            self._detail_status(note, "#a3be8c")
+        else:
+            self._detail_status(tr("backup_cfg_failed").format(err=msg), "#bf616a")
+        return True
+
+    def _manual_config_backup(self, appid):
+        """'Config sichern' ohne Proton-Wechsel — derselbe Ablauf, nur direkt
+        angestossen. Nuetzlich vor einem Spiel-Update oder einfach so."""
+        proton = {"version": self._selected_proton.get(appid, "")}
+        import game_backup
+        files, _size = game_backup.estimate_size(appid)
+        if not files:
+            self._detail_status(tr("backup_cfg_nothing"), "#ebcb8b")
+            return
+        self._offer_config_backup(appid, proton)
+        # Restore-Knopf ist jetzt evtl. benutzbar -> Panel neu aufbauen
+        self._on_game_tile_clicked(appid)
+        self._on_game_tile_clicked(appid)
+
+    def restore_game_config(self, appid):
+        """'Config zurueckspielen' — additiv, es wird nichts geloescht."""
+        import game_backup
+
+        if not game_backup.has_backup(appid):
+            self._detail_status(tr("restore_cfg_none"), "#ebcb8b")
+            return
+
+        info = game_backup.backup_info(appid)
+        if not game_backup.prefix_user_dir(appid):
+            # Der haeufigste Fall direkt nach einem Proton-Wechsel: das neue
+            # Prefix entsteht erst beim ersten Spielstart.
+            self._detail_status(tr("restore_cfg_no_prefix"), "#ebcb8b")
+            return
+
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("restore_cfg_title"))
+        box.setIcon(QMessageBox.Question)
+        box.setText(tr("restore_cfg_text").format(
+            created=info.get("created", "?"), files=info.get("files", "?"),
+            proton=info.get("proton", "?")))
+        btn_go = box.addButton(tr("restore_cfg_go"), QMessageBox.AcceptRole)
+        box.addButton(tr("cancel"), QMessageBox.RejectRole)
+        self._widen_dialog_buttons(box)
+        box.exec()
+        if box.clickedButton() is not btn_go:
+            return
+
+        ok, msg = game_backup.restore_backup(appid)
+        if ok:
+            self._detail_status(tr("restore_cfg_done").format(files=msg), "#a3be8c")
+        else:
+            self._detail_status(tr("restore_cfg_failed").format(err=msg), "#bf616a")
 
     def _copy_games_text(self, text, button):
         """Text in die Zwischenablage + kurzes 'Kopiert!'-Feedback am Knopf."""
