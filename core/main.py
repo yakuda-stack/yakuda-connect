@@ -20,7 +20,7 @@ import webbrowser
 # Diese Zeile hier ist eine ZUSAETZLICHE Kopie und existiert aus einem einzigen
 # Grund: Der Update-Checker aller bereits ausgelieferten Versionen (bis v1.1.4)
 # laedt diese Datei von GitHub und sucht darin per regulaerem Ausdruck nach
-# genau dem Muster  APP_VERSION = "v1.1.9".
+# genau dem Muster  APP_VERSION = "v1.2.0".
 #
 # Faellt die Zeile weg, findet der Ausdruck nichts, und JEDE bereits
 # installierte Version meldet fuer immer "du bist aktuell" — die Nutzer
@@ -33,7 +33,7 @@ APP_VERSION = "v1.1.4"
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
-PAYPAL_URL  = "https://paypal.me/riesensika"
+KOFI_URL    = "https://ko-fi.com/yakuda_"
 
 # Ubuntu/Debian: WiVRn ist nicht in den Repos. Diese Befehle bauen es nativ —
 # schlanker und schneller als ein Flatpak, dafür einmalig etwas Handarbeit.
@@ -619,8 +619,8 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     def open_discord_link(self):
         QDesktopServices.openUrl(QUrl(DISCORD_URL))
 
-    def open_paypal_link(self):
-        QDesktopServices.openUrl(QUrl(PAYPAL_URL))
+    def open_kofi_link(self):
+        QDesktopServices.openUrl(QUrl(KOFI_URL))
 
     # ------------------------------------------------------------------ #
     #  Diagnose: Logdatei                                                 #
@@ -1113,7 +1113,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         QTimer.singleShot(800, self.check_usb_headset)
         self.ui.btn_log_open.clicked.connect(self.open_log_file)
         self.ui.btn_log_copy.clicked.connect(self.copy_log_to_clipboard)
-        self.ui.btn_community_donate.clicked.connect(self.open_paypal_link)
+        self.ui.btn_community_donate.clicked.connect(self.open_kofi_link)
         # WayVR Design (Settings): cubee-cb-Design installieren / Config löschen
         self._wayvr_worker = None
         self.ui.btn_wayvr_install.clicked.connect(self.start_wayvr_design_install)

@@ -132,7 +132,7 @@
   "diag_no_log": "No log file yet — it is created when the app starts.",
   "community_check_btn": "🔄 Check for updates",
   "community_discord_btn": "💬 Discord",
-  "community_donate_btn": "❤️ Donate (PayPal)",
+  "community_donate_btn": "❤️ Support on Ko-fi",
   "community_version": "Current version: {version}",
   "community_checking": "Checking for updates ...",
   "community_uptodate": "You are already on the latest version ({version}).",

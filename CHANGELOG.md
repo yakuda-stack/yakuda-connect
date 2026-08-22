@@ -1,5 +1,21 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.2.0
+
+**Highlights:** Spenden laufen ab sofort über **Ko-fi** statt PayPal — im Programm unter Settings → „Community & Updates", im README und über den Sponsor-Knopf auf GitHub.
+
+#### 🇬🇧 English
+
+* **Changed** | **Donations now go through Ko-fi instead of PayPal**: the button in Settings → "Community & Updates" opens <https://ko-fi.com/yakuda_>. Ko-fi takes no cut on one-off tips and supports memberships, so the same link covers both. The button keeps its place and its heart icon — only the target and the label changed.
+* **Changed** | **README badges point at Ko-fi**: both the badge at the top and the support tile in the community section were updated, and the version badge — which had been stuck at v1.1.1 for several releases — now matches the actual version again.
+* **Added** | **`.github/FUNDING.yml`**: GitHub shows a "Sponsor" button on the repository page pointing at Ko-fi, so the link is visible without scrolling into the README.
+
+#### 🇩🇪 Deutsch
+
+* **Geändert** | **Spenden laufen jetzt über Ko-fi statt PayPal**: der Knopf in den Settings unter „Community & Updates" öffnet <https://ko-fi.com/yakuda_>. Ko-fi behält bei einmaligen Trinkgeldern nichts ein und kann zusätzlich Mitgliedschaften — derselbe Link deckt also beides ab. Der Knopf bleibt an seinem Platz und behält sein Herz-Symbol, geändert haben sich nur Ziel und Beschriftung.
+* **Geändert** | **Die README-Badges zeigen auf Ko-fi**: sowohl das Badge ganz oben als auch die Support-Kachel im Community-Bereich wurden umgestellt. Das Versions-Badge, das mehrere Releases lang auf v1.1.1 stehen geblieben war, stimmt jetzt wieder mit der tatsächlichen Version überein.
+* **Neu** | **`.github/FUNDING.yml`**: GitHub blendet damit auf der Repo-Seite einen „Sponsor"-Knopf ein, der auf Ko-fi zeigt — der Link ist also sichtbar, ohne dass man erst ins README scrollen muss.
+
 ### 🚀 v1.1.9
 
 **Highlights:** Der VRChat-Bereich bekommt **drei Fix-Knöpfe statt einem** — Picture Fix, Videoplayer Fix und einen **Videoplayer Check**, der selbst nachsieht, woran das Abspielen scheitert, und einen **Knopf im Dashboard, der VRCVideoCacher startet** · dazu **Config-Backup und -Restore für jedes Spiel** vor einem Proton-Wechsel.

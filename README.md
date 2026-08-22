@@ -3,8 +3,8 @@
 **A sleek and intuitive GUI for WiVRn — Linux VR streaming made easy.**
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/X5TaN4A47h)
-[![Donate](https://img.shields.io/badge/Donate_via_PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/riesensika)
-[![Version](https://img.shields.io/badge/Version-v1.1.1-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
+[![Version](https://img.shields.io/badge/Version-v1.2.0-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard designed for Arch-based Linux systems. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -66,9 +66,9 @@ yakuda-connect is a free hobby project — built by VR enthusiasts, for VR enthu
     </td>
     <td align="center" width="50%">
       <h3>❤️ Support the project</h3>
-      <p>If yakuda-connect saved you time (or a headache), you can buy the dev a coffee. Every donation keeps Linux VR development going!</p>
-      <a href="https://paypal.me/riesensika">
-        <img src="https://img.shields.io/badge/paypal.me%2Friesensika-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="Donate via PayPal"/>
+      <p>If yakuda-connect saved you time (or a headache), you can buy the dev a coffee on Ko-fi. Every contribution keeps Linux VR development going!</p>
+      <a href="https://ko-fi.com/yakuda_">
+        <img src="https://img.shields.io/badge/ko--fi.com%2Fyakuda__-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support me on Ko-fi"/>
       </a>
     </td>
   </tr>
