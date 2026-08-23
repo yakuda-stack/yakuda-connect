@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (QFrame, QGroupBox, QHBoxLayout, QLabel,
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
 import queryfix
 from translations import tr
+from ui.advanced_panel import AdvancedBox
 
 
 class QueryFixWidget(QGroupBox):
@@ -124,6 +125,7 @@ class QueryFixWidget(QGroupBox):
         self.lbl_result.setStyleSheet("color: #7b88a1; font-size: 11px;")
         self.lbl_result.setWordWrap(True)
         root.addWidget(self.lbl_result)
+        root.addWidget(AdvancedBox("oscquery"))
 
         self._update_expander_text()
 

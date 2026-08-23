@@ -5,6 +5,8 @@ import shutil
 import re
 import os
 import json
+import datetime
+import platform
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QMessageBox,
                                QHBoxLayout, QVBoxLayout, QComboBox, QLineEdit,
                                QPushButton, QFileDialog, QWidget)
@@ -17,19 +19,30 @@ import webbrowser
 #  Versions-Anker — BITTE NICHT ENTFERNEN
 # --------------------------------------------------------------------------- #
 # Gepflegt wird die Version in core/version.py (per scripts/bump_version.py).
-# Diese Zeile hier ist eine ZUSAETZLICHE Kopie und existiert aus einem einzigen
+# Die Zeile unten ist eine ZUSAETZLICHE Kopie und existiert aus einem einzigen
 # Grund: Der Update-Checker aller bereits ausgelieferten Versionen (bis v1.1.4)
 # laedt diese Datei von GitHub und sucht darin per regulaerem Ausdruck nach
-# genau dem Muster  APP_VERSION = "v1.2.0".
+# dem Bezeichner APP_VERSION, gefolgt von der Version in Anfuehrungszeichen.
 #
 # Faellt die Zeile weg, findet der Ausdruck nichts, und JEDE bereits
 # installierte Version meldet fuer immer "du bist aktuell" — die Nutzer
 # bekommen nie wieder ein Update angeboten. Deshalb bleibt sie stehen, auch
 # wenn sie doppelt aussieht.
 #
+# ACHTUNG, hier stand bis v1.2.1 eine Falle: Der Kommentar oben nannte das
+# gesuchte Muster frueher AUSGESCHRIEBEN, also inklusive Gleichheitszeichen
+# und Anfuehrungszeichen. Damit war er selbst der ERSTE Treffer im Text —
+# und weil bump_version.py, der Smoke-Test und der Update-Checker alter
+# Clients allesamt nur den ersten Treffer auswerten (re.search bzw.
+# re.subn(count=1)), wurde jahrelang der KOMMENTAR hochgezaehlt, waehrend die
+# echte Zeile unten auf v1.1.4 stehen blieb. Aufgefallen ist es nie, weil der
+# Kommentar zufaellig die richtige Nummer trug. Deshalb ist das Muster oben
+# jetzt umschrieben: die Zeile unten ist der einzige Treffer.
+#
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
-# und die CI bricht ab, falls beide auseinanderlaufen.
-APP_VERSION = "v1.1.4"
+# und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
+# mehr als einmal vorkommt.
+APP_VERSION = "v1.2.1"
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
@@ -90,6 +103,7 @@ import overlay_manager as ovl
 import paths
 import proc
 import firewall as fw
+import advanced_info as adv
 from jsonio import update_json
 import version as version_mod
 from translations import tr, tr_amp, set_language, get_language
@@ -799,6 +813,97 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             self, tr("diag_title"),
             tr("diag_copied").format(lines=len(text.splitlines())))
 
+    def save_diagnostics_file(self):
+        """
+        Schreibt einen Diagnosebericht in eine Datei, die der Nutzer an einen
+        Fehlerbericht anhaengen kann.
+
+        Warum nicht einfach die Logdatei kopieren: fuer eine Fehlersuche
+        fehlen darin die Randbedingungen (Version, Distribution, welche
+        OpenXR-Runtime aktiv ist). Die stehen hier oben drueber — und zwar
+        genau die, die auch die Oberflaeche anzeigt. Persoenliche Daten sind
+        nicht dabei; der Home-Pfad taucht allerdings in Pfadangaben auf, was
+        im Dialogtext auch so gesagt wird.
+        """
+        default_name = os.path.join(
+            os.path.expanduser("~"),
+            f"yakuda-connect-diagnose-{datetime.datetime.now():%Y%m%d_%H%M}.txt")
+        path, _filter = QFileDialog.getSaveFileName(
+            self, tr("diag_save_title"), default_name, "Text (*.txt)")
+        if not path:
+            return          # Abbruch im Dateidialog ist kein Fehler
+
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(self._build_diagnostics_report())
+        except OSError as exc:
+            log.warning("Diagnosebericht konnte nicht geschrieben werden: %s", exc)
+            QMessageBox.warning(self, tr("diag_title"),
+                                tr("diag_save_failed").format(err=exc))
+            return
+
+        log.info("Diagnosebericht gespeichert: %s", path)
+        QMessageBox.information(self, tr("diag_title"),
+                                tr("diag_saved").format(path=path))
+
+    def _build_diagnostics_report(self):
+        """Kopfzeilen mit Systemangaben + das Ende der Logdatei."""
+        lines = [
+            "yakuda-connect diagnostics",
+            "=" * 60,
+            f"App version   : {self.APP_VERSION}",
+            f"Date          : {datetime.datetime.now().isoformat(timespec='seconds')}",
+            f"Python        : {sys.version.split()[0]}",
+            f"Platform      : {platform.platform()}",
+        ]
+        # Jede Angabe einzeln absichern: faellt eine aus (WiVRn nicht
+        # installiert, kein Headset), soll der Bericht trotzdem entstehen —
+        # er wird ja gerade dann gebraucht, wenn etwas kaputt ist.
+        try:
+            lines.append(f"Desktop       : {os.environ.get('XDG_CURRENT_DESKTOP', '?')} "
+                         f"({os.environ.get('XDG_SESSION_TYPE', '?')})")
+        except Exception as exc:
+            log.debug("_build_diagnostics_report: Desktop — %s", exc)
+        try:
+            lines.append(f"WiVRn server  : {venv.wivrn_server_binary() or '-'}")
+            lines.append(f"OpenXR runtime: {venv.primary_active_runtime()}")
+        except Exception as exc:
+            log.debug("_build_diagnostics_report: VR — %s", exc)
+        try:
+            lines.append(f"Firewall      : {fw.detect().get('kind') or '-'}")
+        except Exception as exc:
+            log.debug("_build_diagnostics_report: Firewall — %s", exc)
+
+        lines += ["", "-" * 60, "log tail:", "-" * 60, read_log_tail()]
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------ #
+    #  Advanced Mode (Schalter unten links in der Seitenleiste)
+    # ------------------------------------------------------------------ #
+    def on_advanced_mode_toggled(self, checked):
+        """
+        Schaltet die technischen Zusatzangaben ein oder aus.
+
+        Es aendert sich NUR die Sichtbarkeit dieser Kaesten — keine Funktion
+        der App verhaelt sich im Advanced Mode anders. Der Zustand wird in
+        der Config gemerkt, damit er den Neustart ueberlebt.
+        """
+        adv.set_enabled(bool(checked))
+        self._refresh_advanced_boxes()
+        if not update_json(paths.config_file("config.json"),
+                           {"advanced_mode": bool(checked)}):
+            log.warning("Advanced Mode konnte nicht gespeichert werden.")
+
+    def _refresh_advanced_boxes(self):
+        """Alle Technik-Kaesten an den aktuellen Zustand angleichen."""
+        try:
+            from ui.advanced_panel import refresh_all
+            refresh_all()
+        except Exception as exc:
+            # Die Kaesten sind Beiwerk. Klemmt hier etwas, darf das die App
+            # nicht am Starten hindern.
+            log.warning("Advanced-Kaesten konnten nicht aktualisiert werden: %s", exc)
+
     # ------------------------------------------------------------------ #
     #  Automatisches Erst-Backup beim Start (siehe backup_manager.py)
     # ------------------------------------------------------------------ #
@@ -1113,6 +1218,8 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         QTimer.singleShot(800, self.check_usb_headset)
         self.ui.btn_log_open.clicked.connect(self.open_log_file)
         self.ui.btn_log_copy.clicked.connect(self.copy_log_to_clipboard)
+        self.ui.btn_log_save.clicked.connect(self.save_diagnostics_file)
+        self.ui.toggle_advanced.toggled.connect(self.on_advanced_mode_toggled)
         self.ui.btn_community_donate.clicked.connect(self.open_kofi_link)
         # WayVR Design (Settings): cubee-cb-Design installieren / Config löschen
         self._wayvr_worker = None
@@ -1910,9 +2017,16 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     def _mark_firewall_done(self):
         """Knopf im Dashboard auf 'erledigt' setzen."""
         self.ui.btn_port_status.setText(tr_amp("firewall_btn_done"))
-        self.ui.btn_port_status.setStyleSheet(
-            "QPushButton { background-color: #a3be8c; color: #2e3440; font-weight: bold;"
-            " border-radius: 4px; padding: 6px; margin-top: 5px; }")
+        # Stylesheet aus ui_main: es enthaelt den linken Innenabstand fuer das
+        # (ⓘ) im Knopf. Ein eigenes Stylesheet hier wuerde ihn verlieren und
+        # die Beschriftung unter das Symbol schieben.
+        self.ui.btn_port_status.setStyleSheet(self.ui._CSS_FIREWALL_DONE)
+        # Auf dem gruenen Grund braucht das Symbol eine dunkle Farbe, sonst
+        # steht Hellgrau auf Hellgruen.
+        self.ui.btn_firewall_info.setStyleSheet(
+            "QToolButton { color:#2e3440; background:transparent; border:none;"
+            " font-size:14px; padding:0; }"
+            " QToolButton:hover { color:#3b4252; }")
 
     def _show_firewall_commands(self, kind, intro):
         """Zeigt die Befehle zum Selbst-Ausfuehren, mit Kopier-Knopf.
@@ -2050,6 +2164,16 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.ui.combo_language.setCurrentIndex(0 if lang == "en" else 1)
         self.ui.combo_language.blockSignals(False)
         self.apply_translations()
+
+        # Advanced Mode (Schalter unten links) wiederherstellen. blockSignals,
+        # damit das Setzen beim Start nicht sofort wieder gespeichert wird.
+        advanced = bool(data.get("advanced_mode", False))
+        adv.set_enabled(advanced)
+        self.ui.toggle_advanced.blockSignals(True)
+        self.ui.toggle_advanced.setChecked(advanced)
+        self.ui.toggle_advanced.sync_offset()
+        self.ui.toggle_advanced.blockSignals(False)
+        self._refresh_advanced_boxes()
 
         self.ui.chk_steamvr_tracker.blockSignals(True)
         self.ui.num_apps.blockSignals(True)

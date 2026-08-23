@@ -53,7 +53,22 @@ log = get_logger("firewall")
 PORT = 9757
 MDNS_PORT = 5353
 
-# Anwendungsprofil, exakt wie WiVRns Dashboard es schreibt.
+# Anwendungsprofil, exakt wie WiVRns Dashboard es schreibt
+# (dashboard/firewall.cpp, class ufw::do_setup).
+#
+# Warum es genau so aussehen muss:
+#   * Der Abschnittsname [WiVRn] ist der Regelname, unter dem die Freigabe
+#     spaeter in 'ufw status' und in grafischen Firewall-Werkzeugen steht.
+#   * 'title', 'description' und 'ports' sind bei ufw PFLICHTFELDER. Fehlt
+#     eines oder ist es leer, lehnt ufw das Profil mit einem Fehler ab
+#     (ufw/applications.py, verify_profile).
+#   * 'ports=9757' OHNE Protokollangabe bedeutet bei ufw "beide" — die Regel
+#     gilt fuer TCP und UDP zugleich und wird als '9757/any' gefuehrt
+#     (ufw/applications.py -> util.parse_port_proto). Ein 'ports=9757/tcp'
+#     waere also FALSCH: die UDP-Haelfte der WiVRn-Verbindung fehlte dann.
+#   * Der Dateiname (klein: 'wivrn') ist der, den WiVRn in need_setup()
+#     abfragt. Er darf sich nicht aendern, sonst haelt WiVRns Dashboard die
+#     Firewall fuer nicht eingerichtet.
 UFW_PROFILE_PATH = "/etc/ufw/applications.d/wivrn"
 UFW_PROFILE = (
     "[WiVRn]\\n"
@@ -201,15 +216,40 @@ def manual_commands(kind) -> list:
             "# to make it permanent: sudo iptables-save | sudo tee /etc/iptables/rules.v4",
         ]
     if kind == UFW:
+        # WICHTIG: NICHT einfach 'ufw allow 9757'.
+        #
+        # Das oeffnet den Port zwar, legt aber eine namenlose Portregel an
+        # statt der benannten Regel "WiVRn". Zwei Dinge haengen an dem Namen
+        # bzw. an der Profildatei:
+        #
+        #   * WiVRns eigenes Dashboard prueft in need_setup(), ob
+        #     /etc/ufw/applications.d/wivrn EXISTIERT (dashboard/firewall.cpp).
+        #     Fehlt die Datei, verlangt es weiter eine Einrichtung — obwohl
+        #     der Port laengst offen ist.
+        #   * Unser already_configured() prueft dieselbe Datei. Ohne sie
+        #     bliebe der Knopf dauerhaft auf "noch nicht eingerichtet".
+        #
+        # Deshalb sind die Befehle hier Zeile fuer Zeile das, was apply()
+        # unter pkexec tut — nur mit sudo davor.
+        #
+        # 'ufw allow wivrn' kleingeschrieben ist Absicht und funktioniert:
+        # ufw loest den Profilnamen in find_application_name() zuerst exakt
+        # und danach ohne Ruecksicht auf Gross-/Kleinschreibung auf
+        # (ufw/backend.py). WiVRn schreibt es selbst so.
         return [
-            "sudo ufw allow 9757",
+            f"sudo sh -c \"printf '{UFW_PROFILE}' > {UFW_PROFILE_PATH}\"",
+            "sudo ufw allow wivrn",
             f"sudo ufw allow {MDNS_PORT}/udp",
         ]
     if kind == FIREWALLD:
         return [
+            "# WiVRn bringt als Distro-Paket einen fertigen Dienst mit:",
+            "sudo firewall-cmd --permanent --add-service=wivrn",
+            "# Gibt es den Dienst nicht, stattdessen die Ports einzeln:",
             f"sudo firewall-cmd --permanent --add-port={PORT}/tcp",
             f"sudo firewall-cmd --permanent --add-port={PORT}/udp",
-            f"sudo firewall-cmd --permanent --add-port={MDNS_PORT}/udp",
+            "# mDNS, damit die Brille den PC findet:",
+            "sudo firewall-cmd --permanent --add-service=mdns",
             "sudo firewall-cmd --reload",
         ]
     return [

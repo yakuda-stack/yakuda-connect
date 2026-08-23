@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMessageBox,
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
 import openxr_manager as oxr
 import proc
+from ui.advanced_panel import AdvancedBox
 import vr_autotune as autotune
 import vr_environment as venv
 from logging_setup import get_logger
@@ -94,6 +95,7 @@ class VrRuntimeWidget(QWidget):
         btn_row.addWidget(self.btn_switch_wivrn)
         btn_row.addWidget(self.btn_switch_steamvr)
         cv.addLayout(btn_row)
+        cv.addWidget(AdvancedBox("runtime_switch"))
 
         root.addWidget(card)
 
@@ -130,6 +132,7 @@ class VrRuntimeWidget(QWidget):
         self.lbl_perf_tips.setWordWrap(True)
         self.lbl_perf_tips.setTextFormat(Qt.RichText)
         cv.addWidget(self.lbl_perf_tips)
+        cv.addWidget(AdvancedBox("vr_priority"))
 
         root.addWidget(card)
 

@@ -5,9 +5,9 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QListWidget,
                                QStackedWidget, QLabel, QPushButton, QCheckBox,
                                QComboBox, QLineEdit, QGroupBox, QFormLayout,
                                QTextEdit, QFrame, QGridLayout,
-                               QTabWidget, QToolButton, QToolTip, QPlainTextEdit,
+                               QTabWidget, QToolButton, QPlainTextEdit,
                                QScrollArea, QSizePolicy, QApplication)
-from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF, QPoint
+from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF
 from PySide6.QtGui import QPainter, QColor
 
 
@@ -79,6 +79,52 @@ from translations import tr, tr_amp
 from logging_setup import get_logger
 
 log = get_logger("ui_main")
+
+
+class ButtonWithInfo(QPushButton):
+    """Ein Knopf mit einem (ⓘ) fest am linken Rand — als Prefix vor dem Text.
+
+    Warum nicht einfach "ⓘ " in die Beschriftung schreiben: dann waere das
+    Symbol nur noch Farbe. Ein Klick darauf traefe den Knopf selbst und wuerde
+    die Aktion ausloesen — beim Firewall-Knopf also eine Passwortabfrage und
+    eine Aenderung an der Firewall, obwohl der Nutzer nur nachlesen wollte.
+    Genau das darf ein Info-Symbol nicht tun.
+
+    Deshalb bleibt es ein eigenes, anklickbares Widget; es wird nur INNERHALB
+    des Knopfes platziert. Als Kind-Widget verschluckt es seine eigenen Klicks,
+    der Knopf darunter loest also nicht mit aus.
+
+    Damit die Beschriftung nicht unter dem Symbol liegt, braucht der Knopf
+    links Innenabstand — dafuer sorgt PADDING_LEFT, das der Aufrufer in sein
+    Stylesheet uebernimmt.
+    """
+
+    PADDING_LEFT = 30    # Platz fuer das Symbol, in Pixeln
+    _ICON_MARGIN = 9     # Abstand des Symbols vom linken Rand
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._info = None
+
+    def attach_info(self, info):
+        """Das (ⓘ) uebernehmen und links im Knopf platzieren."""
+        self._info = info
+        info.setParent(self)
+        info.setFixedSize(18, 18)
+        info.raise_()
+        self._place_info()
+        info.show()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_info()
+
+    def _place_info(self):
+        if self._info is None:
+            return
+        # Senkrecht mittig, waagerecht am linken Rand.
+        y = max(0, (self.height() - self._info.height()) // 2)
+        self._info.move(self._ICON_MARGIN, y)
 
 
 class Ui_MainWindow:
@@ -281,9 +327,19 @@ class Ui_MainWindow:
         self.main_layout.setSpacing(0)
 
         # Sidebar
+        # Sie steckt in einem Container, damit unten links — wie bei SteamVR —
+        # der Advanced-Mode-Schalter Platz hat. Die Liste selbst bleibt
+        # unveraendert; nur die Verpackung ist neu.
+        self.sidebar_container = QWidget()
+        self.sidebar_container.setFixedWidth(200)
+        self.sidebar_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.sidebar_container.setStyleSheet("background-color:#1c1f26;")
+        sidebar_v = QVBoxLayout(self.sidebar_container)
+        sidebar_v.setContentsMargins(0, 0, 0, 0)
+        sidebar_v.setSpacing(0)
+
         self.sidebar = QListWidget()
-        self.sidebar.setFixedWidth(200)
-        self.sidebar.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.sidebar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.sidebar.addItems([
             "Installation",
             "Dashboard",
@@ -319,7 +375,33 @@ class Ui_MainWindow:
                 font-weight: bold;
             }
         """)
-        self.main_layout.addWidget(self.sidebar)
+        sidebar_v.addWidget(self.sidebar, 1)
+
+        # ---- Advanced Mode (unten links, wie der Schalter in SteamVR) -----
+        # Ist er aus (Standard), aendert sich an der Oberflaeche nichts. Ist
+        # er an, erscheint unter den betroffenen Schaltflaechen ein
+        # ausklappbarer Kasten mit Pfaden, Rechten und dem passenden
+        # Terminal-Befehl (siehe ui/advanced_panel.py).
+        adv_row = QWidget()
+        adv_row.setStyleSheet("background-color:#1c1f26;")
+        adv_layout = QHBoxLayout(adv_row)
+        adv_layout.setContentsMargins(14, 10, 14, 14)
+        adv_layout.setSpacing(8)
+
+        self.toggle_advanced = ToggleSwitch()
+        self.toggle_advanced.setFixedSize(40, 22)
+        self.toggle_advanced.setToolTip(tr("adv_mode_tip"))
+        adv_layout.addWidget(self.toggle_advanced, 0, Qt.AlignVCenter)
+
+        self.lbl_advanced_mode = QLabel(tr("adv_mode_label"))
+        self.lbl_advanced_mode.setWordWrap(True)
+        self.lbl_advanced_mode.setToolTip(tr("adv_mode_tip"))
+        self.lbl_advanced_mode.setStyleSheet(
+            "color:#7b88a1; font-size:11px; font-weight:bold; background:transparent;")
+        adv_layout.addWidget(self.lbl_advanced_mode, 1)
+
+        sidebar_v.addWidget(adv_row, 0)
+        self.main_layout.addWidget(self.sidebar_container)
 
         # Content Area
         self.pages = QStackedWidget()
@@ -364,6 +446,18 @@ class Ui_MainWindow:
             item = self.sidebar.item(i)
             if item:
                 item.setText(tr(key))
+
+        # Advanced-Mode-Schalter unten links
+        if hasattr(self, "lbl_advanced_mode"):
+            self.lbl_advanced_mode.setText(tr("adv_mode_label"))
+            self.lbl_advanced_mode.setToolTip(tr("adv_mode_tip"))
+            self.toggle_advanced.setToolTip(tr("adv_mode_tip"))
+        # Alle Technik-Kaesten (ui/advanced_panel.py) mit uebersetzen
+        try:
+            from ui.advanced_panel import retranslate_all
+            retranslate_all()
+        except Exception as exc:
+            log.debug("retranslate_ui: Advanced-Kaesten — %s", exc)
 
         # --- Installation-Tab ---
         self.lbl_install_title.setText(tr("install_title"))
@@ -462,6 +556,7 @@ class Ui_MainWindow:
         # Diagnose / Logdatei
         self.btn_log_open.setText(tr("diag_open_btn"))
         self.btn_log_copy.setText(tr("diag_copy_btn"))
+        self.btn_log_save.setText(tr("diag_save_btn"))
         self.lbl_log_hint.setText(tr("diag_hint"))
         # WayVR Design
         self.btn_wayvr_install.setText(tr("wayvr_install_btn"))
@@ -651,6 +746,8 @@ class Ui_MainWindow:
     def setup_dashboard_tab(self):
         from PySide6.QtWidgets import QScrollArea
 
+        from ui.advanced_panel import AdvancedBox
+
         scroll = QScrollArea(self.tab_dashboard)
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
@@ -729,11 +826,12 @@ class Ui_MainWindow:
         # Untere Reihe: Firewall-Button + Server-Check NEBENEINANDER (aufgeräumter).
         action_row = QHBoxLayout()
 
-        self.btn_port_status = QPushButton(tr_amp("dashboard_firewall"))
-        self.btn_port_status.setStyleSheet("""
-            QPushButton { background-color: #4c566a; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 6px; }
-            QPushButton:hover { background-color: #5e81ac; }
-        """)
+        # Der Firewall-Knopf traegt sein (ⓘ) selbst — links im Knopf, als
+        # Prefix vor der Beschriftung. Vorher stand es zwischen den beiden
+        # Knoepfen und riss dort eine Luecke in die Leiste, ohne dass klar
+        # war, auf welchen der beiden es sich bezieht.
+        self.btn_port_status = ButtonWithInfo(tr_amp("dashboard_firewall"))
+        self.btn_port_status.setStyleSheet(self._CSS_FIREWALL_IDLE)
 
         self.btn_server_check = QPushButton(tr("dashboard_check"))
         self.btn_server_check.setStyleSheet("""
@@ -741,10 +839,19 @@ class Ui_MainWindow:
             QPushButton:hover { background-color: #4c566a; }
         """)
 
+        # Erklaert in zwei Saetzen, WOFUER die Ports geoeffnet werden — und
+        # dass es dabei nicht um Telemetrie geht. Die Frage kam mehrfach aus
+        # der Community, und sie ist berechtigt: ein Knopf, der ungefragt die
+        # Firewall aendert, gehoert erklaert.
+        self.btn_firewall_info = self._info_button(lambda: tr("firewall_info"))
+        self.btn_port_status.attach_info(self.btn_firewall_info)
+
         action_row.addWidget(self.btn_port_status)
         action_row.addWidget(self.btn_server_check)
         action_row.addStretch()
         server_layout.addLayout(action_row)
+        server_layout.addWidget(AdvancedBox("firewall"))
+        server_layout.addWidget(AdvancedBox("server"))
         layout.addWidget(self.server_group)
 
         # --- Sprungknopf: OpenXR/SteamVR-Fixes & Performance ---------------
@@ -1116,6 +1223,19 @@ class Ui_MainWindow:
                    " QPushButton:hover { background-color:#bf616a; border-color:#bf616a; color:white; }"
                    " QPushButton:disabled { background-color:#3b4252; color:#7b88a1; }")
 
+    # Firewall-Knopf im Dashboard. Der linke Innenabstand ist kein Geschmack,
+    # sondern noetig: dort sitzt das (ⓘ) im Knopf (siehe ButtonWithInfo).
+    # Beide Zustaende muessen ihn haben, sonst rutscht die Beschriftung nach
+    # dem Umschalten auf "erledigt" unter das Symbol.
+    _CSS_FIREWALL_IDLE = (
+        "QPushButton { background-color:#4c566a; color:#eceff4; border:none;"
+        f" font-weight:bold; border-radius:4px; padding:6px 12px 6px {ButtonWithInfo.PADDING_LEFT}px; }}"
+        " QPushButton:hover { background-color:#5e81ac; }")
+    _CSS_FIREWALL_DONE = (
+        "QPushButton { background-color:#a3be8c; color:#2e3440; border:none;"
+        f" font-weight:bold; border-radius:4px; padding:6px 12px 6px {ButtonWithInfo.PADDING_LEFT}px;"
+        " margin-top:5px; }")
+
     def _settings_card(self):
         """Eine Karte (QFrame) im Nord-Card-Look. Gibt (frame, vbox) zurück."""
         card = QFrame()
@@ -1124,6 +1244,36 @@ class Ui_MainWindow:
         v.setContentsMargins(16, 14, 16, 14)
         v.setSpacing(10)
         return card, v
+
+    def _info_button(self, tooltip_fn):
+        """Ein (ⓘ)-Symbol, dessen langer Erklaertext im Tooltip steckt.
+
+        Beim Ueberfahren erscheint der gewohnte Tooltip. Beim KLICK oeffnet
+        sich stattdessen ein Popover, das stehen bleibt — nur so sind Links
+        im Text erreichbar. Vorher schloss sich der Tooltip auf dem Weg zum
+        Link (auf GitHub gemeldet, siehe ui/info_popover.py).
+
+        Der Knopf wird in self._settings_info vermerkt, damit retranslate_ui()
+        seinen Text bei einem Sprachwechsel neu setzen kann.
+        """
+        info = QToolButton()
+        info.setText("\u24d8")  # ⓘ
+        info.setCursor(Qt.PointingHandCursor)
+        info.setToolTip(tooltip_fn())
+        info.setStyleSheet(
+            "QToolButton { color:#7b88a1; background:transparent; border:none;"
+            " font-size:14px; padding:0 2px; }"
+            " QToolButton:hover { color:#88c0d0; }")
+
+        def _show(_checked=False, b=info):
+            from ui.info_popover import show_info_popover
+            show_info_popover(b, b.toolTip())
+
+        info.clicked.connect(_show)
+        if not hasattr(self, "_settings_info"):
+            self._settings_info = []
+        self._settings_info.append((info, tooltip_fn))
+        return info
 
     def _settings_header(self, title_key, tooltip_fn=None):
         """Sektionskopf: fetter Titel + optionales (ⓘ)-Info-Icon.
@@ -1140,20 +1290,8 @@ class Ui_MainWindow:
 
         info = None
         if tooltip_fn is not None:
-            info = QToolButton()
-            info.setText("\u24d8")  # ⓘ
-            info.setCursor(Qt.PointingHandCursor)
-            info.setToolTip(tooltip_fn())
-            info.setStyleSheet(
-                "QToolButton { color:#7b88a1; background:transparent; border:none;"
-                " font-size:14px; padding:0 2px; }"
-                " QToolButton:hover { color:#88c0d0; }")
-            # Klick zeigt denselben Text als Popover (für Touch-/Klick-Nutzer)
-            info.clicked.connect(
-                lambda _=False, b=info: QToolTip.showText(
-                    b.mapToGlobal(QPoint(0, b.height())), b.toolTip(), b))
+            info = self._info_button(tooltip_fn)
             row.addWidget(info)
-            self._settings_info.append((info, tooltip_fn))
 
         row.addStretch()
         self._settings_headers.append((lbl, title_key))
@@ -1172,9 +1310,14 @@ class Ui_MainWindow:
         return scroll, v
 
     def setup_settings_tab(self):
+        from ui.advanced_panel import AdvancedBox
+
         # Merklisten fürs Retranslaten (Sektionsköpfe + Info-Tooltips)
         self._settings_headers = []   # [(QLabel, title_key), ...]
-        self._settings_info = []      # [(QToolButton, tooltip_fn), ...]
+        # NICHT neu anlegen: der Dashboard-Tab wird vorher aufgebaut und hat
+        # seinen Firewall-(ⓘ) bereits eingetragen. Ein '= []' hier wuerde ihn
+        # aus der Liste werfen — er bliebe beim Sprachwechsel englisch.
+        self._settings_info = getattr(self, "_settings_info", [])
 
         outer = QVBoxLayout(self.tab_settings)
         outer.setContentsMargins(20, 20, 20, 10)
@@ -1222,6 +1365,7 @@ class Ui_MainWindow:
         self.lbl_community_version = QLabel("")
         self.lbl_community_version.setStyleSheet("color:#7b88a1; font-size:11px;")
         cv.addWidget(self.lbl_community_version)
+        cv.addWidget(AdvancedBox("update_check"))
         gen_v.addWidget(card)
 
         # -- Diagnose / Logdatei --
@@ -1236,13 +1380,22 @@ class Ui_MainWindow:
         self.btn_log_copy = QPushButton(tr("diag_copy_btn"))
         self.btn_log_copy.setCursor(Qt.PointingHandCursor)
         self.btn_log_copy.setStyleSheet(self._CSS_SECONDARY)
+        # Speichern: Kopieren reicht nicht immer — ein langes Log passt in
+        # keine Discord-Nachricht, und im Fehlerfall soll man die Datei
+        # anhaengen koennen, ohne zu wissen, wo ~/.cache liegt. Gespeichert
+        # wird ein Bericht aus Log + Systemangaben (siehe main.py).
+        self.btn_log_save = QPushButton(tr("diag_save_btn"))
+        self.btn_log_save.setCursor(Qt.PointingHandCursor)
+        self.btn_log_save.setStyleSheet(self._CSS_SECONDARY)
         head.addWidget(self.btn_log_open)
         head.addWidget(self.btn_log_copy)
+        head.addWidget(self.btn_log_save)
         cv.addLayout(head)
         self.lbl_log_hint = QLabel(tr("diag_hint"))
         self.lbl_log_hint.setWordWrap(True)
         self.lbl_log_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
         cv.addWidget(self.lbl_log_hint)
+        cv.addWidget(AdvancedBox("diagnostics"))
         gen_v.addWidget(card)
 
         # -- Backup --
@@ -1262,6 +1415,8 @@ class Ui_MainWindow:
         head.addWidget(self.btn_vr_restore)
         head.addWidget(self.btn_vr_restore_github)
         cv.addLayout(head)
+        cv.addWidget(AdvancedBox("backup_create"))
+        cv.addWidget(AdvancedBox("backup_restore"))
         gen_v.addWidget(card)
 
         gen_v.addStretch()
@@ -1288,6 +1443,7 @@ class Ui_MainWindow:
         self.lbl_wayvr_status.setStyleSheet("color:#7b88a1; font-size:11px;")
         self.lbl_wayvr_status.setWordWrap(True)
         cv.addWidget(self.lbl_wayvr_status)
+        cv.addWidget(AdvancedBox("wayvr_design"))
         vr_v.addWidget(card)
 
         # -- OpenXR-Runtime umschalten + VR-Prioritaet (aus dem Streaming-Tab) --
@@ -1358,6 +1514,9 @@ class Ui_MainWindow:
 
         self.openxr_manual_widget.setVisible(False)  # eingeklappt, main.py toggelt
         cv.addWidget(self.openxr_manual_widget)
+        # Der manuelle Bereich BLEIBT wie er ist — der Technik-Kasten kommt
+        # zusaetzlich dazu, er ersetzt ihn nicht.
+        cv.addWidget(AdvancedBox("openxr_fix"))
         vr_v.addWidget(card)
 
         # -- Quick OSC Query Fix (eigenes Widget) --

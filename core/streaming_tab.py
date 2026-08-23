@@ -184,7 +184,35 @@ class StreamingTab(QWidget):
         self.combo_encoder = QComboBox()
         self.combo_encoder.addItems(["Auto", "nvenc", "vaapi", "Vulkan", "x264"])
         self.lbl_encoder = QLabel(tr("streaming_encoder"))
-        encoder_form.addRow(self.lbl_encoder, self.combo_encoder)
+
+        # Erklaerung direkt neben der Auswahl: welcher Encoder gehoert zu
+        # welcher Grafikkarte? Ohne diesen Hinweis stehen dort vier
+        # Abkuerzungen, und wer nicht weiss, dass "vaapi" fuer AMD/Intel
+        # steht, waehlt "nvenc" auf einer Radeon — der Server startet dann
+        # nicht, und der Grund steht nirgends.
+        #
+        # Die Eintraege der Liste bleiben dabei UNVERAENDERT. Ihr Text ist
+        # zugleich der Wert, der in die Konfiguration wandert
+        # (config_manager.sync_with_wivrn liest combo.currentText().lower());
+        # ein "nvenc (Nvidia)" im Eintrag wuerde genau so in WiVRns
+        # config.json landen und dort nichts bedeuten.
+        enc_row = QWidget()
+        enc_row_layout = QHBoxLayout(enc_row)
+        enc_row_layout.setContentsMargins(0, 0, 0, 0)
+        enc_row_layout.setSpacing(10)
+        enc_row_layout.addWidget(self.combo_encoder)
+
+        self.lbl_encoder_hint = QLabel("")
+        self.lbl_encoder_hint.setWordWrap(True)
+        self.lbl_encoder_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
+        enc_row_layout.addWidget(self.lbl_encoder_hint, 1)
+        encoder_form.addRow(self.lbl_encoder, enc_row)
+
+        # Zusaetzlich pro Eintrag ein Tooltip — sichtbar schon beim
+        # Aufklappen der Liste, also bevor man etwas ausgewaehlt hat.
+        self._apply_encoder_hints()
+        self.combo_encoder.currentTextChanged.connect(self._update_encoder_hint)
+        self._update_encoder_hint(self.combo_encoder.currentText())
 
         # Codec-Zeile (versteckt) — zum Einblenden: self.row_codec.setVisible(True)
         self.row_codec = QWidget()
@@ -268,10 +296,46 @@ class StreamingTab(QWidget):
         self.lbl_fov_title.setText(tr("streaming_fov"))
         self.encoder_group.setTitle(tr_amp("streaming_encoder_grp"))
         self.lbl_encoder.setText(tr("streaming_encoder"))
+        # Erklaerung neben der Auswahl UND die Tooltips der Eintraege
+        self._apply_encoder_hints()
+        self._update_encoder_hint(self.combo_encoder.currentText())
         self.lbl_codec.setText(tr("streaming_codec"))
         self.lbl_bitrate.setText(tr("streaming_bitrate"))
         self.lbl_moved_hint.setText(tr("streaming_moved_hint"))
         self.btn_goto_vr_settings.setText(tr_amp("dashboard_openxr_btn"))
+
+    # ------------------------------------------------------------------ #
+    #  Encoder-Erklaerung
+    # ------------------------------------------------------------------ #
+    # Zuordnung Listeneintrag -> Uebersetzungsschluessel. Belegt in WiVRns
+    # docs/configuration.md (Abschnitt "encoder"):
+    #     x264   software encoding
+    #     nvenc  Nvidia hardware encoding
+    #     vaapi  AMD/Intel hardware encoding
+    #     vulkan experimental, for any GPU that supports vulkan video encode
+    # "Auto" ist kein WiVRn-Wert: dabei wird der Schluessel gar nicht erst
+    # geschrieben, WiVRn waehlt dann selbst (nvenc bei Nvidia, sonst vaapi,
+    # sonst x264).
+    _ENCODER_HINTS = {
+        "Auto":   "streaming_enc_auto",
+        "nvenc":  "streaming_enc_nvenc",
+        "vaapi":  "streaming_enc_vaapi",
+        "Vulkan": "streaming_enc_vulkan",
+        "x264":   "streaming_enc_x264",
+    }
+
+    def _apply_encoder_hints(self):
+        """Jedem Listeneintrag seinen Erklaertext als Tooltip geben."""
+        for i in range(self.combo_encoder.count()):
+            key = self._ENCODER_HINTS.get(self.combo_encoder.itemText(i))
+            if key:
+                self.combo_encoder.setItemData(i, tr(key), Qt.ToolTipRole)
+
+    def _update_encoder_hint(self, text):
+        """Den Text neben der Auswahl an den gewaehlten Encoder anpassen."""
+        key = self._ENCODER_HINTS.get(text)
+        self.lbl_encoder_hint.setText(tr(key) if key else "")
+        self.combo_encoder.setToolTip(tr("streaming_encoder_tip"))
 
     def update_resolution_label(self, value):
         base_w, base_h = 2160, 2160

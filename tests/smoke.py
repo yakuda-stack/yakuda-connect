@@ -200,10 +200,20 @@ def main():
     # PKGBUILD vergessen -> AUR baut den alten Tag; Anker in main.py vergessen
     # -> alte Clients (bis v1.1.4) finden nie wieder ein Update.
     import version as version_mod
-    anchor = re.search(r'APP_VERSION\s*=\s*"v?([^"]+)"',
-                       (ROOT / "core" / "main.py").read_text())
+    main_text = (ROOT / "core" / "main.py").read_text()
+    anchor_pattern = r'APP_VERSION\s*=\s*"v?([^"]+)"'
+    anchor_all = re.findall(anchor_pattern, main_text)
+    anchor = re.search(anchor_pattern, main_text)
     check("APP_VERSION-Anker in main.py vorhanden", anchor is not None,
           "Ohne ihn sehen alte Clients nie wieder ein Update!")
+    # Genau EIN Treffer — sonst zaehlt bump_version.py womoeglich die falsche
+    # Zeile hoch. Bis v1.2.1 nannte der Kommentar ueber dem Anker das Muster
+    # ausgeschrieben und war damit selbst der erste Treffer: das Skript
+    # aktualisierte den Kommentar, die echte Zeile blieb auf v1.1.4 stehen.
+    # Aufgefallen ist es nur deshalb nicht, weil auch der Update-Checker alter
+    # Clients den ersten Treffer nimmt — es ging also zufaellig gut.
+    check("Anker kommt genau einmal vor", len(anchor_all) == 1,
+          f"{len(anchor_all)} Treffer: {anchor_all} — ein Kommentar verdeckt den Anker")
     if anchor:
         check("Anker == core/version.py", anchor.group(1) == version_mod.VERSION,
               f"main.py={anchor.group(1)} vs version.py={version_mod.VERSION}")
