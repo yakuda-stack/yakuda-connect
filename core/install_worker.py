@@ -107,11 +107,25 @@ class UpdateWorker(QThread):
             self.finished_signal.emit(False)
             return
 
-        # Fedora-Paketliste aus programs.INSTALL_DNF ableiten, nicht fest
-        # verdrahten — sonst vergisst man beim Ergaenzen eines Pakets das Update.
+        # Fedora-Paketliste aus programs ableiten, nicht fest verdrahten —
+        # sonst vergisst man beim Ergaenzen eines Pakets das Update. Die
+        # COPR-Komponenten (xrizer) gehoeren dazu: das Repo ist nach der
+        # Installation dauerhaft aktiviert, ein 'dnf upgrade' aktualisiert es
+        # also ganz normal mit.
         try:
-            from programs import INSTALL_DNF
-            dnf_pkgs = " ".join(p for pkgs in INSTALL_DNF.values() for p in pkgs)
+            from programs import INSTALL_DNF, INSTALL_DNF_COPR
+            names = [p for pkgs in INSTALL_DNF.values() for p in pkgs]
+            names += [p for cfg in INSTALL_DNF_COPR.values() for p in cfg["pkgs"]]
+            # Nur aktualisieren, was auch installiert ist. Wer die
+            # COPR-Rueckfrage verneint hat, hat kein xrizer — 'dnf upgrade
+            # xrizer' quittiert das mit einer Fehlermeldung, und die stuende
+            # dann mitten in einem ansonsten erfolgreichen Update.
+            installed = [p for p in names
+                         if subprocess.run(["rpm", "-q", p],
+                                           stdout=subprocess.DEVNULL,
+                                           stderr=subprocess.DEVNULL,
+                                           timeout=15).returncode == 0]
+            dnf_pkgs = " ".join(installed or names)
         except Exception:
             dnf_pkgs = "wivrn wivrn-dashboard opencomposite"
 
@@ -149,12 +163,50 @@ class InstallWorker(QThread):
     status_signal = Signal(str)
     finished_signal = Signal(bool)
 
-    def __init__(self, packages, helper="yay"):
+    def __init__(self, packages, helper="yay", copr_map=None):
         super().__init__()
         self.packages = packages
         # 'flatpak' ist hier nur noch für den TOOLS-Tab erlaubt (ProtonPlus etc.),
         # die WiVRn-Runtime im Installations-Tab läuft ausschließlich nativ.
         self.helper = helper if helper in ("yay", "paru", "dnf", "flatpak") else "yay"
+        # {paketname: copr-kennung} — nur für dnf. Steht ein Paket hier drin,
+        # wird das COPR im selben Terminalfenster aktiviert, bevor installiert
+        # wird. Der Nutzer muss also nichts mehr von Hand kopieren.
+        self.copr_map = dict(copr_map or {})
+
+    def build_bash_command(self, pkg, index, total_pkgs):
+        """
+        Die Befehlszeile, die im Terminalfenster laeuft.
+
+        Bewusst als eigene Methode (statt inline in run()): so laesst sie sich
+        im Test pruefen, ohne dass ein Terminal geoeffnet werden muss.
+        """
+        tail = ("echo ''; "
+                "echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
+                "sleep 2")
+
+        if self.helper == "flatpak":
+            return (f"echo '=== Installiere {pkg} (Flatpak) ==='; "
+                    f"flatpak install -y flathub {pkg}; " + tail)
+
+        if self.helper == "dnf":
+            copr = self.copr_map.get(pkg)
+            copr_cmd = ""
+            if copr:
+                # 'dnf copr' steckt bei dnf4 im Plugin-Paket dnf-plugins-core,
+                # bei dnf5 (Fedora 41+) ist es eingebaut. Schlaegt der erste
+                # Versuch fehl, wird das Plugin nachinstalliert und ein zweites
+                # Mal probiert — sonst saehe der Nutzer auf aelteren Systemen
+                # wieder eine Fehlermeldung statt einer Installation.
+                copr_cmd = (f"echo '--- Aktiviere COPR {copr} ---'; "
+                            f"sudo dnf copr enable -y {copr} || {{ "
+                            f"sudo dnf install -y dnf-plugins-core && "
+                            f"sudo dnf copr enable -y {copr}; }}; ")
+            return (f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit dnf ==='; "
+                    f"{copr_cmd}sudo dnf install -y {pkg}; " + tail)
+
+        return (f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit {self.helper} ==='; "
+                f"{self.helper} -S {pkg}; " + tail)
 
     def run(self):
         if not self.packages:
@@ -173,30 +225,7 @@ class InstallWorker(QThread):
         for index, pkg in enumerate(self.packages, start=1):
             self.status_signal.emit(f"Installiere Paket {index} von {total_pkgs}: {pkg}...")
 
-            if self.helper == "flatpak":
-                bash_cmd = (
-                    f"echo '=== Installiere {pkg} (Flatpak) ==='; "
-                    f"flatpak install -y flathub {pkg}; "
-                    f"echo ''; "
-                    f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
-                    f"sleep 2"
-                )
-            elif self.helper == "dnf":
-                bash_cmd = (
-                    f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit dnf ==='; "
-                    f"sudo dnf install -y {pkg}; "
-                    f"echo ''; "
-                    f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
-                    f"sleep 2"
-                )
-            else:
-                bash_cmd = (
-                    f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit {self.helper} ==='; "
-                    f"{self.helper} -S {pkg}; "
-                    f"echo ''; "
-                    f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
-                    f"sleep 2"
-                )
+            bash_cmd = self.build_bash_command(pkg, index, total_pkgs)
 
             # Befehlsaufbau je nach Terminal-Syntax
             cmd = [terminal] + exec_flags + ["bash", "-c", bash_cmd]

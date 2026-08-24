@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.2.1"
+APP_VERSION = "v1.2.2"
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
@@ -95,7 +95,8 @@ from streaming_tab import StreamingTab
 from backup_manager import (create_vr_backup, restore_vr_environment,
                             sync_backup_from_github)
 import vr_autotune as autotune
-from programs import (INSTALL_PACKAGES, INSTALL_DNF, FEDORA_XRIZER_COPR,
+from programs import (INSTALL_PACKAGES, INSTALL_DNF, INSTALL_DNF_COPR,
+                      DNF_BINARY_FALLBACK, dnf_copr_groups, dnf_copr_for_package,
                       TOOLS_APPS, TOOLS_OSC)
 import games as games_db
 import openxr_manager as oxr
@@ -183,7 +184,15 @@ class PackageCheckWorker(QThread):
                 state = {"installed": shutil.which("wivrn-server") is not None,
                          "has_update": False}
             else:
-                state = {"installed": all(pkg in installed for pkg in idents),
+                is_installed = all(pkg in installed for pkg in idents)
+                if not is_installed and self.method == "dnf":
+                    # Selbst gebaut oder aus einem fremden Repo: kein RPM, aber
+                    # das Programm ist da. Frueher stand hier trotzdem "fehlt",
+                    # und ein Klick auf Installieren waere ins Leere gelaufen.
+                    binary = DNF_BINARY_FALLBACK.get(name)
+                    if binary and shutil.which(binary):
+                        is_installed = True
+                state = {"installed": is_installed,
                          "has_update": any(pkg in updatable for pkg in idents)}
             if state["has_update"]:
                 updates_available = True
@@ -1664,7 +1673,12 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     def _package_groups_for(self, method):
         """Welche Status-Zeilen je Methode?"""
         if method == "dnf":
-            return dict(INSTALL_DNF)          # wivrn + opencomposite (Fedora-Repos)
+            # Fedora-Repos (wivrn, wivrn-dashboard, opencomposite) PLUS die
+            # COPR-Komponenten (xrizer). Letztere standen frueher nur in einem
+            # Hinweisfenster zum Abtippen und tauchten im Tab gar nicht auf.
+            groups = dict(INSTALL_DNF)
+            groups.update(dnf_copr_groups())
+            return groups
         if method == "native":
             return {"WiVRn": ["wivrn-server"]}
         if not method:
@@ -1742,8 +1756,14 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                 label.setStyleSheet("color: #ebcb8b; font-weight: bold;")
 
         self.ui.lbl_wivrn_ver.setText(f"<b>WiVRn Version:</b> {self.get_wivrn_version()}")
-        self.ui.lbl_worker_status.setText(
-            tr("install_updates_available") if updates_available else tr("install_check_done"))
+        note = getattr(self, "_install_missing_note", "")
+        if note:
+            # Einmalig: nach der naechsten Pruefung gilt wieder der Normaltext.
+            self._install_missing_note = ""
+            self.ui.lbl_worker_status.setText(note)
+        else:
+            self.ui.lbl_worker_status.setText(
+                tr("install_updates_available") if updates_available else tr("install_check_done"))
         self._update_update_button()
 
     def _show_ubuntu_install_guide(self):
@@ -1766,30 +1786,48 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         elif box.clickedButton() == docs_btn:
             webbrowser.open("https://github.com/WiVRn/WiVRn/blob/master/docs/building.md")
 
-    def _maybe_hint_fedora_xrizer(self):
+    def _confirm_fedora_copr(self, name, copr):
         """
-        Fedora: wivrn + opencomposite kommen aus den offiziellen Repos.
-        xrizer gibt es dort NICHT (envision-xrizer sind nur Build-Deps!) —
-        nur über COPR. Diesen Hinweis zeigen wir einmalig.
+        Rueckfrage vor dem Aktivieren eines COPR.
+
+        Ein COPR ist ein FREMDES Repository — das aktiviert die App nicht
+        stillschweigend. Frueher stand hier ein reines Hinweisfenster mit
+        'Befehle kopieren'; der Nutzer musste die zwei Zeilen selbst in ein
+        Terminal einfuegen. Jetzt ist es eine Ja/Nein-Frage, und bei 'Ja'
+        erledigt der InstallWorker beides im sichtbaren Terminalfenster —
+        genau wie bei allen anderen Paketen.
+
+        Rueckgabe: True = installieren, False = ueberspringen.
         """
-        if getattr(self, "_fedora_xrizer_hinted", False):
-            return
-        self._fedora_xrizer_hinted = True
-        # find_openvr_compat prueft, ob dort auch wirklich eine vrclient.so
-        # liegt — ein leerer Restordner (Paket entfernt) darf den Hinweis
-        # nicht unterdruecken.
-        if venv.find_openvr_compat("xrizer"):
-            return   # xrizer ist schon da
         box = QMessageBox(self)
-        box.setIcon(QMessageBox.Information)
-        box.setWindowTitle(tr("fedora_xrizer_title"))
-        box.setText(tr("fedora_xrizer_text").format(copr=FEDORA_XRIZER_COPR))
-        copy_btn = box.addButton(tr("ubuntu_guide_copy"), QMessageBox.AcceptRole)
-        box.addButton(QMessageBox.Close)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(tr("fedora_copr_title").format(name=name))
+        box.setText(tr("fedora_copr_text").format(name=name, copr=copr))
+        yes_btn = box.addButton(tr("fedora_copr_yes"), QMessageBox.AcceptRole)
+        box.addButton(tr("fedora_copr_no"), QMessageBox.RejectRole)
+        box.setDefaultButton(yes_btn)
         box.exec()
-        if box.clickedButton() == copy_btn:
-            QApplication.clipboard().setText(
-                f"sudo dnf copr enable {FEDORA_XRIZER_COPR}\nsudo dnf install xrizer")
+        return box.clickedButton() == yes_btn
+
+    def _pending_dnf_copr_packages(self):
+        """
+        Welche COPR-Komponenten fehlen noch? Rueckgabe: [(anzeigename, pkg), ...]
+
+        Geprueft wird doppelt: 'rpm -q' fuer das Paket UND find_openvr_compat
+        fuer den Fall, dass der Nutzer die Runtime selbst gebaut hat (dann
+        liegt sie auf der Platte, ohne dass rpm davon weiss).
+        """
+        pending = []
+        for name, cfg in INSTALL_DNF_COPR.items():
+            if name == "xrizer" and venv.find_openvr_compat("xrizer"):
+                continue                       # selbst gebaut / schon vorhanden
+            for pkg in cfg["pkgs"]:
+                res = proc.run(["rpm", "-q", pkg],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=proc.DEFAULT_TIMEOUT)
+                if res.returncode != 0:
+                    pending.append((name, pkg))
+        return pending
 
     def _populate_install_method_combo(self):
         """Füllt das Methoden-Dropdown des Installations-Tabs (yay/paru/dnf)."""
@@ -1897,6 +1935,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     def start_package_installation(self):
         """Install-Knopf: installiert die WiVRn-Runtime über die gewählte Methode."""
         method = self._install_method()
+        copr_map = {}          # nur auf Fedora gefuellt (siehe dnf-Zweig)
 
         # Ubuntu/Debian: kein Paket in den Repos -> Kurzanleitung zum nativen Bauen
         if appimg.is_debian_based():
@@ -1919,9 +1958,23 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT)
                     if res.returncode != 0:
                         packages_to_process.append(pkg)
+
+            # COPR-Komponenten (xrizer) hinten anhaengen — je Repository einmal
+            # nachfragen. 'Nein' ueberspringt nur diesen Eintrag.
+            asked = {}
+            for name, pkg in self._pending_dnf_copr_packages():
+                copr = dnf_copr_for_package(pkg)
+                if copr is None:
+                    continue
+                if copr not in asked:
+                    asked[copr] = self._confirm_fedora_copr(name, copr)
+                if not asked[copr]:
+                    continue
+                packages_to_process.append(pkg)
+                copr_map[pkg] = copr
+
             if not packages_to_process:
                 self.ui.lbl_worker_status.setText(tr("install_check_done"))
-                self._maybe_hint_fedora_xrizer()
                 return
             worker_pkgs, helper = packages_to_process, "dnf"
 
@@ -1946,10 +1999,30 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.ui.btn_update.setEnabled(False)
 
         self._last_install_method = method
-        self.worker = InstallWorker(worker_pkgs, helper=helper)
+        self._last_install_pkgs = list(worker_pkgs)
+        self.worker = InstallWorker(worker_pkgs, helper=helper, copr_map=copr_map)
         self.worker.status_signal.connect(self.ui.lbl_worker_status.setText)
         self.worker.finished_signal.connect(self.on_installation_finished)
         self.worker.start()
+
+    def _dnf_packages_still_missing(self):
+        """
+        Welche der eben angeforderten Pakete sind NICHT angekommen?
+
+        Das Terminalfenster schliesst sich nach zwei Sekunden von selbst. Eine
+        Fehlermeldung von dnf ("nothing provides ...", falsche Fedora-Version,
+        COPR ohne Build fuer diese Release) ist damit weg, bevor sie jemand
+        liest — und die App meldete trotzdem "erfolgreich installiert".
+        Deshalb wird hinterher nachgesehen.
+        """
+        missing = []
+        for pkg in getattr(self, "_last_install_pkgs", []):
+            res = proc.run(["rpm", "-q", pkg],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=proc.DEFAULT_TIMEOUT)
+            if res.returncode != 0:
+                missing.append(pkg)
+        return missing
 
     def on_installation_finished(self, success):
         self.ui.btn_install.setEnabled(True)
@@ -1958,8 +2031,16 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         m = getattr(self, "_last_install_method", "")
         if success and m:
             venv.set_runtime_method(m)
-            if m == "dnf":
-                self._maybe_hint_fedora_xrizer()
+        if m == "dnf":
+            missing = self._dnf_packages_still_missing()
+            if missing:
+                log.warning("dnf-Installation unvollstaendig: %s", ", ".join(missing))
+                # Nicht direkt ins Label schreiben: check_system_packages()
+                # laeuft gleich im Hintergrund an und wuerde den Text mit
+                # "System-Check abgeschlossen" ueberschreiben. Der Hinweis wird
+                # stattdessen gemerkt und dort ausgegeben.
+                self._install_missing_note = tr("install_dnf_missing").format(
+                    pkgs=", ".join(missing))
         self.check_system_packages()
         if not self.are_critical_packages_missing(): self.ui.sidebar.setCurrentRow(1)
 

@@ -65,9 +65,9 @@ INSTALL_PACKAGES = {
 #
 # NICHT dabei:
 #   * xrizer — gibt es in den offiziellen Fedora-Repos NICHT, nur als COPR
-#     (@xr-sig/xrizer). Wird dem Nutzer als Hinweis gezeigt, aber nicht ohne
-#     Nachfrage aktiviert. 'envision-xrizer' ist KEIN xrizer, sondern nur die
-#     Build-Abhaengigkeiten, die Envision zum Selbstbauen braucht.
+#     (@xr-sig/xrizer). Steht deshalb in INSTALL_DNF_COPR statt hier.
+#     'envision-xrizer' ist KEIN xrizer, sondern nur die Build-Abhaengigkeiten,
+#     die Envision zum Selbstbauen braucht.
 #   * lib32-* — Fedora loest 32-Bit ueber Multilib (wivrn.i686) und zieht das
 #     bei Bedarf selbst; ein eigenes lib32-Paket wie im AUR gibt es nicht.
 INSTALL_DNF = {
@@ -75,8 +75,51 @@ INSTALL_DNF = {
     "WiVRn Dashboard": ["wivrn-dashboard"],
     "opencomposite": ["opencomposite"],
 }
-# Optionales COPR für xrizer auf Fedora (wird dem Nutzer nur als Hinweis gezeigt)
+
+# WICHTIG: 'wivrn' zieht 'wivrn-dashboard' NICHT als Abhaengigkeit mit — die
+# Requires-Liste des Fedora-RPMs enthaelt es schlicht nicht. Wer nur 'wivrn'
+# installiert, hat einen Server ohne Oberflaeche. Deshalb steht das Dashboard
+# hier als eigene Zeile und wird ausdruecklich mitinstalliert.
+
+# Rueckfall-Erkennung ueber die Binary im PATH: wer WiVRn oder das Dashboard
+# selbst gebaut oder aus einem COPR geholt hat, hat kein passendes RPM — die
+# Statuszeile darf dann trotzdem nicht "fehlt" behaupten.
+DNF_BINARY_FALLBACK = {
+    "WiVRn / Monado": "wivrn-server",
+    "WiVRn Dashboard": "wivrn-dashboard",
+}
+
+# --------------------------------------------------------------------------- #
+#  Fedora-Komponenten aus einem COPR
+# --------------------------------------------------------------------------- #
+# Gleicher Aufbau wie INSTALL_DNF, nur mit der Zusatzangabe, welches COPR
+# vorher aktiviert werden muss. Der Installations-Tab zeigt diese Eintraege
+# als ganz normale Statuszeile; der Installations-Knopf aktiviert das COPR und
+# installiert das Paket im selben sichtbaren Terminalfenster wie jede andere
+# Installation auch. Frueher musste der Nutzer die beiden Befehle aus einem
+# Hinweisfenster in die Zwischenablage holen und selbst einfuegen.
+#
+# Weil ein COPR ein FREMDES Repository ist (kein offizielles Fedora-Repo),
+# fragt die App vorher einmal nach. Ohne Zustimmung wird der Eintrag einfach
+# uebersprungen, der Rest der Installation laeuft normal weiter.
 FEDORA_XRIZER_COPR = "@xr-sig/xrizer"
+
+INSTALL_DNF_COPR = {
+    "xrizer": {"copr": FEDORA_XRIZER_COPR, "pkgs": ["xrizer"]},
+}
+
+
+def dnf_copr_groups():
+    """{Anzeigename: [Paketnamen]} — fuer die Statuszeilen im Installations-Tab."""
+    return {name: list(cfg["pkgs"]) for name, cfg in INSTALL_DNF_COPR.items()}
+
+
+def dnf_copr_for_package(pkg):
+    """COPR-Kennung fuer ein Paket, oder None wenn es aus den Fedora-Repos kommt."""
+    for cfg in INSTALL_DNF_COPR.values():
+        if pkg in cfg["pkgs"]:
+            return cfg["copr"]
+    return None
 
 TOOLS_APPS = [
     {

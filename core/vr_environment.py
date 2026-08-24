@@ -252,6 +252,12 @@ WIVRN_OVR_SEARCH_PATH = (
 # Bibliotheken aber trotzdem ablegen. Wird hier etwas gefunden, ist es
 # auswählbar — aber nur, weil wir den Pfad dann explizit eintragen. Genau das
 # sagt die Oberfläche dazu auch.
+#
+# ACHTUNG Fedora: dort liegt die Bibliothek eine Ebene TIEFER, naemlich unter
+# ``<ordner>/runtime/bin/linux64/vrclient.so`` (belegt am Dateilisting des
+# offiziellen RPMs opencomposite: /usr/lib64/opencomposite/runtime/bin/...).
+# Deshalb reicht es nicht, den Basisordner zu kennen — siehe
+# resolve_compat_root() weiter unten.
 EXTRA_OVR_PATHS = (
     "/usr/lib64/xrizer",                              # Fedora (COPR @xr-sig/xrizer)
     "/usr/lib/xrizer",
@@ -261,6 +267,11 @@ EXTRA_OVR_PATHS = (
     os.path.join(HOME, ".local/share/xrizer"),        # Selbstbau
     os.path.join(HOME, ".local/share/opencomposite"),
 )
+
+# Unterordner, in denen Distributionen die eigentliche Runtime verstecken.
+# "runtime" ist das Fedora-Layout; die Liste wird VOR dem allgemeinen Scan
+# geprueft, damit der haeufige Fall ohne Verzeichnis-Durchlauf auskommt.
+NESTED_COMPAT_SUBDIRS = ("runtime",)
 
 
 def openvr_lib_file(path):
@@ -295,6 +306,48 @@ def looks_like_openvr_compat(path):
     return False
 
 
+def resolve_compat_root(path):
+    """
+    Der Ordner, den WiVRn wirklich braucht — also der, unter dem
+    ``bin/linux64/vrclient.so`` liegt.
+
+    Hintergrund: Arch (AUR) packt die Bibliothek direkt nach
+    ``/opt/opencomposite/bin/linux64/vrclient.so``. Fedora legt sie eine Ebene
+    tiefer ab: ``/usr/lib64/opencomposite/runtime/bin/linux64/vrclient.so``.
+    Wer nur den Basisordner prueft, meldet auf Fedora fuer eine voellig
+    intakte Installation "no vrclient.so" — und traegt bei Auswahl auch noch
+    einen Pfad in WiVRns config.json ein, unter dem kein Spiel startet.
+
+    Gesucht wird in dieser Reihenfolge:
+      1. der Ordner selbst
+      2. die bekannten Zwischenordner (NESTED_COMPAT_SUBDIRS, z. B. "runtime")
+      3. eine Ebene tiefer, alphabetisch — fuer Layouts, die wir noch nicht
+         kennen
+
+    Wird nirgends etwas gefunden, kommt der Ausgangspfad unveraendert zurueck.
+    Der Aufrufer entscheidet dann ueber looks_like_openvr_compat(), ob der
+    Ordner unvollstaendig ist.
+    """
+    if not path or not os.path.isdir(path):
+        return path
+    if looks_like_openvr_compat(path):
+        return path
+    for sub in NESTED_COMPAT_SUBDIRS:
+        candidate = os.path.join(path, sub)
+        if looks_like_openvr_compat(candidate):
+            return candidate
+    try:
+        # Nur EINE Ebene, und sortiert: das Ergebnis darf nicht davon
+        # abhaengen, in welcher Reihenfolge das Dateisystem liefert.
+        for name in sorted(os.listdir(path)):
+            candidate = os.path.join(path, name)
+            if os.path.isdir(candidate) and looks_like_openvr_compat(candidate):
+                return candidate
+    except OSError as exc:
+        log.debug("resolve_compat_root(%s): %s", path, exc)
+    return path
+
+
 def normalize_compat_path(path):
     """
     Räumt einen vom Nutzer gewählten Ordner auf.
@@ -308,7 +361,9 @@ def normalize_compat_path(path):
     for suffix in ("/linux64", "/linux32", "/bin"):
         if cleaned.endswith(suffix):
             cleaned = cleaned[: -len(suffix)]
-    return cleaned
+    # Wer auf Fedora /usr/lib64/opencomposite auswaehlt, meint den Ordner
+    # darunter — sonst zeigt der Eintrag ins Leere.
+    return resolve_compat_root(cleaned)
 
 
 def openvr_compat_candidates():
@@ -328,15 +383,24 @@ def openvr_compat_candidates():
     result = []
     for path, autodetect in ([(p, True) for p in WIVRN_OVR_SEARCH_PATH] +
                              [(p, False) for p in EXTRA_OVR_PATHS]):
-        real = os.path.realpath(path)
-        if real in seen or not os.path.isdir(path):
+        if not os.path.isdir(path):
+            continue
+        # Fedora & Co. verschachteln eine Ebene tiefer. Gelistet wird der
+        # Ordner, der die Bibliothek WIRKLICH enthaelt — denn genau der landet
+        # bei Auswahl in WiVRns config.json.
+        resolved = resolve_compat_root(path)
+        real = os.path.realpath(resolved)
+        if real in seen:
             continue
         seen.add(real)
         result.append({
-            "path": path,
+            "path": resolved,
             "label": _compat_label(path),
-            "autodetect": autodetect,
-            "complete": looks_like_openvr_compat(path),
+            # Musste erst umgebogen werden? Dann findet WiVRn den Ordner ohne
+            # ausdruecklichen Eintrag nicht — auch wenn der Basisordner in der
+            # Suchliste steht.
+            "autodetect": autodetect and resolved == path,
+            "complete": looks_like_openvr_compat(resolved),
         })
     return result
 
