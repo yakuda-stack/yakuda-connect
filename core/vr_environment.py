@@ -522,15 +522,37 @@ def wivrn_server_binary():
     return os.path.realpath(p) if p else None
 
 
+def capability_tool(name):
+    """
+    Absoluter Pfad zu 'getcap'/'setcap' — oder "", wenn sie fehlen.
+
+    Beide liegen unter /usr/sbin (Paket libcap). Bei einer GUI-Sitzung ist
+    /usr/sbin nicht auf jedem System im PATH, und pkexec raeumt die Umgebung
+    ohnehin auf. Deshalb wird der Pfad hier fest aufgeloest, statt sich auf
+    den PATH zu verlassen.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for base in ("/usr/sbin", "/sbin", "/usr/bin", "/bin"):
+        cand = os.path.join(base, name)
+        if os.path.exists(cand):
+            return cand
+    return ""
+
+
 def supports_setcap():
     """
     setcap (CAP_SYS_NICE) ist nur bei einer beschreibbaren, nativen Binary sinnvoll.
     Bei Nix (/nix/store, read-only) und Flatpak (Sandbox) funktioniert es nicht.
+    Und ohne libcap (setcap/getcap) geht es ueberhaupt nicht.
     """
     b = wivrn_server_binary()
     if not b:
         return False
     if b.startswith("/nix/store") or "/flatpak/" in b or "/.var/app/" in b:
+        return False
+    if not capability_tool("setcap") or not capability_tool("getcap"):
         return False
     return True
 

@@ -489,3 +489,96 @@ class XrizerGithubWorker(QThread):
         except Exception as exc:  # noqa: BLE001 — der Nutzer soll etwas lesen koennen
             log.exception("xrizer-Download abgebrochen")
             self.finished_signal.emit(False, str(exc), "")
+
+
+class RpmInstallWorker(QThread):
+    """
+    Laedt das neueste RPM eines Tools aus dessen GitHub-Release und
+    installiert es mit dnf in einem sichtbaren Terminalfenster.
+
+    Warum Terminal: dnf braucht root. Das Passwort wird dort eingegeben, wie
+    bei allen anderen Systeminstallationen der App auch — kein eigener
+    Passwortdialog.
+
+    Die Datei wird bewusst nach /tmp geladen und danach wieder entfernt: ein
+    installiertes RPM braucht die Datei nicht mehr, und ein 300-MB-Paket soll
+    nicht dauerhaft im Downloadordner liegen.
+    """
+    status_signal = Signal(str)
+    finished_signal = Signal(bool)
+
+    def __init__(self, tool):
+        super().__init__()
+        self.tool = tool
+
+    def run(self):
+        import os
+        import tempfile
+        import urllib.request
+
+        name = self.tool.get("name", "Tool")
+        try:
+            import appimage_installer as appimg
+            self.status_signal.emit("🔎 Suche RPM ...")
+            try:
+                url, version = appimg.resolve_rpm(self.tool)
+            except appimg.RateLimited as exc:
+                self.status_signal.emit(f"Fehler: {exc}")
+                self.finished_signal.emit(False)
+                return
+
+            if not url:
+                import platform
+                self.status_signal.emit(
+                    f"Fehler: Kein RPM fuer {platform.machine()} im neuesten Release.")
+                self.finished_signal.emit(False)
+                return
+
+            tmp_dir = tempfile.mkdtemp(prefix="yakuda-rpm-")
+            dest = os.path.join(tmp_dir, os.path.basename(url.split("?")[0]))
+            self.status_signal.emit(f"⬇ Lade {name} {version} ...")
+            req = urllib.request.Request(url, headers={"User-Agent": "yakuda-connect"})
+            with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as fh:
+                total = int(r.headers.get("Content-Length") or 0)
+                done = 0
+                while True:
+                    chunk = r.read(65536)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        self.status_signal.emit(
+                            f"⬇ Lade {name} ... {done / 1_000_000:.1f} / "
+                            f"{total / 1_000_000:.1f} MB")
+
+            terminal, exec_flags = find_terminal()
+            if terminal is None:
+                self.status_signal.emit("Fehler: Kein unterstuetztes Terminal gefunden!")
+                self.finished_signal.emit(False)
+                return
+
+            # 'dnf install <datei>' loest die Abhaengigkeiten des Pakets aus den
+            # Repos mit auf — anders als 'rpm -i', das bei fehlenden
+            # Abhaengigkeiten einfach abbricht.
+            bash_cmd = (
+                f"echo '=== Installiere {name} {version} aus RPM ==='; "
+                f"sudo dnf install -y '{dest}'; "
+                f"echo ''; "
+                f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
+                f"sleep 2"
+            )
+            cmd = [terminal] + list(exec_flags) + ["bash", "-c", bash_cmd] \
+                if exec_flags else [terminal, "bash", "-c", bash_cmd]
+            self.status_signal.emit("📦 Installiere (Terminalfenster) ...")
+            res = subprocess.run(cmd, timeout=1800)
+            ok = res.returncode == 0
+
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            self.status_signal.emit("✔ Fertig installiert." if ok
+                                    else "Installation fehlgeschlagen.")
+            self.finished_signal.emit(ok)
+        except Exception as exc:  # noqa: BLE001 — der Nutzer soll etwas lesen koennen
+            log.exception("RPM-Installation fehlgeschlagen")
+            self.status_signal.emit(f"Fehler: {exc}")
+            self.finished_signal.emit(False)

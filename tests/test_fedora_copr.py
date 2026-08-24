@@ -141,12 +141,13 @@ def test_copr_dialog_texts_exist():
 # --------------------------------------------------------------------------- #
 def test_xrizer_hat_zwei_quellen_auf_fedora():
     """
-    GitHub steht VORNE und ist damit Vorauswahl. Grund: das COPR laeuft
-    regelmaessig in Zeitueberschreitungen und soll laut eigener Projektseite
-    verschwinden, sobald die Pakete in Fedora sind.
+    COPR steht VORNE und ist damit Vorauswahl — es ist der Weg, den das
+    Projekt selbst vorgibt. Das GitHub-Release bleibt als zweite Quelle
+    daneben, fuer den Fall dass das COPR wieder in Zeitueberschreitungen
+    laeuft oder wie angekuendigt verschwindet.
     """
     quellen = programs.component_sources("dnf", "xrizer")
-    assert quellen == [programs.SOURCE_GITHUB, programs.SOURCE_COPR]
+    assert quellen == [programs.SOURCE_COPR, programs.SOURCE_GITHUB]
 
 
 def test_normale_fedora_pakete_haben_eine_quelle():
@@ -182,3 +183,64 @@ def test_zeilentexte_vorhanden():
         for key in ("install_row_btn", "install_row_tip", "install_source_tip"):
             assert key in data, f"{key} fehlt in {lang}.json"
         assert "{name}" in data["install_row_tip"]
+
+
+# --------------------------------------------------------------------------- #
+#  7. Tools-Tab: RPM-Quelle auf Fedora
+# --------------------------------------------------------------------------- #
+def _tool(key):
+    for entry in programs.TOOLS_APPS + programs.TOOLS_OSC:
+        if entry["key"] == key:
+            return entry
+    raise AssertionError(f"Tool {key} nicht gefunden")
+
+
+def test_slimevr_und_ogb_koennen_rpm():
+    assert "rpm" in _tool("slimevr-bin")["install_methods"]
+    assert "rpm" in _tool("oscgoesbrrr")["install_methods"]
+    assert _tool("slimevr-bin")["github_repo"] == "SlimeVR/SlimeVR-Server"
+    assert _tool("oscgoesbrrr")["github_repo"] == "OscToys/OscGoesBrrr"
+
+
+def test_slimevr_hat_flathub():
+    assert _tool("slimevr-bin")["flatpak_id"] == "dev.slimevr.SlimeVR"
+
+
+def test_rpm_asset_waehlt_die_richtige_architektur():
+    """
+    Der eigentliche Stolperstein: SlimeVR legt im Release
+    'SlimeVR-aarch64.rpm' VOR 'SlimeVR-amd64.rpm'. Wer den ersten Treffer
+    nimmt, laedt auf einem normalen PC das ARM-Paket — es installiert sich
+    sogar, startet aber nie.
+    """
+    pytest.importorskip("PySide6.QtCore")
+    import appimage_installer as appimg
+    assets = [{"name": n, "browser_download_url": "https://example.invalid/" + n}
+              for n in ("SlimeVR-aarch64.AppImage", "SlimeVR-aarch64.deb",
+                        "SlimeVR-aarch64.rpm", "SlimeVR-amd64.AppImage",
+                        "SlimeVR-amd64.deb", "SlimeVR-amd64.rpm")]
+    _url, name = appimg._pick_appimage_asset(assets, ".rpm")
+    assert name == "SlimeVR-amd64.rpm"
+
+
+def test_rpm_sicht_aendert_das_original_nicht():
+    """OscGoesBrrr hat AppImage UND RPM — die Muster duerfen sich nicht mischen."""
+    pytest.importorskip("PySide6.QtCore")
+    import appimage_installer as appimg
+    tool = _tool("oscgoesbrrr")
+    view = appimg.rpm_tool_view(tool)
+    assert view["asset_match"] == ".rpm"
+    assert tool["asset_match"] == ".AppImage"
+
+
+def test_rpm_nur_mit_dnf(monkeypatch):
+    """Auf Arch waere ein RPM sinnlos — die Methode darf dort nicht auftauchen."""
+    pytest.importorskip("PySide6.QtCore")
+    import appimage_installer as appimg
+    monkeypatch.setattr(appimg, "dnf_available", lambda: False)
+    monkeypatch.setattr(appimg, "available_aur_helpers", lambda: [])
+    monkeypatch.setattr(appimg, "flatpak_available", lambda: False)
+    assert "rpm" not in appimg.detect_install_methods(_tool("slimevr-bin"))
+
+    monkeypatch.setattr(appimg, "dnf_available", lambda: True)
+    assert "rpm" in appimg.detect_install_methods(_tool("slimevr-bin"))

@@ -120,7 +120,7 @@ class RateLimited(Exception):
     pass
 
 
-_RELEASE_CACHE = {}      # repo -> (timestamp, url, version)
+_RELEASE_CACHE = {}      # (repo, asset_match) -> (timestamp, url, version)
 _RELEASE_CACHE_TTL = 900  # 15 Minuten — vermeidet zu viele API-Anfragen
 
 
@@ -167,8 +167,11 @@ def _pick_appimage_asset(assets, match=".AppImage"):
     if not cands:
         return None, None
 
-    # Vom Nutzer fest vorgegebene Endung -> direkt nehmen
-    if match_l != ".appimage":
+    # Reine Dateiendung -> Architektur selbst erkennen. Wichtig: SlimeVR legt
+    # 'SlimeVR-aarch64.rpm' VOR 'SlimeVR-amd64.rpm' ab. Wer hier einfach den
+    # ersten Treffer nimmt, laedt auf einem normalen PC das ARM-Paket.
+    GENERIC = (".appimage", ".rpm", ".deb")
+    if match_l not in GENERIC:
         return cands[0]["browser_download_url"], cands[0]["name"]
 
     # sonst: automatische Architektur-Erkennung
@@ -230,13 +233,17 @@ def resolve_release(tool):
         return tool.get("appimage_url"), tool.get("version", "")
 
     now = time.time()
-    cached = _RELEASE_CACHE.get(repo)
+    # Ein Repo kann mehrere Asset-Arten haben (AppImage UND RPM). Der Schluessel
+    # muss beides enthalten, sonst bekommt die RPM-Abfrage die gemerkte
+    # AppImage-URL zurueck.
+    key = (repo, tool.get("asset_match", ".AppImage"))
+    cached = _RELEASE_CACHE.get(key)
     if cached and (now - cached[0]) < _RELEASE_CACHE_TTL:
         return cached[1], cached[2]
 
     url, ver = _resolve_release_uncached(tool)
     if url:
-        _RELEASE_CACHE[repo] = (now, url, ver)
+        _RELEASE_CACHE[key] = (now, url, ver)
     return url, ver
 
 
@@ -346,9 +353,33 @@ def detect_install_methods(tool):
         methods.append("appimage")
     if "aur" in supported and tool.get("pkg"):
         methods.extend(available_aur_helpers())   # yay vor paru
+    if "rpm" in supported and tool.get("github_repo") and dnf_available():
+        # Nur auf Systemen mit dnf anbieten — ein RPM auf Arch waere sinnlos.
+        methods.append("rpm")
     if "flatpak" in supported and tool.get("flatpak_id") and flatpak_available():
         methods.append("flatpak")
     return methods
+
+
+def dnf_available():
+    """True, wenn dnf da ist — also Fedora/Nobara & Verwandte."""
+    return shutil.which("dnf") is not None
+
+
+def rpm_tool_view(tool):
+    """
+    Sicht auf ein Tool, bei der resolve_release() das RPM statt der AppImage
+    findet. Das Original wird nicht angefasst — es wird nur das Asset-Muster
+    getauscht.
+    """
+    view = dict(tool)
+    view["asset_match"] = tool.get("rpm_asset_match", ".rpm")
+    return view
+
+
+def resolve_rpm(tool):
+    """(url, version) des passenden RPMs aus dem neuesten Release."""
+    return resolve_release(rpm_tool_view(tool))
 
 
 def flatpak_available():

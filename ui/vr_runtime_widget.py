@@ -341,7 +341,8 @@ class VrRuntimeWidget(QWidget):
             return
 
         try:
-            res = subprocess.run(["getcap", path], stdout=subprocess.PIPE,
+            res = subprocess.run([venv.capability_tool("getcap"), path],
+                                 stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL, text=True,
                                  timeout=proc.DEFAULT_TIMEOUT)
             has_cap = "cap_sys_nice" in res.stdout.lower()
@@ -367,8 +368,10 @@ class VrRuntimeWidget(QWidget):
             QMessageBox.warning(self, tr("error"), tr("streaming_prio_missing"))
             return
         try:
+            # Absoluter Pfad: pkexec startet mit aufgeraeumter Umgebung, und
+            # setcap liegt je nach Distribution in /usr/sbin.
             res = subprocess.run(
-                ["pkexec", "setcap", "cap_sys_nice+ep", path],
+                ["pkexec", venv.capability_tool("setcap"), "cap_sys_nice+ep", path],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                 timeout=proc.LONG_TIMEOUT)
             if res.returncode == 0:

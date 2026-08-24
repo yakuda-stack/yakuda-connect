@@ -321,6 +321,9 @@ class Ui_MainWindow:
             main_window.setStyleSheet(_stylesheet)
 
         self.central_widget = QWidget()
+        # Benannt, damit das Hintergrundbild gezielt nur hier landet
+        # (ui/theme.py -> window_background_css) und nicht auf jedem Kind-Widget.
+        self.central_widget.setObjectName("yk_root")
         main_window.setCentralWidget(self.central_widget)
         self.main_layout = QHBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -498,9 +501,12 @@ class Ui_MainWindow:
         self.lbl_settings_title.setText(tr("settings_title"))
         if hasattr(self, "settings_subtabs"):
             self.settings_subtabs.setTabText(0, tr_amp("settings_sub_general"))
-            self.settings_subtabs.setTabText(1, tr_amp("settings_sub_vr"))
-            self.settings_subtabs.setTabText(2, tr("settings_sub_audio"))
-            self.settings_subtabs.setTabText(3, tr("settings_sub_advanced"))
+            self.settings_subtabs.setTabText(1, tr("settings_sub_design"))
+            self.settings_subtabs.setTabText(2, tr_amp("settings_sub_vr"))
+            self.settings_subtabs.setTabText(3, tr("settings_sub_audio"))
+            self.settings_subtabs.setTabText(4, tr("settings_sub_advanced"))
+        if hasattr(self, "customization_widget"):
+            self.customization_widget.retranslate()
         # Sektionsköpfe + Info-Tooltips (lange Texte liegen im Tooltip)
         for _lbl, _key in getattr(self, "_settings_headers", []):
             _lbl.setText(tr(_key))
@@ -1423,7 +1429,24 @@ class Ui_MainWindow:
         self.settings_subtabs.addTab(page_gen, tr_amp("settings_sub_general"))
 
         # ==============================================================
-        #  SEITE 2 — VR & OpenXR
+        #  SEITE 2 — Design
+        # ==============================================================
+        # Eigene Seite statt einer weiteren Karte unter "Allgemein": die
+        # Themenkacheln brauchen Platz, und wer am Aussehen schraubt, will
+        # dabei nicht durch Netzwerk- und Update-Einstellungen scrollen.
+        from ui.customization_widget import CustomizationWidget
+        page_design, design_v = self._settings_new_page()
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("design_group", lambda: tr("design_desc"))
+        cv.addLayout(head)
+        self.customization_widget = CustomizationWidget()
+        cv.addWidget(self.customization_widget)
+        design_v.addWidget(card)
+        design_v.addStretch()
+        self.settings_subtabs.addTab(page_design, tr("settings_sub_design"))
+
+        # ==============================================================
+        #  SEITE 3 — VR & OpenXR
         # ==============================================================
         page_vr, vr_v = self._settings_new_page()
 

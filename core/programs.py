@@ -129,11 +129,12 @@ INSTALL_DNF_COPR = {
 # Manche Komponenten gibt es auf mehreren Wegen. Statt eine Quelle fuer alle
 # vorzugeben, entscheidet der Nutzer pro Zeile im Installations-Tab.
 #
-# Vorauswahl ist bewusst der ERSTE Eintrag der Liste. Bei xrizer auf Fedora ist
-# das GitHub und nicht das COPR: das COPR laeuft regelmaessig in
-# Zeitueberschreitungen (Curl error 28) und soll laut Projektseite ohnehin
-# verschwinden. Wer das COPR will, waehlt es aus — dann ist es auch eine
-# bewusste Entscheidung fuer ein Fremdrepository.
+# Vorauswahl ist bewusst der ERSTE Eintrag der Liste. Bei xrizer auf Fedora
+# ist das das COPR: es ist der Weg, den das Projekt selbst vorgibt, und die
+# Pakete sind auf dem Weg in die offiziellen Fedora-Repos. Das GitHub-Release
+# bleibt als zweite Quelle daneben — fuer den Fall, dass das COPR wieder in
+# Zeitueberschreitungen laeuft (Curl error 28) oder, wie auf der Projektseite
+# angekuendigt, irgendwann verschwindet.
 SOURCE_GITHUB = "github"
 SOURCE_COPR = "copr"
 
@@ -155,7 +156,7 @@ def component_sources(method, name):
     """
     if method == "dnf":
         if name in INSTALL_DNF_COPR:
-            return [SOURCE_GITHUB, SOURCE_COPR]
+            return [SOURCE_COPR, SOURCE_GITHUB]
         return ["dnf"]
     if method in ("yay", "paru"):
         # xrizer gibt es auch auf Arch als Release-ZIP — praktisch, wenn der
@@ -237,8 +238,15 @@ TOOLS_APPS = [
         "desc_eng":     "VR Full Body Tracking System.",
         "start_cmd":    "slimevr",
         "link":         "https://slimevr.dev/",
-        # nur AUR (yay/paru)
-        "install_methods": ["aur"],
+        # AUR (Arch) / RPM aus dem GitHub-Release (Fedora) / Flathub (ueberall)
+        "install_methods": ["aur", "rpm", "flatpak"],
+        "github_repo":  "SlimeVR/SlimeVR-Server",
+        # ACHTUNG: im Release liegen SlimeVR-aarch64.rpm UND SlimeVR-amd64.rpm,
+        # das ARM-Paket zuerst. Das Muster bleibt deshalb bei ".rpm" — die
+        # Architektur waehlt _pick_appimage_asset() selbst aus, sonst laedt ein
+        # normaler PC das aarch64-Paket.
+        "rpm_asset_match": ".rpm",
+        "flatpak_id":   "dev.slimevr.SlimeVR",
     },
     {
         "key":          "unityhub",
@@ -340,9 +348,10 @@ TOOLS_OSC = [
         "start_cmd":    "oscgoesbrrr",
         "link":         "https://github.com/OscToys/OscGoesBrrr/releases",
         # AppImage / yay / paru — Vorauswahl AppImage
-        "install_methods": ["appimage", "aur"],
+        "install_methods": ["appimage", "aur", "rpm"],
         "github_repo":  "OscToys/OscGoesBrrr",
         "asset_match":  ".AppImage",
+        "rpm_asset_match": ".rpm",
         "include_prerelease": True,
         "config_dirs":  ["OscGoesBrrr"],
         "icon_url":     "https://raw.githubusercontent.com/OscToys/OscGoesBrrr/main/src/icons/ogb-logo.png",

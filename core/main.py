@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.2.2"
+APP_VERSION = "v1.2.3"
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
@@ -109,6 +109,7 @@ import firewall as fw
 import advanced_info as adv
 from jsonio import update_json
 import version as version_mod
+from ui import theme
 from translations import tr, tr_amp, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
 
@@ -423,6 +424,11 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.prog_labels = {}
 
         self.init_logic_connections()
+        # Farbthema anwenden, sobald die Oberflaeche steht. Vorher hat noch
+        # kein Widget ein Stylesheet, das sich umfaerben liesse.
+        self.apply_theme()
+        if hasattr(self.ui, "customization_widget"):
+            self.ui.customization_widget.changed.connect(self.apply_theme)
         self._rebuild_package_rows()
         self.check_system_packages()
 
@@ -1353,6 +1359,13 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             QMessageBox.critical(self, tr("msg_locked_title"), tr("msg_locked_text"))
             return
         self.ui.pages.setCurrentIndex(index)
+        # Installations-Tab: Status frisch pruefen. Was hier steht, kann sich
+        # ausserhalb der App geaendert haben (dnf/pacman im Terminal, ein
+        # System-Update, ein selbst gebautes xrizer). Bisher wurde nur beim
+        # Programmstart geprueft — wer nach einer Installation zurueckkam, sah
+        # weiter den alten Stand.
+        if index == 0:
+            self.check_system_packages()
         # USB-Ampel nur im Dashboard mitlaufen lassen (spart adb-Aufrufe).
         if index == 1:
             self.check_usb_headset()
@@ -1672,6 +1685,32 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         Verzeichnis. Danach kann normal per 'Wiederherstellen' angewendet werden."""
         sync_backup_from_github(self)
 
+    def apply_theme(self):
+        """
+        Oberflaeche auf das gespeicherte Thema umfaerben.
+
+        Wird beim Start aufgerufen und nach jeder Aenderung im Design-Bereich.
+        Weil neu erzeugte Widgets (Paketzeilen, Karten) ihr Original-Stylesheet
+        mitbringen, ist der Aufruf gefahrlos wiederholbar — theme.apply_to_tree
+        merkt sich je Widget den unveraenderten Ausgangszustand.
+        """
+        try:
+            count = theme.apply_to_tree(self)
+            # Auch das Stylesheet der Anwendung: dort steht die Flaeche hinter
+            # den Karten (QStackedWidget) sowie Dialoge, Menues und Tooltips.
+            theme.apply_to_app(QApplication.instance())
+            bg = theme.window_background_css()
+            if bg:
+                root = self.ui.central_widget
+                base = root.property("yk_base_qss") or ""
+                root.setStyleSheet(theme.tint(base) + "\n" + bg)
+            log.debug("[Theme] %s Stylesheets eingefaerbt (%s)", count,
+                      theme.current().get("theme"))
+        except Exception:
+            # Ein Fehler beim Faerben darf die App nicht am Start hindern —
+            # im schlimmsten Fall sieht sie aus wie immer.
+            log.exception("[Theme] Einfaerben fehlgeschlagen")
+
     def _package_groups_for(self, method):
         """Welche Status-Zeilen je Methode?"""
         if method == "dnf":
@@ -1708,6 +1747,12 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.pkg_source_combos = {}
         self.pkg_row_buttons = {}
 
+        # Feste Breiten, damit Dropdown und Knopf ueber alle Zeilen hinweg in
+        # einer Spalte stehen. Ohne das bestimmt der laengste Statustext, wo
+        # der Knopf landet — und die Knoepfe fransen zeilenweise aus.
+        combo_width = 210
+        button_width = 120
+
         method = self._install_method()
         for name in self._package_groups_for(method).keys():
             lbl = QLabel("…")
@@ -1715,23 +1760,37 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
             row = QWidget()
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(8)
-            row_layout.addWidget(lbl, 1)
+            row_layout.setContentsMargins(0, 2, 0, 2)
+            row_layout.setSpacing(10)
+            row_layout.addWidget(lbl)
+            row_layout.addStretch(1)
 
             sources = component_sources(method, name)
             if len(sources) > 1:
                 combo = QComboBox()
-                combo.setFixedHeight(24)
+                combo.setFixedSize(combo_width, 28)
                 for src in sources:
                     combo.addItem(SOURCE_LABELS.get(src, src), src)
                 combo.setToolTip(tr("install_source_tip"))
                 self.pkg_source_combos[name] = combo
                 row_layout.addWidget(combo)
+            elif sources:
+                # Platzhalter statt Dropdown: haelt die Knopf-Spalte gerade,
+                # auch wenn nur eine Zeile eine Auswahl hat.
+                spacer = QWidget()
+                spacer.setFixedWidth(combo_width)
+                row_layout.addWidget(spacer)
 
             if sources:
                 btn = QPushButton(tr("install_row_btn"))
-                btn.setFixedHeight(24)
+                btn.setFixedSize(button_width, 28)
+                btn.setStyleSheet("""
+                    QPushButton { background-color: #3b4252; color: #d8dee9;
+                                  font-size: 11px; border-radius: 4px; border: none;
+                                  padding: 0px 10px; }
+                    QPushButton:hover { background-color: #4c566a; }
+                    QPushButton:disabled { color: #6b7280; }
+                """)
                 btn.setToolTip(tr("install_row_tip").format(name=name))
                 btn.clicked.connect(lambda _=False, n=name: self.install_component(n))
                 self.pkg_row_buttons[name] = btn

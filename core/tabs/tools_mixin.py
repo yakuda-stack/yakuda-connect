@@ -17,7 +17,7 @@ from PySide6.QtCore import QThread, Signal as QtSignal
 import appimage_installer as appimg
 import paths
 from appimage_installer import AppImageInstallWorker
-from install_worker import InstallWorker, RemoveWorker
+from install_worker import InstallWorker, RemoveWorker, RpmInstallWorker
 from jsonio import read_json, write_json_atomic
 from translations import tr
 
@@ -218,7 +218,7 @@ class ToolsTabMixin:
         methods = appimg.detect_install_methods(tool)
         card["methods"] = methods
         labels = {"appimage": "AppImage", "yay": "yay", "paru": "paru",
-                  "flatpak": "Flatpak"}
+                  "flatpak": "Flatpak", "rpm": "RPM (dnf)"}
         combo.blockSignals(True)
         combo.clear()
         for mthd in methods:
@@ -292,6 +292,17 @@ class ToolsTabMixin:
 
         if method == "appimage":
             self.tool_worker = AppImageInstallWorker(tool)
+            self.tool_worker.status_signal.connect(
+                lambda msg, k=key: self._set_tool_status(k, msg)
+            )
+            self.tool_worker.finished_signal.connect(
+                lambda success, k=key: self.on_tool_installed(k, success)
+            )
+            self.tool_worker.start()
+        elif method == "rpm":
+            # Fedora: RPM aus dem neuesten GitHub-Release, Installation per dnf
+            # im Terminal (root noetig).
+            self.tool_worker = RpmInstallWorker(tool)
             self.tool_worker.status_signal.connect(
                 lambda msg, k=key: self._set_tool_status(k, msg)
             )

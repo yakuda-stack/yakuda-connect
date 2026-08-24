@@ -4,9 +4,20 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/X5TaN4A47h)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.2.1-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.2.3-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
-`yakuda-connect` is a powerful configuration hub and dashboard designed for Arch-based Linux systems. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
+`yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
+
+### 🐧 Tested systems
+
+| System | Status | Notes |
+|---|---|---|
+| **Arch-based (CachyOS)** | ✅ Tested — primary development system | Full feature set: AUR installation, all components |
+| **Fedora** | ✅ Tested | Components come from the Fedora repos; xrizer from the COPR `@xr-sig/xrizer` or the GitHub release. The WiVRn dashboard is deliberately not offered here — yakuda-connect already provides the controls |
+| Other Arch derivatives (EndeavourOS, Manjaro) | 🟡 Should work | Same package sources as CachyOS, but not tested by us |
+| Debian / Ubuntu | 🟡 Limited | No native WiVRn package — the app shows the status and points to building it yourself |
+
+Getestet wurde auf **Arch-basiert (CachyOS)** — dem Haupt-Entwicklungssystem — und auf **Fedora**. Andere Arch-Ableger sollten laufen, sind von uns aber nicht geprüft.
 
 ### 📸 Interface Preview
 
@@ -43,7 +54,99 @@
 * **Headset Client Installer:** Easily install and sideload the companion Android client (.apk) directly onto your standalone VR headset (Pico / Quest) via USB.
 * **Stream Fine-Tuning:** Configure encoders, toggle OpenVR compatibility, and manage your OpenXR runtimes directly from the UI.
 * **Backup & Restore:** Instantly save or recover your entire VR environment configuration.
+* **Customizable Interface:** Eight built-in themes plus per-role colour pickers, an optional background image and adjustable card opacity — under Settings → **Design**.
 * **Desktop Compatibility:** Runs smoothly across various desktop environments including KDE Plasma, GNOME, and Hyprland.
+
+---
+
+## 📦 Installation & Setup
+
+Whether you are a Linux newcomer or a power user, there are several straightforward ways to get `yakuda-connect` up and running.
+
+### Method 1: AUR (Recommended for Arch, CachyOS, EndeavourOS, Manjaro)
+
+`yakuda-connect` is available in the [AUR](https://aur.archlinux.org/packages/yakuda-connect). Install it with your favourite AUR helper — all dependencies are pulled in automatically, and you get updates through your normal system update:
+
+```bash
+yay -S yakuda-connect
+```
+
+or
+
+```bash
+paru -S yakuda-connect
+```
+
+Then launch it from your application menu or simply run:
+
+```bash
+yakuda-connect
+```
+
+### Method 2: Fedora and other distributions
+
+The setup script detects the package manager itself (pacman, dnf, apt, zypper) and installs PySide6 from the matching distribution package; if there is none, it builds its own venv, touching neither the system Python nor PEP 668:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh) && yakuda-connect
+```
+
+The VR components themselves are then installed from within the app (Installation tab). On Fedora they come from the official repos; xrizer is available from the COPR `@xr-sig/xrizer` or, as an alternative, straight from the GitHub release — selectable per component.
+
+### Method 3: Express Installation (AppImage & Terminal)
+
+Choose one of the two options below to get started as quickly as possible:
+
+#### Option A: One-Click Terminal Command (Fastest Method)
+Open your terminal and paste the following command. It will automatically download the setup script, install the tool, and launch it immediately:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh) && yakuda-connect
+```
+
+#### Option B: Manual AppImage (No Installation Required)
+1. Navigate to the **Releases** section on GitHub.
+2. Download `yakuda-connect-<version>-x86_64.AppImage`. One file for every
+   system: it works with **FUSE 3** (Arch, CachyOS, Fedora 40+, Ubuntu 24.04+,
+   Bazzite, SteamOS) **and FUSE 2** (Ubuntu 22.04 and earlier, Debian 11/12).
+   `libfuse2` does **not** need to be installed — libfuse3 is linked statically
+   into the file.
+3. Make the file executable:
+   - **Via GUI:** Right-click the file -> Properties -> Permissions -> Enable "Allow executing file as program".
+   - **Via Terminal:** `chmod +x yakuda-connect-*.AppImage`
+4. Double-click the file to launch the dashboard!
+
+> **If it won't start** with an error mentioning `fusermount` or `/dev/fuse`
+> (containers, hardened kernels, FUSE disabled), run it unpacked instead — this
+> works on every system, it is just slightly slower to start:
+> ```bash
+> ./yakuda-connect-*.AppImage --appimage-extract-and-run
+> ```
+
+> **Something not working?** The app writes a log to `~/.cache/yakuda-connect/app.log`.
+> Attaching it to a bug report or Discord message makes problems far easier to track down.
+> For more detail, start with `YAKUDA_LOG_LEVEL=DEBUG yakuda-connect`.
+
+---
+
+### Method 4: Manual Installation (From Source)
+
+If you prefer to clone the repository and run the application directly from the source code, execute these commands in your terminal sequence:
+
+1. Clone the repository[cite: 2]:
+```bash
+git clone https://github.com/yakuda-stack/yakuda-connect.git
+```
+
+2. Change to the project directory[cite: 2]:
+```bash
+cd yakuda-connect
+```
+
+3. Run the installation script[cite: 2]:
+```bash
+bash install.sh
+```
 
 ---
 
@@ -263,87 +366,6 @@ yakuda-connect is a free hobby project — built by VR enthusiasts, for VR enthu
 </table>
 
 > 💡 **Tip:** Both buttons are also built right into the app — Settings → **Community & Updates**, where you can also check for new versions with one click.
-
----
-
-## 📦 Installation & Setup
-
-Whether you are a Linux newcomer or a power user, there are several straightforward ways to get `yakuda-connect` up and running.
-
-### Method 1: AUR (Recommended for Arch, CachyOS, EndeavourOS, Manjaro)
-
-`yakuda-connect` is available in the [AUR](https://aur.archlinux.org/packages/yakuda-connect). Install it with your favourite AUR helper — all dependencies are pulled in automatically, and you get updates through your normal system update:
-
-```bash
-yay -S yakuda-connect
-```
-
-or
-
-```bash
-paru -S yakuda-connect
-```
-
-Then launch it from your application menu or simply run:
-
-```bash
-yakuda-connect
-```
-
-### Method 2: Express Installation (AppImage & Terminal)
-
-Choose one of the two options below to get started as quickly as possible:
-
-#### Option A: One-Click Terminal Command (Fastest Method)
-Open your terminal and paste the following command. It will automatically download the setup script, install the tool, and launch it immediately:
-
-```bash
-bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh) && yakuda-connect
-```
-
-#### Option B: Manual AppImage (No Installation Required)
-1. Navigate to the **Releases** section on GitHub.
-2. Download `yakuda-connect-<version>-x86_64.AppImage`. One file for every
-   system: it works with **FUSE 3** (Arch, CachyOS, Fedora 40+, Ubuntu 24.04+,
-   Bazzite, SteamOS) **and FUSE 2** (Ubuntu 22.04 and earlier, Debian 11/12).
-   `libfuse2` does **not** need to be installed — libfuse3 is linked statically
-   into the file.
-3. Make the file executable:
-   - **Via GUI:** Right-click the file -> Properties -> Permissions -> Enable "Allow executing file as program".
-   - **Via Terminal:** `chmod +x yakuda-connect-*.AppImage`
-4. Double-click the file to launch the dashboard!
-
-> **If it won't start** with an error mentioning `fusermount` or `/dev/fuse`
-> (containers, hardened kernels, FUSE disabled), run it unpacked instead — this
-> works on every system, it is just slightly slower to start:
-> ```bash
-> ./yakuda-connect-*.AppImage --appimage-extract-and-run
-> ```
-
-> **Something not working?** The app writes a log to `~/.cache/yakuda-connect/app.log`.
-> Attaching it to a bug report or Discord message makes problems far easier to track down.
-> For more detail, start with `YAKUDA_LOG_LEVEL=DEBUG yakuda-connect`.
-
----
-
-### Method 3: Manual Installation (From Source)
-
-If you prefer to clone the repository and run the application directly from the source code, execute these commands in your terminal sequence:
-
-1. Clone the repository[cite: 2]:
-```bash
-git clone https://github.com/yakuda-stack/yakuda-connect.git
-```
-
-2. Change to the project directory[cite: 2]:
-```bash
-cd yakuda-connect
-```
-
-3. Run the installation script[cite: 2]:
-```bash
-bash install.sh
-```
 
 ---
 

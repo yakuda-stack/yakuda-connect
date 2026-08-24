@@ -28,8 +28,15 @@ import tempfile
 import traceback
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# GENAU dieselben Pfade wie starter.py — nicht mehr.
+#
+# Hier stand frueher zusaetzlich ROOT/"ui". Damit fand ein Modul unter ui/ ein
+# Geschwistermodul auch mit einem schlichten "import theme" — im echten Start
+# ueber starter.py aber nicht, weil dort nur core/ dazukommt. Der Smoke-Test
+# war also nachsichtiger als die Wirklichkeit und liess einen
+# ModuleNotFoundError durch, der beim Nutzer sofort zuschlug.
 sys.path.insert(0, str(ROOT / "core"))
-sys.path.insert(0, str(ROOT / "ui"))
+sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
