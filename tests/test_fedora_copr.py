@@ -134,3 +134,51 @@ def test_copr_dialog_texts_exist():
         assert "{name}" in data["fedora_copr_text"]
         # Die alten Kopier-Texte sind weg — sonst schleppt man tote Strings mit.
         assert "fedora_xrizer_text" not in data
+
+
+# --------------------------------------------------------------------------- #
+#  6. Bezugsquellen je Komponente
+# --------------------------------------------------------------------------- #
+def test_xrizer_hat_zwei_quellen_auf_fedora():
+    """
+    GitHub steht VORNE und ist damit Vorauswahl. Grund: das COPR laeuft
+    regelmaessig in Zeitueberschreitungen und soll laut eigener Projektseite
+    verschwinden, sobald die Pakete in Fedora sind.
+    """
+    quellen = programs.component_sources("dnf", "xrizer")
+    assert quellen == [programs.SOURCE_GITHUB, programs.SOURCE_COPR]
+
+
+def test_normale_fedora_pakete_haben_eine_quelle():
+    assert programs.component_sources("dnf", "WiVRn / Monado") == ["dnf"]
+    assert programs.component_sources("dnf", "opencomposite") == ["dnf"]
+
+
+def test_arch_bleibt_beim_helper():
+    assert programs.component_sources("yay", "opencomposite") == ["yay"]
+    assert programs.component_sources("paru", "opencomposite") == ["paru"]
+    # xrizer darf auch auf Arch von GitHub kommen, falls der AUR-Build klemmt
+    assert programs.component_sources("yay", "xrizer") == ["yay", programs.SOURCE_GITHUB]
+
+
+def test_ohne_paketverwaltung_keine_quelle():
+    """Ubuntu/Debian: der Tab zeigt nur den Status, es gibt nichts zu klicken."""
+    assert programs.component_sources("", "WiVRn") == []
+    assert programs.component_sources("native", "WiVRn") == []
+
+
+def test_jede_quelle_hat_einen_klarnamen():
+    """Sonst steht im Dropdown die rohe Kennung."""
+    for method in ("dnf", "yay", "paru"):
+        for name in ("xrizer", "opencomposite", "WiVRn / Monado"):
+            for src in programs.component_sources(method, name):
+                assert src in programs.SOURCE_LABELS, src
+
+
+def test_zeilentexte_vorhanden():
+    import json
+    for lang in ("en", "de"):
+        data = json.loads((ROOT / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+        for key in ("install_row_btn", "install_row_tip", "install_source_tip"):
+            assert key in data, f"{key} fehlt in {lang}.json"
+        assert "{name}" in data["install_row_tip"]

@@ -127,7 +127,7 @@ class UpdateWorker(QThread):
                                            timeout=15).returncode == 0]
             dnf_pkgs = " ".join(installed or names)
         except Exception:
-            dnf_pkgs = "wivrn wivrn-dashboard opencomposite"
+            dnf_pkgs = "wivrn opencomposite"
 
         cmds = {
             "yay":  "yay -Syu",

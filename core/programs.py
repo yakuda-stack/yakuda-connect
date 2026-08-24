@@ -72,21 +72,24 @@ INSTALL_PACKAGES = {
 #     bei Bedarf selbst; ein eigenes lib32-Paket wie im AUR gibt es nicht.
 INSTALL_DNF = {
     "WiVRn / Monado": ["wivrn"],
-    "WiVRn Dashboard": ["wivrn-dashboard"],
     "opencomposite": ["opencomposite"],
 }
 
-# WICHTIG: 'wivrn' zieht 'wivrn-dashboard' NICHT als Abhaengigkeit mit — die
-# Requires-Liste des Fedora-RPMs enthaelt es schlicht nicht. Wer nur 'wivrn'
-# installiert, hat einen Server ohne Oberflaeche. Deshalb steht das Dashboard
-# hier als eigene Zeile und wird ausdruecklich mitinstalliert.
+# Warum steht 'wivrn-dashboard' hier NICHT, obwohl es das RPM gibt?
+#   * 'wivrn' zieht es nicht als Abhaengigkeit mit — es waere also eine eigene
+#     Zeile noetig, siehe https://packages.fedoraproject.org/pkgs/wivrn/wivrn-dashboard/
+#   * das Dashboard macht auf Fedora Aerger (zweite Oberflaeche, die dieselbe
+#     config.json und denselben Server anfasst)
+#   * und es waere doppelt gemoppelt: wer yakuda-connect nutzt, hat die
+#     Steuerung schon.
+# Auf Arch bleibt es in INSTALL_PACKAGES — dort ist es Teil der ueblichen
+# AUR-Installation und niemand wuerde es vermissen wollen.
 
-# Rueckfall-Erkennung ueber die Binary im PATH: wer WiVRn oder das Dashboard
-# selbst gebaut oder aus einem COPR geholt hat, hat kein passendes RPM — die
-# Statuszeile darf dann trotzdem nicht "fehlt" behaupten.
+# Rueckfall-Erkennung ueber die Binary im PATH: wer WiVRn selbst gebaut oder
+# aus einem COPR geholt hat, hat kein passendes RPM — die Statuszeile darf
+# dann trotzdem nicht "fehlt" behaupten.
 DNF_BINARY_FALLBACK = {
     "WiVRn / Monado": "wivrn-server",
-    "WiVRn Dashboard": "wivrn-dashboard",
 }
 
 # --------------------------------------------------------------------------- #
@@ -104,9 +107,63 @@ DNF_BINARY_FALLBACK = {
 # uebersprungen, der Rest der Installation laeuft normal weiter.
 FEDORA_XRIZER_COPR = "@xr-sig/xrizer"
 
+# Belegt auf der COPR-Projektseite selbst: dort steht als Steam-Startoption
+#   VR_OVERRIDE=/run/host/usr/lib64/xrizer/runtime %command%
+# Das /run/host davor ist nur die Sicht aus dem Steam-Container heraus; auf dem
+# System liegt die Runtime also unter /usr/lib64/xrizer/runtime — eine Ebene
+# unter dem Ordner, den wir kannten. Genau dafuer gibt es resolve_compat_root().
+FEDORA_XRIZER_RUNTIME = "/usr/lib64/xrizer/runtime"
+
+# Ebenfalls von der Projektseite: "This copr will go away after all packages
+# have been reviewed and imported into Fedora." Das COPR ist also eine
+# Zwischenloesung mit Ablaufdatum — ein Grund mehr, den GitHub-Weg als
+# gleichwertige Quelle anzubieten und nicht als Notnagel.
 INSTALL_DNF_COPR = {
     "xrizer": {"copr": FEDORA_XRIZER_COPR, "pkgs": ["xrizer"]},
 }
+
+
+# --------------------------------------------------------------------------- #
+#  Bezugsquellen je Komponente
+# --------------------------------------------------------------------------- #
+# Manche Komponenten gibt es auf mehreren Wegen. Statt eine Quelle fuer alle
+# vorzugeben, entscheidet der Nutzer pro Zeile im Installations-Tab.
+#
+# Vorauswahl ist bewusst der ERSTE Eintrag der Liste. Bei xrizer auf Fedora ist
+# das GitHub und nicht das COPR: das COPR laeuft regelmaessig in
+# Zeitueberschreitungen (Curl error 28) und soll laut Projektseite ohnehin
+# verschwinden. Wer das COPR will, waehlt es aus — dann ist es auch eine
+# bewusste Entscheidung fuer ein Fremdrepository.
+SOURCE_GITHUB = "github"
+SOURCE_COPR = "copr"
+
+SOURCE_LABELS = {
+    "dnf": "Fedora-Repos",
+    SOURCE_COPR: f"COPR {FEDORA_XRIZER_COPR}",
+    SOURCE_GITHUB: "GitHub-Release",
+    "yay": "AUR (yay)",
+    "paru": "AUR (paru)",
+    "native": "System",
+}
+
+
+def component_sources(method, name):
+    """
+    Welche Bezugsquellen hat diese Komponente? Liste von Kennungen, erste =
+    Vorauswahl. Eine leere Liste bedeutet: nichts zu installieren (z. B.
+    Ubuntu, wo nur der Status angezeigt wird).
+    """
+    if method == "dnf":
+        if name in INSTALL_DNF_COPR:
+            return [SOURCE_GITHUB, SOURCE_COPR]
+        return ["dnf"]
+    if method in ("yay", "paru"):
+        # xrizer gibt es auch auf Arch als Release-ZIP — praktisch, wenn der
+        # AUR-Build gerade klemmt.
+        if name == "xrizer":
+            return [method, SOURCE_GITHUB]
+        return [method]
+    return []
 
 
 def dnf_copr_groups():

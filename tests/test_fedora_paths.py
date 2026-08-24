@@ -164,21 +164,23 @@ def test_dateidialog_biegt_auf_runtime_um(tmp_path):
 # --------------------------------------------------------------------------- #
 #  Fedora: 'wivrn' bringt das Dashboard nicht mit
 # --------------------------------------------------------------------------- #
-def test_dashboard_ist_eigene_zeile():
+def test_dashboard_ist_auf_fedora_nicht_dabei():
     """
-    Das Fedora-RPM 'wivrn' hat 'wivrn-dashboard' NICHT in seinen Requires.
-    Wer nur wivrn installiert, hat einen Server ohne Oberflaeche — deshalb
-    muss das Dashboard ausdruecklich in der Installationsliste stehen.
+    Auf Fedora wird 'wivrn-dashboard' bewusst NICHT angeboten: das RPM zieht
+    es ohnehin nicht mit, es macht dort Aerger, und wer yakuda-connect nutzt,
+    hat die Steuerung schon. Auf Arch bleibt es Teil der AUR-Installation.
     """
     import programs
-    assert programs.INSTALL_DNF["WiVRn Dashboard"] == ["wivrn-dashboard"]
-    assert "wivrn-dashboard" not in programs.INSTALL_DNF["WiVRn / Monado"]
+    assert "WiVRn Dashboard" not in programs.INSTALL_DNF
+    for pkgs in programs.INSTALL_DNF.values():
+        assert "wivrn-dashboard" not in pkgs
+    assert programs.INSTALL_PACKAGES["WiVRn Dashboard"] == ["wivrn-dashboard"]
 
 
 def test_binary_rueckfall_fuer_selbstbau():
     import programs
-    assert programs.DNF_BINARY_FALLBACK["WiVRn Dashboard"] == "wivrn-dashboard"
     assert programs.DNF_BINARY_FALLBACK["WiVRn / Monado"] == "wivrn-server"
+    assert "WiVRn Dashboard" not in programs.DNF_BINARY_FALLBACK
 
 
 def test_hinweistext_existiert():

@@ -259,12 +259,14 @@ WIVRN_OVR_SEARCH_PATH = (
 # Deshalb reicht es nicht, den Basisordner zu kennen — siehe
 # resolve_compat_root() weiter unten.
 EXTRA_OVR_PATHS = (
+    "/usr/lib64/xrizer/runtime",                      # Fedora COPR (Sollpfad)
     "/usr/lib64/xrizer",                              # Fedora (COPR @xr-sig/xrizer)
     "/usr/lib/xrizer",
+    "/usr/lib64/opencomposite/runtime",               # Fedora RPM (Sollpfad)
     "/usr/lib64/opencomposite",                       # Fedora (offizielle Repos)
     "/usr/lib/opencomposite",
     "/usr/lib64/OpenComposite",
-    os.path.join(HOME, ".local/share/xrizer"),        # Selbstbau
+    os.path.join(HOME, ".local/share/xrizer"),        # Selbstbau / GitHub-Release
     os.path.join(HOME, ".local/share/opencomposite"),
 )
 

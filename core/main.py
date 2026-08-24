@@ -97,7 +97,8 @@ from backup_manager import (create_vr_backup, restore_vr_environment,
                             sync_backup_from_github)
 import vr_autotune as autotune
 from programs import (INSTALL_PACKAGES, INSTALL_DNF, INSTALL_DNF_COPR,
-                      DNF_BINARY_FALLBACK, dnf_copr_groups, dnf_copr_for_package,
+                      DNF_BINARY_FALLBACK, SOURCE_LABELS, SOURCE_COPR, SOURCE_GITHUB,
+                      component_sources, dnf_copr_groups, dnf_copr_for_package,
                       TOOLS_APPS, TOOLS_OSC)
 import games as games_db
 import openxr_manager as oxr
@@ -1688,15 +1689,63 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         return dict(INSTALL_PACKAGES)         # yay/paru
 
     def _rebuild_package_rows(self):
-        """Baut die Status-Zeilen im Installations-Tab passend zur gewählten Methode neu auf."""
+        """
+        Baut die Status-Zeilen im Installations-Tab neu auf.
+
+        Jede Zeile bekommt:
+          Status | (Quelle) | [Installieren]
+
+        Das Dropdown erscheint nur, wenn es fuer diese Komponente wirklich
+        mehrere Wege gibt — bei einer einzigen Quelle waere es nur Klickarbeit
+        ohne Auswahl. Der Knopf daneben installiert genau diese eine
+        Komponente; der grosse Knopf unten macht weiterhin alles Fehlende auf
+        einmal.
+        """
         layout = self.ui.pkg_layout
         while layout.rowCount():
             layout.removeRow(0)
         self.prog_labels = {}
-        for name in self._package_groups_for(self._install_method()).keys():
+        self.pkg_source_combos = {}
+        self.pkg_row_buttons = {}
+
+        method = self._install_method()
+        for name in self._package_groups_for(method).keys():
             lbl = QLabel("…")
             self.prog_labels[name] = lbl
-            layout.addRow(QLabel(f"{name}:"), lbl)
+
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
+            row_layout.addWidget(lbl, 1)
+
+            sources = component_sources(method, name)
+            if len(sources) > 1:
+                combo = QComboBox()
+                combo.setFixedHeight(24)
+                for src in sources:
+                    combo.addItem(SOURCE_LABELS.get(src, src), src)
+                combo.setToolTip(tr("install_source_tip"))
+                self.pkg_source_combos[name] = combo
+                row_layout.addWidget(combo)
+
+            if sources:
+                btn = QPushButton(tr("install_row_btn"))
+                btn.setFixedHeight(24)
+                btn.setToolTip(tr("install_row_tip").format(name=name))
+                btn.clicked.connect(lambda _=False, n=name: self.install_component(n))
+                self.pkg_row_buttons[name] = btn
+                row_layout.addWidget(btn)
+
+            layout.addRow(QLabel(f"{name}:"), row)
+
+    def _selected_source(self, name):
+        """Gewaehlte Quelle einer Komponente — oder die Vorauswahl."""
+        combo = getattr(self, "pkg_source_combos", {}).get(name)
+        if combo is not None:
+            return combo.currentData()
+        sources = component_sources(self._install_method(), name)
+        return sources[0] if sources else ""
 
     def _on_install_method_changed(self, *args):
         """Dropdown gewechselt -> Zeilen neu aufbauen und Status prüfen."""
@@ -1982,6 +2031,52 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.update_worker.finished_signal.connect(self.on_installation_finished)
         self.update_worker.start()
 
+    def install_component(self, name):
+        """
+        Nur diese eine Komponente installieren — ueber die in ihrer Zeile
+        gewaehlte Quelle.
+
+        Bewusst getrennt vom grossen Knopf unten: wer nur xrizer nachziehen
+        will, soll nicht den ganzen Durchlauf ueber alle Pakete anstossen
+        muessen (und im Fehlerfall nicht raten, welches Paket geklemmt hat).
+        """
+        if getattr(self, "worker", None) and self.worker.isRunning():
+            return
+        source = self._selected_source(name)
+        if not source:
+            return
+
+        if source == SOURCE_GITHUB:
+            # Nur xrizer hat aktuell einen GitHub-Weg; sollte spaeter etwas
+            # dazukommen, faellt es hier auf.
+            if name != "xrizer":
+                log.warning("GitHub-Quelle fuer '%s' ist nicht vorgesehen.", name)
+                return
+            self.start_xrizer_github_download()
+            return
+
+        pkgs = self._package_groups_for(self._install_method()).get(name, [])
+        if not pkgs:
+            return
+
+        copr_map = {}
+        if source == SOURCE_COPR:
+            # Die Auswahl im Dropdown IST die Zustimmung zum Fremdrepository —
+            # eine zusaetzliche Rueckfrage waere hier nur noch laestig.
+            copr = dnf_copr_for_package(pkgs[0])
+            if copr:
+                copr_map = {pkg: copr for pkg in pkgs}
+
+        helper = "dnf" if source in ("dnf", SOURCE_COPR) else source
+        self.ui.btn_install.setEnabled(False)
+        self._last_install_method = self._install_method()
+        self._last_install_pkgs = list(pkgs)
+        self._xrizer_github_after_install = False
+        self.worker = InstallWorker(pkgs, helper=helper, copr_map=copr_map)
+        self.worker.status_signal.connect(self.ui.lbl_worker_status.setText)
+        self.worker.finished_signal.connect(self.on_installation_finished)
+        self.worker.start()
+
     def start_package_installation(self):
         """Install-Knopf: installiert die WiVRn-Runtime über die gewählte Methode."""
         method = self._install_method()
@@ -2014,6 +2109,13 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             asked = {}
             github_wanted = False
             for name, pkg in self._pending_dnf_copr_packages():
+                # Was in der Zeile ausgewaehlt ist, gilt auch fuer den grossen
+                # Knopf — sonst wuerde er die Auswahl des Nutzers stillschweigend
+                # uebergehen.
+                source = self._selected_source(name)
+                if source == SOURCE_GITHUB:
+                    github_wanted = True
+                    continue
                 copr = dnf_copr_for_package(pkg)
                 if copr is None:
                     continue
@@ -2021,7 +2123,6 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                     asked[copr] = self._confirm_fedora_copr(name, copr)
                 choice = asked[copr]
                 if choice == "github":
-                    # Ohne Repo, ohne root — laeuft nach den Paketen an.
                     github_wanted = True
                     continue
                 if choice != "copr":
