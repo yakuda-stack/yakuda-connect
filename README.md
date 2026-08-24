@@ -72,8 +72,8 @@ These are all of them. Only the first two happen without you clicking anything.
 | --- | --- | --- | --- |
 | `raw.githubusercontent.com` | ~1.5 s after start, automatic | Reads one file and compares its version number with the installed one | `core/install_worker.py` |
 | `raw.githubusercontent.com` | ~1.5 s after start, automatic | Version of the game database (`config/games.json`) | `core/games.py` |
-| `api.github.com` | Only on click | Finds the latest WiVRn release (APK) and AppImage tools | `core/main.py`, `core/appimage_installer.py` |
-| `github.com` / `codeload.github.com` | Only on click | Downloads AppImages, the WayVR design, the reference backup | `core/appimage_installer.py`, `core/backup_manager.py` |
+| `api.github.com` | Only on click | Finds the latest WiVRn release (APK), AppImage tools and the newest xrizer release | `core/main.py`, `core/appimage_installer.py`, `core/xrizer_github.py` |
+| `github.com` / `codeload.github.com` | Only on click | Downloads AppImages, the WayVR design, the reference backup, the xrizer release ZIP (into `~/.local/share/xrizer`, no root) | `core/appimage_installer.py`, `core/backup_manager.py`, `core/xrizer_github.py` |
 | `shared.fastly.steamstatic.com` | When opening the Games tab | Cover images for detected Steam games, cached locally | `core/games.py` |
 
 Nothing is uploaded to any of these. Every request is a plain download.
@@ -166,8 +166,8 @@ Das sind alle. Nur die ersten beiden passieren, ohne dass du etwas anklickst.
 | --- | --- | --- | --- |
 | `raw.githubusercontent.com` | ca. 1,5 s nach dem Start, automatisch | Liest eine Datei und vergleicht die Versionsnummer darin mit der installierten | `core/install_worker.py` |
 | `raw.githubusercontent.com` | ca. 1,5 s nach dem Start, automatisch | Version der Spiele-Datenbank (`config/games.json`) | `core/games.py` |
-| `api.github.com` | Nur auf Klick | Findet das neueste WiVRn-Release (APK) und AppImage-Tools | `core/main.py`, `core/appimage_installer.py` |
-| `github.com` / `codeload.github.com` | Nur auf Klick | Lädt AppImages, das WayVR-Design, das Referenz-Backup | `core/appimage_installer.py`, `core/backup_manager.py` |
+| `api.github.com` | Nur auf Klick | Findet das neueste WiVRn-Release (APK), AppImage-Tools und das neueste xrizer-Release | `core/main.py`, `core/appimage_installer.py`, `core/xrizer_github.py` |
+| `github.com` / `codeload.github.com` | Nur auf Klick | Lädt AppImages, das WayVR-Design, das Referenz-Backup, das xrizer-Release-ZIP (nach `~/.local/share/xrizer`, ohne Root) | `core/appimage_installer.py`, `core/backup_manager.py`, `core/xrizer_github.py` |
 | `shared.fastly.steamstatic.com` | Beim Öffnen des Games-Tabs | Coverbilder erkannter Steam-Spiele, lokal zwischengespeichert | `core/games.py` |
 
 An keine dieser Adressen wird etwas hochgeladen. Jede Anfrage ist ein reiner Download.

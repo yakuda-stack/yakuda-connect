@@ -85,7 +85,8 @@ from tabs.games_mixin import GamesTabMixin
 from tabs.tools_mixin import ToolsTabMixin
 
 # Interne Importe (liegen im selben Ordner 'core')
-from install_worker import (InstallWorker, UpdateWorker, AppUpdateCheckWorker, AppUpdateWorker)
+from install_worker import (InstallWorker, UpdateWorker, AppUpdateCheckWorker,
+                            AppUpdateWorker, XrizerGithubWorker)
 import appimage_installer as appimg
 import vr_environment as venv
 import wivrn_dashboard as wivrn_dash
@@ -1804,10 +1805,59 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         box.setWindowTitle(tr("fedora_copr_title").format(name=name))
         box.setText(tr("fedora_copr_text").format(name=name, copr=copr))
         yes_btn = box.addButton(tr("fedora_copr_yes"), QMessageBox.AcceptRole)
+        github_btn = None
+        if name == "xrizer":
+            github_btn = box.addButton(tr("fedora_copr_github"), QMessageBox.ActionRole)
         box.addButton(tr("fedora_copr_no"), QMessageBox.RejectRole)
         box.setDefaultButton(yes_btn)
         box.exec()
-        return box.clickedButton() == yes_btn
+        if github_btn is not None and box.clickedButton() == github_btn:
+            return "github"
+        return "copr" if box.clickedButton() == yes_btn else "skip"
+
+    def start_xrizer_github_download(self):
+        """
+        xrizer ohne COPR installieren — direkt aus dem GitHub-Release.
+
+        Gedacht fuer den Fall, dass copr.fedorainfracloud.org kriecht oder gar
+        nicht antwortet: dnf bricht dann nach Minuten mit
+        'Curl error (28): Timeout was reached' ab. Der Download hier braucht
+        weder ein Repository noch root und landet in ~/.local/share/xrizer.
+        """
+        if getattr(self, "xrizer_worker", None) and self.xrizer_worker.isRunning():
+            return
+        self.ui.btn_install.setEnabled(False)
+        self.xrizer_worker = XrizerGithubWorker()
+        self.xrizer_worker.status_signal.connect(self.ui.lbl_worker_status.setText)
+        self.xrizer_worker.finished_signal.connect(self._on_xrizer_github_done)
+        self.xrizer_worker.start()
+
+    def _on_xrizer_github_done(self, ok, path_or_error, tag):
+        self.ui.btn_install.setEnabled(True)
+        if not ok:
+            self.ui.lbl_worker_status.setText(
+                tr("xrizer_github_failed").format(error=path_or_error))
+            QMessageBox.warning(self, tr("fedora_copr_title").format(name="xrizer"),
+                                tr("xrizer_github_failed").format(error=path_or_error))
+            return
+
+        self.ui.lbl_worker_status.setText(
+            tr("xrizer_github_ok").format(tag=tag, path=path_or_error))
+
+        # WiVRn sucht ~/.local/share/xrizer NICHT von allein ab. Ohne Eintrag
+        # in der config.json waere der Download also wirkungslos — deshalb die
+        # Rueckfrage, statt es stillschweigend zu setzen oder es zu lassen.
+        mode, current = venv.current_openvr_compat()
+        if mode != venv.OPENVR_DEFAULT and current == path_or_error:
+            return
+        answer = QMessageBox.question(
+            self, tr("xrizer_github_use_title"),
+            tr("xrizer_github_use_text").format(path=path_or_error),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer == QMessageBox.Yes:
+            venv.set_openvr_compat("path", path_or_error)
+            if hasattr(self, "refresh_openvr_ui"):
+                self.refresh_openvr_ui()
 
     def _pending_dnf_copr_packages(self):
         """
@@ -1962,16 +2012,27 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             # COPR-Komponenten (xrizer) hinten anhaengen — je Repository einmal
             # nachfragen. 'Nein' ueberspringt nur diesen Eintrag.
             asked = {}
+            github_wanted = False
             for name, pkg in self._pending_dnf_copr_packages():
                 copr = dnf_copr_for_package(pkg)
                 if copr is None:
                     continue
                 if copr not in asked:
                     asked[copr] = self._confirm_fedora_copr(name, copr)
-                if not asked[copr]:
+                choice = asked[copr]
+                if choice == "github":
+                    # Ohne Repo, ohne root — laeuft nach den Paketen an.
+                    github_wanted = True
+                    continue
+                if choice != "copr":
                     continue
                 packages_to_process.append(pkg)
                 copr_map[pkg] = copr
+
+            if github_wanted and not packages_to_process:
+                self.start_xrizer_github_download()
+                return
+            self._xrizer_github_after_install = github_wanted
 
             if not packages_to_process:
                 self.ui.lbl_worker_status.setText(tr("install_check_done"))
@@ -2031,8 +2092,24 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         m = getattr(self, "_last_install_method", "")
         if success and m:
             venv.set_runtime_method(m)
+        if m == "dnf" and getattr(self, "_xrizer_github_after_install", False):
+            self._xrizer_github_after_install = False
+            self.start_xrizer_github_download()
+            return
         if m == "dnf":
             missing = self._dnf_packages_still_missing()
+            # Genau der Fall aus dem Fehlerbericht: das COPR antwortet mit
+            # weniger als 1000 Bytes/Sekunde, dnf gibt nach Minuten auf. Statt
+            # den Nutzer damit sitzen zu lassen, wird hier der Weg ueber
+            # GitHub angeboten.
+            if "xrizer" in missing:
+                answer = QMessageBox.question(
+                    self, tr("xrizer_copr_failed_title"),
+                    tr("xrizer_copr_failed_text"),
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+                if answer == QMessageBox.Yes:
+                    self.start_xrizer_github_download()
+                    return
             if missing:
                 log.warning("dnf-Installation unvollstaendig: %s", ", ".join(missing))
                 # Nicht direkt ins Label schreiben: check_system_packages()

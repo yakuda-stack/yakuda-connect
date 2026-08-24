@@ -447,3 +447,45 @@ class CoverDownloadWorker(QThread):
                 count += 1
                 self.cover_ready.emit(str(appid), path)
         self.finished_signal.emit(count)
+
+
+class XrizerGithubWorker(QThread):
+    """
+    Laedt xrizer von GitHub und entpackt es nach ~/.local/share/xrizer.
+
+    Kein Terminalfenster, kein sudo: es wird nur in das eigene
+    Benutzerverzeichnis geschrieben. Deshalb laeuft das hier im Hintergrund
+    mit Fortschritt in der Statuszeile statt in einer Konsole.
+    """
+    status_signal = Signal(str)
+    # (erfolg, pfad_oder_fehlertext, tag)
+    finished_signal = Signal(bool, str, str)
+
+    def __init__(self):
+        super().__init__()
+        self._cancel = False
+
+    def cancel(self):
+        self._cancel = True
+
+    def run(self):
+        import xrizer_github as xg
+        try:
+            def progress(done, total):
+                if total:
+                    self.status_signal.emit(
+                        f"Lade xrizer ... {done * 100 // total} % "
+                        f"({done // 1024 // 1024} von {total // 1024 // 1024} MB)")
+                else:
+                    self.status_signal.emit(f"Lade xrizer ... {done // 1024} KB")
+
+            path, tag = xg.install(progress=progress,
+                                   status=self.status_signal.emit,
+                                   cancelled=lambda: self._cancel)
+            self.finished_signal.emit(True, path, tag)
+        except xg.XrizerError as exc:
+            log.warning("xrizer-Download fehlgeschlagen: %s", exc)
+            self.finished_signal.emit(False, str(exc), "")
+        except Exception as exc:  # noqa: BLE001 — der Nutzer soll etwas lesen koennen
+            log.exception("xrizer-Download abgebrochen")
+            self.finished_signal.emit(False, str(exc), "")
