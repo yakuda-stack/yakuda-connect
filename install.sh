@@ -66,6 +66,60 @@ apt_has_package() {
     apt-cache policy "$1" 2>/dev/null | grep -qE "Kandidat|Candidate"
 }
 
+# Bibliotheken, die das Qt-Plattform-Plugin "xcb" zur Laufzeit braucht.
+#
+# Wichtig nur beim pip-Weg: das PySide6-Wheel bringt die Qt-Bibliotheken selbst
+# mit, aber NICHT die X11-Bibliotheken des Systems. Auf Ubuntu 24.04 und damit
+# auf Linux Mint 22.x fehlt in der Standardinstallation genau eine davon —
+# libxcb-cursor0. Qt sagt dann nur "Could not load the Qt platform plugin
+# 'xcb' ... even though it was found" und bricht mit Speicherabzug ab.
+# Ein Distro-Paket wuerde diese Abhaengigkeit selbst mitziehen; pip kann das
+# nicht wissen.
+QT_XCB_LIBS="libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 libxcb-icccm4
+             libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0
+             libxcb-shape0 libxcb-xkb1 libegl1 libgl1"
+
+install_qt_xcb_libs() {
+    [ "$PM" = "apt" ] || return 0
+    local wanted=""
+    for lib in $QT_XCB_LIBS; do
+        # Namen unterscheiden sich zwischen Debian-Ausgaben; nur installieren,
+        # was es hier auch gibt, sonst bricht apt ueber einen Tippfehler in
+        # einer fremden Ausgabe ab.
+        apt_has_package "$lib" && wanted="$wanted $lib"
+    done
+    [ -n "$wanted" ] || return 0
+    echo "[Info] Installiere X11-Bibliotheken fuer Qt ($(echo "$wanted" | wc -w) Pakete)..."
+    # Bewusst ohne Anfuehrungszeichen: die Liste soll in einzelne
+    # Paketnamen zerfallen.
+    # shellcheck disable=SC2086
+    pm_install $wanted || true
+}
+
+# Laesst sich das xcb-Plugin wirklich laden? Prueft die Bibliotheken, ohne ein
+# Fenster zu oeffnen — das Skript laeuft ja im Terminal.
+check_qt_xcb() {
+    local plugin missing
+    plugin="$("$PY_BIN" - <<'PYEOF' 2>/dev/null
+import os
+try:
+    import PySide6
+    print(os.path.join(os.path.dirname(PySide6.__file__),
+                       "Qt", "plugins", "platforms", "libqxcb.so"))
+except Exception:
+    pass
+PYEOF
+)"
+    [ -n "$plugin" ] && [ -f "$plugin" ] || return 0     # Distro-Paket: nichts zu pruefen
+    missing="$(ldd "$plugin" 2>/dev/null | awk '/not found/{print $1}' | sort -u)"
+    [ -n "$missing" ] || return 0
+    echo "[Warnung] Dem Qt-Plugin 'xcb' fehlen noch Bibliotheken:"
+    echo "$missing" | sed 's/^/            /'
+    echo "          Ohne sie startet die Oberflaeche nicht. Auf Debian/Ubuntu/Mint:"
+    echo "              sudo apt install libxcb-cursor0"
+    return 1
+}
+
 # --- Grundwerkzeuge pruefen ---
 if ! command -v git &>/dev/null; then
     echo "[Info] git wird benoetigt – installiere es..."
@@ -175,6 +229,9 @@ if ! have_pyside; then
     sudo "$VENV_DIR/bin/python3" -m pip install "PySide6>=6.5" setproctitle
     PY_BIN="$VENV_DIR/bin/python3"
 
+    # Das Wheel bringt Qt mit, aber nicht die X11-Bibliotheken des Systems.
+    install_qt_xcb_libs
+
     if ! have_pyside; then
         echo "[Fehler] PySide6 konnte nicht installiert werden."
         echo "         Alternative: das AppImage von"
@@ -183,6 +240,14 @@ if ! have_pyside; then
     fi
 fi
 echo "[Info] PySide6 OK (Interpreter: $PY_BIN)"
+
+# Letzter Zwischenstopp vor dem Kopieren: laesst sich die Oberflaeche spaeter
+# ueberhaupt darstellen? Lieber hier eine Warnung mit dem fehlenden Paketnamen
+# als spaeter ein "Speicherabzug geschrieben" ohne Erklaerung.
+if ! check_qt_xcb; then
+    install_qt_xcb_libs
+    check_qt_xcb || true
+fi
 
 # --- Quellcode holen (immer aktueller main-Branch) ---
 echo "[1/4] Lade aktuellen Stand herunter..."
