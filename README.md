@@ -12,12 +12,11 @@
 
 | System | Status | Notes |
 |---|---|---|
-| **Arch-based (CachyOS)** | ✅ Tested — primary development system | Full feature set: AUR installation, all components |
-| **Fedora** | ✅ Tested | Components come from the Fedora repos; xrizer from the COPR `@xr-sig/xrizer` or the GitHub release. The WiVRn dashboard is deliberately not offered here — yakuda-connect already provides the controls |
-| Other Arch derivatives (EndeavourOS, Manjaro) | 🟡 Should work | Same package sources as CachyOS, but not tested by us |
-| Debian / Ubuntu | 🟡 Limited | No native WiVRn package — the app shows the status and points to building it yourself |
+| **Arch-based** | ✅ Tested — primary development system | Full feature set: AUR installation, all components |
+| **Fedora-based** | ✅ Tested | Components come from the Fedora repos; xrizer from the COPR `@xr-sig/xrizer` or the GitHub release. The WiVRn dashboard is deliberately not offered here — yakuda-connect already provides the controls |
+| Debian / Ubuntu / Linux Mint | 🟡 Limited | No native WiVRn package — the app shows the status and points to building it yourself |
 
-Getestet wurde auf **Arch-basiert (CachyOS)** — dem Haupt-Entwicklungssystem — und auf **Fedora**. Andere Arch-Ableger sollten laufen, sind von uns aber nicht geprüft.
+Getestet wurde auf **Arch-basierten** Systemen — dem Haupt-Entwicklungssystem — und auf **Fedora-basierten** Systemen.
 
 ### 📸 Interface Preview
 
