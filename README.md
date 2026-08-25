@@ -16,8 +16,6 @@
 | **Fedora-based** | ✅ Tested | Components come from the Fedora repos; xrizer from the COPR `@xr-sig/xrizer` or the GitHub release. The WiVRn dashboard is deliberately not offered here — yakuda-connect already provides the controls |
 | Debian / Ubuntu / Linux Mint | 🟡 Limited | No native WiVRn package — the app shows the status and points to building it yourself |
 
-Getestet wurde auf **Arch-basierten** Systemen — dem Haupt-Entwicklungssystem — und auf **Fedora-basierten** Systemen.
-
 ### 📸 Interface Preview
 
 <table>
@@ -243,104 +241,6 @@ The switch at the bottom left of the sidebar turns on extra technical informatio
 
 ---
 
-## 🔒 Datenschutz & Sicherheit
-
-Alle Angaben stammen aus dem Quellcode, und zu jeder Aussage steht die Datei dabei, in der sie überprüfbar ist. Findest du einen Unterschied zwischen diesem Abschnitt und dem Code, ist das ein Fehler — bitte melden.
-
-### Kurzfassung
-
-| Frage | Antwort |
-| --- | --- |
-| Telemetrie? | **Keine.** Keine Nutzungsdaten, keine Ereignisse, kein Absturzbericht. |
-| Analytics? | **Keine.** Im gesamten Code ist kein Analytics-SDK vorhanden. |
-| Werden Nutzungsdaten gesammelt? | **Nein.** Nichts über deine Nutzung wird aufgezeichnet oder übertragen. |
-| Daten an einen Server? | **Es gibt keinen Server.** Ein yakuda-connect-Backend existiert nicht. |
-| Konto / Cloud? | **Nicht vorhanden.** Kein Login, kein Konto, kein Cloud-Dienst. |
-| Kennung / Fingerprint? | **Keine.** Anfragen tragen nur `User-Agent: yakuda-connect` — keine ID, keine Hardware- oder Systemdaten. |
-| Wird ein Port geöffnet? | **Nein.** yakuda-connect lauscht auf keinem Port (im Code wird nirgends ein Socket erzeugt). |
-| Wohin geht das Log? | `~/.cache/yakuda-connect/app.log` — nur lokal. Es verlässt den Rechner nur, wenn *du* es kopierst oder speicherst. |
-
-### Ausgehende Netzwerkverbindungen
-
-Das sind alle. Nur die ersten beiden passieren, ohne dass du etwas anklickst.
-
-| Host | Wann | Zweck | Quelle |
-| --- | --- | --- | --- |
-| `raw.githubusercontent.com` | ca. 1,5 s nach dem Start, automatisch | Liest eine Datei und vergleicht die Versionsnummer darin mit der installierten | `core/install_worker.py` |
-| `raw.githubusercontent.com` | ca. 1,5 s nach dem Start, automatisch | Version der Spiele-Datenbank (`config/games.json`) | `core/games.py` |
-| `api.github.com` | Nur auf Klick | Findet das neueste WiVRn-Release (APK), AppImage-Tools und das neueste xrizer-Release | `core/main.py`, `core/appimage_installer.py`, `core/xrizer_github.py` |
-| `github.com` / `codeload.github.com` | Nur auf Klick | Lädt AppImages, das WayVR-Design, das Referenz-Backup, das xrizer-Release-ZIP (nach `~/.local/share/xrizer`, ohne Root) | `core/appimage_installer.py`, `core/backup_manager.py`, `core/xrizer_github.py` |
-| `shared.fastly.steamstatic.com` | Beim Öffnen des Games-Tabs | Coverbilder erkannter Steam-Spiele, lokal zwischengespeichert | `core/games.py` |
-
-An keine dieser Adressen wird etwas hochgeladen. Jede Anfrage ist ein reiner Download.
-
-**Was empfangen wird:** Release-Informationen (JSON) von der GitHub-API, die von dir angeforderten `.AppImage`-/`.apk`-/`.tar.gz`-Dateien, die Spiele-Datenbank und Coverbilder. Nach dem Download wird nichts automatisch ausgeführt; AppImages werden vor der Installation als ELF-64-Binärdatei geprüft (`core/vrcvideocacher_install.py`, `core/vr_environment.py`).
-
-**Für yakuda-connect selbst wird kein Port geöffnet.** Der Firewall-Knopf gibt Ports für `wivrn-server` frei — siehe die Tabelle unten.
-
-### Ports
-
-| Port | Protokoll | Benutzt von | Zweck |
-| --- | --- | --- | --- |
-| 9757 | TCP + UDP | `wivrn-server` | Die Verbindung zwischen PC und VR-Headset |
-| 5353 | UDP (mDNS) | `avahi` / `wivrn-server` | Damit das Headset den PC findet — ohne ihn bleibt die Serverliste in der Brille leer, auch wenn 9757 offen ist |
-
-Festgelegt in `core/firewall.py` (`PORT`, `MDNS_PORT`). Bei ufw wird die Regel als benanntes Anwendungsprofil `/etc/ufw/applications.d/wivrn` angelegt — Zeichen für Zeichen das, was WiVRns eigenes Dashboard schreibt (`dashboard/firewall.cpp`). Der Name ist wichtig: WiVRn prüft, ob genau diese Datei existiert, um zu entscheiden, ob die Firewall noch eingerichtet werden muss. Ein bloßes `ufw allow 9757` würde den Port zwar öffnen, WiVRn aber dauerhaft nach einer Einrichtung fragen lassen. `ports=9757` ohne Protokollangabe bedeutet bei ufw TCP *und* UDP. Geändert wird nur die Firewall, die wirklich aktiv ist (firewalld oder ufw). **nftables und iptables werden erkannt, aber nie automatisch verändert** — dafür gibt es die Befehle zum Kopieren, denn es gibt dort keine verlässlich gleiche Stelle für eine Regel, und eine falsch eingehängte kann ein System vom Netz nehmen.
-
-### Systemberechtigungen
-
-Aufgeführt sind nur Berechtigungen, die das Programm tatsächlich verwendet.
-
-| Berechtigung / Zugriff | Zweck | Wann | Quelle |
-| --- | --- | --- | --- |
-| Firewall-Regel (`pkexec`) | Ports 9757 und 5353 freigeben, damit das Headset den WiVRn-Server erreicht | Nur auf Klick auf „Firewall fixen" | `core/firewall.py` |
-| `CAP_SYS_NICE` (`pkexec setcap`) | Lässt `wivrn-server` die Reprojection mit hoher Priorität ausführen. Eine Berechtigung an genau einer Datei — kein dauerhaft erhöhter Prozess | Nur auf Klick auf „VR-Priorität aktivieren" | `ui/vr_runtime_widget.py` |
-| `pkexec` für OpenXR-Konfiguration | `active_runtime.json` schreiben, wenn die Datei oder ihr Ordner root gehört. Der Ordner wird danach an deinen Benutzer zurückgegeben, damit spätere Fixes ohne Root auskommen | Nur als Rückfall, wenn das Schreiben ohne Root scheitert | `core/openxr_manager.py` |
-| `pkexec` fürs Zurückspielen | Dateien nach `/usr/share/openxr`, `/opt/xrizer`, `/opt/opencomposite` kopieren. Vorher wird mit Zeitstempel gesichert; es wird nichts gelöscht | Nur auf Klick auf „Wiederherstellen" | `core/backup_manager.py` |
-| `sudo` im Terminal | Paketinstallation und Updates (`yay`, `paru`, `dnf`). Läuft in einem **sichtbaren Terminalfenster**, in dem du die Paketliste siehst und das Passwort selbst eingibst — yakuda-connect bekommt dein Passwort nie zu sehen | Nur auf Klick im Installations-Tab | `core/install_worker.py` |
-| `/sys/bus/usb/devices` lesen | Angeschlossenes Headset erkennen. Reiner Dateizugriff, kein Root, kein `lsusb` | Hintergrundprüfung | `core/usb_headsets.py` |
-| `adb` | WiVRn-APK auf das Headset installieren und den USB-Debugging-Status prüfen. Wird nur aufgerufen, wenn am Bus ein Headset gefunden wurde | Nur auf Klick / wenn ein Headset steckt | `core/main.py`, `core/usb_headsets.py` |
-
-**yakuda-connect selbst läuft nie als root.** Jede der Aktionen oben hebt einen einzelnen Befehl über `pkexec` an, wobei der Passwortdialog des Systems erscheint.
-
-### Dateien und Konfigurationen, die verändert werden können
-
-| Pfad | Was passiert | Quelle |
-| --- | --- | --- |
-| `~/.config/yakuda-connect/` | Eigene Einstellungen, Backups und heruntergeladene Tools | `core/paths.py` |
-| `~/.cache/yakuda-connect/` | Logdatei, Spiele-Cover, heruntergeladene APK | `core/paths.py` |
-| `~/.config/openxr/1/active_runtime.json` | Welche OpenXR-Runtime aktiv ist. Bisherige Datei bleibt als `.bak.<Zeitstempel>` | `core/openxr_manager.py` |
-| `~/.config/openvr/` | OpenVR-Pfade (wird gelesen; geschrieben von WiVRn selbst) | `core/vr_environment.py` |
-| `~/.config/wivrn/config.json` | WiVRn-Servereinstellungen (Encoder, Bitrate, Codec, OpenVR-Kompatibilität). Wird gelesen, gezielt geändert und atomar zurückgeschrieben — nie neu aufgebaut | `core/config_manager.py` |
-| `~/.config/wivrn/wivrn-dashboard.conf` | Nur der Schlüssel `auto_connect_usb` | `core/wivrn_dashboard.py` |
-| `~/.config/wayvr/` | WayVR-Design. Wird vor jeder Änderung gesichert | `core/overlay_manager.py` |
-| `~/.config/OSCLeash/Config.json`, `~/.config/OscGoesBrrr/config.json` | Der OSCQuery-Fix setzt genau einen Schlüssel. Nicht vorhandene Dateien werden **nicht** angelegt | `core/queryfix.py` |
-| Steam `config.vdf` / `localconfig.vdf` | Proton-Version und Startparameter eines Spiels, wenn du „Use" drückst | `core/games.py` |
-| `~/.bashrc`, `~/.zshrc` | Bei der Installation eines AppImage-Tools: hängt einen markierten Block an, der `~/.local/bin` in den `PATH` legt — nur, wenn er dort noch nicht ist | `core/appimage_installer.py` |
-| `~/.local/bin/`, `~/.local/share/applications/` | Startskripte und `.desktop`-Einträge für Tools, die du installierst | `core/appimage_installer.py` |
-| `/usr/share/openxr`, `/opt/xrizer`, `/opt/opencomposite` | **Nur** beim Zurückspielen eines Backups, über `pkexec`, mit vorheriger Sicherung samt Zeitstempel | `core/backup_manager.py` |
-
-### Prozesse, die gestartet oder beendet werden können
-
-* `wivrn-server` — Start und Stopp über das Dashboard; die Ausgabe landet in `~/.cache/yakuda-connect/wivrn-server.log`
-* `wivrnctl pair` — während der Kopplungsmodus aktiv ist
-* Autostart-Programme — die, die du selbst im Dashboard eingetragen hast, dazu deine eigenen Kill-Befehle aus Einstellungen → Advanced (sie laufen als Shell-Befehl und tun damit genau das, was du hineingeschrieben hast)
-* `adb`, `pactl`, `getcap`, `pgrep`, `systemctl` — kurze Abfragen; `adb` nur, wenn ein Headset angeschlossen ist
-
-### Diagnose
-
-Das Log wird lokal geschrieben und rotiert bei 1 MB (3 alte Dateien bleiben erhalten). Unter Einstellungen → **Allgemein & Updates** → *Diagnose & Log* kannst du es öffnen, den letzten Teil kopieren oder einen Bericht speichern, der das Log samt Version, Distribution und aktiver OpenXR-Runtime enthält. Die VRChat-Videodiagnose kürzt die aufgelöste Stream-URL bewusst, weil sie die öffentliche IP und Signaturen enthält (`core/vrchat_check.py`).
-
-### Advanced Mode
-
-Der Schalter unten links in der Seitenleiste blendet zusätzliche technische Angaben ein. Ist er aktiv, zeigen Aktionen, die etwas am System ändern, einen ausklappbaren Kasten mit einer kurzen Erklärung, den betroffenen Dateien, den benötigten Berechtigungen und dem entsprechenden Terminal-Befehl samt Kopier-Knopf. **Der Befehl wird nie ausgeführt** — einen „Ausführen"-Knopf gibt es bewusst nicht. Keine Funktion verhält sich im Advanced Mode anders; es kommen nur die Informationen dazu. Der bestehende manuelle OpenXR-Fix bleibt unverändert an seiner Stelle.
-
----
-
-> 🤖 **Transparency Note:** This project and its documentation are proudly developed and optimized with the support of AI coding assistants (**Claude by Anthropic** & **Gemini**).
-
----
-
 ## 💬 Community & Support
 
 yakuda-connect is a free hobby project — built by VR enthusiasts, for VR enthusiasts.
@@ -370,10 +270,6 @@ yakuda-connect is a free hobby project — built by VR enthusiasts, for VR enthu
 
 ## 📝 Changelog
 
-The full changelog (English & German) lives in its own file:
-
-➡️ **[CHANGELOG.md](CHANGELOG.md)**
-
-Das vollständige Changelog (Englisch & Deutsch) liegt in einer eigenen Datei:
+The full changelog lives in its own file — it is kept in both English and German:
 
 ➡️ **[CHANGELOG.md](CHANGELOG.md)**
