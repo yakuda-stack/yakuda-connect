@@ -244,3 +244,79 @@ def test_rpm_nur_mit_dnf(monkeypatch):
 
     monkeypatch.setattr(appimg, "dnf_available", lambda: True)
     assert "rpm" in appimg.detect_install_methods(_tool("slimevr-bin"))
+
+
+# --------------------------------------------------------------------------- #
+#  8. Debian / Ubuntu / Linux Mint
+# --------------------------------------------------------------------------- #
+def test_wivrn_kommt_aus_der_ppa():
+    """
+    WiVRn liegt NICHT in den offiziellen Ubuntu-Quellen. Ohne die PPA des
+    Linux-VR-Adventures-Projekts findet apt das Paket schlicht nicht.
+    """
+    assert programs.UBUNTU_WIVRN_PPA == "ppa:lvra/wivrn"
+    assert programs.INSTALL_APT["WiVRn / Monado"] == ["wivrn-server"]
+
+
+def test_dashboard_auch_auf_ubuntu_nicht_dabei():
+    """Gleiche Begruendung wie auf Fedora: yakuda-connect ersetzt es."""
+    assert "WiVRn Dashboard" not in programs.INSTALL_APT
+    for pkgs in programs.INSTALL_APT.values():
+        assert "wivrn-dashboard" not in pkgs
+
+
+def test_xrizer_auf_ubuntu_von_github():
+    """
+    Die PPA enthaelt keinen OpenVR-Uebersetzer. Ohne xrizer startet unter
+    Proton kein SteamVR-Spiel — deshalb der Weg ueber das Release-ZIP.
+    """
+    assert programs.component_sources("apt", "xrizer") == [programs.SOURCE_GITHUB]
+    assert programs.component_sources("apt", "WiVRn / Monado") == [programs.SOURCE_PPA]
+
+
+def test_apt_zeilen_haben_keine_auswahl():
+    """
+    Je Komponente genau ein Weg — ein Dropdown waere eine Auswahl ohne
+    Alternative. Die Zustimmung zur PPA holt stattdessen der Dialog.
+    """
+    for name in list(programs.INSTALL_APT) + list(programs.APT_GITHUB_COMPONENTS):
+        assert len(programs.component_sources("apt", name)) == 1
+
+
+def test_apt_befehl_traegt_die_ppa_ein(worker_cls):
+    w = worker_cls(["wivrn-server"], helper="apt", ppa="ppa:lvra/wivrn")
+    cmd = w.build_bash_command("wivrn-server", 1, 1)
+
+    assert "add-apt-repository -y ppa:lvra/wivrn" in cmd
+    assert "apt-get install -y wivrn-server" in cmd
+    # Reihenfolge: PPA eintragen -> Listen aktualisieren -> installieren.
+    # Ohne das update dazwischen kennt apt das neue Paket noch nicht.
+    assert cmd.index("add-apt-repository") < cmd.index("apt-get update")
+    assert cmd.index("apt-get update") < cmd.index("install -y wivrn-server")
+    # software-properties-common: auf schlanken Debian-Systemen fehlt
+    # add-apt-repository sonst.
+    assert "software-properties-common" in cmd
+
+
+def test_apt_ohne_ppa_bleibt_schlicht(worker_cls):
+    w = worker_cls(["irgendwas"], helper="apt")
+    cmd = w.build_bash_command("irgendwas", 1, 1)
+    assert "add-apt-repository" not in cmd
+    assert "apt-get install -y irgendwas" in cmd
+
+
+def test_apt_befehl_ist_gueltige_shell(worker_cls):
+    w = worker_cls(["wivrn-server"], helper="apt", ppa="ppa:lvra/wivrn")
+    res = subprocess.run(["bash", "-n", "-c", w.build_bash_command("wivrn-server", 1, 1)],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert res.returncode == 0, res.stderr.decode()
+
+
+def test_apt_texte_vorhanden():
+    import json
+    for lang in ("en", "de"):
+        data = json.loads((ROOT / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+        for key in ("apt_ppa_title", "apt_ppa_text", "apt_ppa_yes", "install_apt_missing"):
+            assert key in data, f"{key} fehlt in {lang}.json"
+        assert "{ppa}" in data["apt_ppa_text"]
+        assert "{pkgs}" in data["install_apt_missing"]

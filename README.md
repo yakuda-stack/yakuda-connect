@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/X5TaN4A47h)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.2.3-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.2.4-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -14,7 +14,7 @@
 |---|---|---|
 | **Arch-based** | ✅ Tested — primary development system | Full feature set: AUR installation, all components |
 | **Fedora-based** | ✅ Tested | Components come from the Fedora repos; xrizer from the COPR `@xr-sig/xrizer` or the GitHub release. The WiVRn dashboard is deliberately not offered here — yakuda-connect already provides the controls |
-| Debian / Ubuntu / Linux Mint | 🟡 Limited | No native WiVRn package — the app shows the status and points to building it yourself |
+| Debian / Ubuntu / Linux Mint | ✅ Tested (Mint 22.3) | WiVRn is installed from the Linux VR Adventures PPA (`ppa:lvra/wivrn`), xrizer straight from its GitHub release. OpenComposite is not offered here — no release archive exists |
 
 ### 📸 Interface Preview
 
@@ -80,7 +80,7 @@ Then launch it from your application menu or simply run:
 yakuda-connect
 ```
 
-### Method 2: Fedora and other distributions
+### Method 2: Fedora, Debian, Ubuntu and Linux Mint
 
 The setup script detects the package manager itself (pacman, dnf, apt, zypper) and installs PySide6 from the matching distribution package; if there is none, it builds its own venv, touching neither the system Python nor PEP 668:
 

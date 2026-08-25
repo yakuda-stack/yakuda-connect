@@ -459,8 +459,7 @@ def available_update_methods():
     Verfügbare Methoden für den Installations-Tab (nur noch NATIV, kein Flatpak):
       Arch    -> yay/paru
       Fedora  -> dnf (offizielle Repos: wivrn + opencomposite)
-      Ubuntu  -> keine Methode: Install-Knopf zeigt eine Kurzanleitung,
-                 Update-Knopf wird komplett ausgeblendet.
+      Ubuntu  -> apt (WiVRn aus der LVRA-PPA, xrizer aus dem GitHub-Release)
       Sonst   -> 'native', falls WiVRn selbst nativ installiert wurde.
     """
     methods = []
@@ -470,7 +469,11 @@ def available_update_methods():
         if shutil.which("dnf"):
             methods.append("dnf")
     elif is_debian_based():
-        pass                                        # Ubuntu/Debian: nur Anleitung
+        # Bis v1.2.3 gab es hier nur eine Kurzanleitung zum Abtippen. WiVRn
+        # liegt inzwischen als Paket in der LVRA-PPA, damit ist auch auf
+        # Ubuntu/Mint/Debian eine richtige Installation moeglich.
+        if shutil.which("apt-get"):
+            methods.append("apt")
     else:
         # Unbekannte Distro (z. B. NixOS): hat die Person WiVRn selbst installiert?
         if wivrn_native_present():
@@ -484,8 +487,8 @@ def wivrn_native_present():
 
 
 def default_update_method(methods):
-    """Vorauswahl: yay -> paru -> dnf -> native -> erstes."""
-    for pref in ("yay", "paru", "dnf", "native"):
+    """Vorauswahl: yay -> paru -> dnf -> apt -> native -> erstes."""
+    for pref in ("yay", "paru", "dnf", "apt", "native"):
         if pref in methods:
             return pref
     return methods[0] if methods else ""

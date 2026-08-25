@@ -163,16 +163,19 @@ class InstallWorker(QThread):
     status_signal = Signal(str)
     finished_signal = Signal(bool)
 
-    def __init__(self, packages, helper="yay", copr_map=None):
+    def __init__(self, packages, helper="yay", copr_map=None, ppa=""):
         super().__init__()
         self.packages = packages
         # 'flatpak' ist hier nur noch für den TOOLS-Tab erlaubt (ProtonPlus etc.),
         # die WiVRn-Runtime im Installations-Tab läuft ausschließlich nativ.
-        self.helper = helper if helper in ("yay", "paru", "dnf", "flatpak") else "yay"
+        self.helper = helper if helper in ("yay", "paru", "dnf", "apt", "flatpak") else "yay"
         # {paketname: copr-kennung} — nur für dnf. Steht ein Paket hier drin,
         # wird das COPR im selben Terminalfenster aktiviert, bevor installiert
         # wird. Der Nutzer muss also nichts mehr von Hand kopieren.
         self.copr_map = dict(copr_map or {})
+        # PPA für apt-Systeme, z. B. 'ppa:lvra/wivrn'. Gleiche Idee wie copr_map,
+        # nur gilt sie für den ganzen Durchlauf: eine PPA bringt alle Pakete mit.
+        self.ppa = ppa or ""
 
     def build_bash_command(self, pkg, index, total_pkgs):
         """
@@ -188,6 +191,29 @@ class InstallWorker(QThread):
         if self.helper == "flatpak":
             return (f"echo '=== Installiere {pkg} (Flatpak) ==='; "
                     f"flatpak install -y flathub {pkg}; " + tail)
+
+        if self.helper == "apt":
+            ppa_cmd = ""
+            if self.ppa:
+                # 'add-apt-repository' steckt in software-properties-common —
+                # auf einer schlanken Debian-Installation fehlt es. Es wird
+                # deshalb bei Bedarf vorher nachgezogen.
+                #
+                # Auf Linux Mint ist ausserdem wichtig, dass genau dieses
+                # Werkzeug benutzt wird: 'lsb_release -cs' liefert dort den
+                # Mint-Namen (z. B. 'zena'), nicht den Ubuntu-Codenamen
+                # ('noble'). Eine von Hand geschriebene sources-Zeile zeigte
+                # damit ins Leere; add-apt-repository loest das selbst auf.
+                ppa_cmd = (
+                    f"echo '--- Aktiviere {self.ppa} ---'; "
+                    f"command -v add-apt-repository >/dev/null || "
+                    f"sudo apt-get install -y software-properties-common; "
+                    f"sudo add-apt-repository -y {self.ppa}; "
+                )
+            return (f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit apt ==='; "
+                    f"{ppa_cmd}"
+                    f"sudo apt-get update; "
+                    f"sudo apt-get install -y {pkg}; " + tail)
 
         if self.helper == "dnf":
             copr = self.copr_map.get(pkg)

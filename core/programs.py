@@ -124,6 +124,46 @@ INSTALL_DNF_COPR = {
 
 
 # --------------------------------------------------------------------------- #
+#  Debian / Ubuntu / Linux Mint
+# --------------------------------------------------------------------------- #
+# WiVRn liegt NICHT in den offiziellen Ubuntu-Quellen, sondern in der PPA des
+# Linux-VR-Adventures-Projekts. Das ist dieselbe Lage wie bei Fedora und
+# xrizer: ein Fremdrepository, das erst aktiviert werden muss — und deshalb
+# auch dieselbe Rueckfrage, bevor die App das tut.
+#
+# 'wivrn-dashboard' gibt es dort ebenfalls und es zieht 'wivrn-server' mit.
+# Angeboten wird trotzdem nur der Server: das Dashboard ist eine zweite
+# Oberflaeche auf derselben config.json und demselben Dienst — wer
+# yakuda-connect nutzt, braucht sie nicht (gleiche Begruendung wie auf Fedora).
+UBUNTU_WIVRN_PPA = "ppa:lvra/wivrn"
+
+INSTALL_APT = {
+    "WiVRn / Monado": ["wivrn-server"],
+}
+
+# Die PPA enthaelt KEINEN OpenVR-Uebersetzer. Ohne xrizer oder OpenComposite
+# startet unter Proton kein einziges SteamVR-Spiel. Fuer xrizer gibt es das
+# Release-ZIP auf GitHub (core/xrizer_github.py) — das braucht weder Repo noch
+# root und funktioniert auf jeder Distribution gleich. OpenComposite hat kein
+# vergleichbares Release-Archiv und wird auf apt-Systemen deshalb nicht
+# angeboten; wer es will, baut es selbst und waehlt den Ordner im
+# Streaming-Tab von Hand aus.
+APT_GITHUB_COMPONENTS = {
+    "xrizer": ["xrizer"],
+}
+
+# Rueckfall-Erkennung ueber die Binary, analog zu DNF_BINARY_FALLBACK.
+APT_BINARY_FALLBACK = {
+    "WiVRn / Monado": "wivrn-server",
+}
+
+
+def apt_github_groups():
+    """{Anzeigename: [Kennungen]} — Statuszeilen fuer die GitHub-Komponenten."""
+    return {name: list(pkgs) for name, pkgs in APT_GITHUB_COMPONENTS.items()}
+
+
+# --------------------------------------------------------------------------- #
 #  Bezugsquellen je Komponente
 # --------------------------------------------------------------------------- #
 # Manche Komponenten gibt es auf mehreren Wegen. Statt eine Quelle fuer alle
@@ -137,10 +177,12 @@ INSTALL_DNF_COPR = {
 # angekuendigt, irgendwann verschwindet.
 SOURCE_GITHUB = "github"
 SOURCE_COPR = "copr"
+SOURCE_PPA = "ppa"
 
 SOURCE_LABELS = {
     "dnf": "Fedora-Repos",
     SOURCE_COPR: f"COPR {FEDORA_XRIZER_COPR}",
+    SOURCE_PPA: f"PPA {UBUNTU_WIVRN_PPA.replace('ppa:', '')}",
     SOURCE_GITHUB: "GitHub-Release",
     "yay": "AUR (yay)",
     "paru": "AUR (paru)",
@@ -151,13 +193,19 @@ SOURCE_LABELS = {
 def component_sources(method, name):
     """
     Welche Bezugsquellen hat diese Komponente? Liste von Kennungen, erste =
-    Vorauswahl. Eine leere Liste bedeutet: nichts zu installieren (z. B.
-    Ubuntu, wo nur der Status angezeigt wird).
+    Vorauswahl. Eine leere Liste bedeutet: nichts zu installieren.
     """
     if method == "dnf":
         if name in INSTALL_DNF_COPR:
             return [SOURCE_COPR, SOURCE_GITHUB]
         return ["dnf"]
+    if method == "apt":
+        # Auf Debian-Systemen gibt es je Komponente genau einen Weg: WiVRn aus
+        # der PPA, xrizer aus dem GitHub-Release. Ein Dropdown erscheint
+        # deshalb nicht — es gaebe nichts auszuwaehlen.
+        if name in APT_GITHUB_COMPONENTS:
+            return [SOURCE_GITHUB]
+        return [SOURCE_PPA]
     if method in ("yay", "paru"):
         # xrizer gibt es auch auf Arch als Release-ZIP — praktisch, wenn der
         # AUR-Build gerade klemmt.
@@ -165,6 +213,7 @@ def component_sources(method, name):
             return [method, SOURCE_GITHUB]
         return [method]
     return []
+
 
 
 def dnf_copr_groups():

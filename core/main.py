@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.2.3"
+APP_VERSION = "v1.2.4"
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
@@ -97,7 +97,9 @@ from backup_manager import (create_vr_backup, restore_vr_environment,
                             sync_backup_from_github)
 import vr_autotune as autotune
 from programs import (INSTALL_PACKAGES, INSTALL_DNF, INSTALL_DNF_COPR,
-                      DNF_BINARY_FALLBACK, SOURCE_LABELS, SOURCE_COPR, SOURCE_GITHUB,
+                      INSTALL_APT, APT_BINARY_FALLBACK, UBUNTU_WIVRN_PPA,
+                      apt_github_groups, DNF_BINARY_FALLBACK, SOURCE_LABELS,
+                      SOURCE_COPR, SOURCE_GITHUB, SOURCE_PPA,
                       component_sources, dnf_copr_groups, dnf_copr_for_package,
                       TOOLS_APPS, TOOLS_OSC)
 import games as games_db
@@ -156,6 +158,29 @@ class PackageCheckWorker(QThread):
             installed = {line.strip() for line in out.splitlines() if line.strip()}
             return installed, set()
 
+        if self.method == "apt":
+            # dpkg-query listet auch entfernte Pakete, deren Konfiguration noch
+            # da ist ("rc"). Nur 'installed' zaehlt — sonst gilt ein
+            # deinstalliertes WiVRn weiter als vorhanden.
+            out = proc.output_of(["dpkg-query", "-W",
+                                  "-f=${binary:Package} ${db:Status-Status}\\n"],
+                                 timeout=proc.LONG_TIMEOUT)
+            installed = set()
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == "installed":
+                    installed.add(parts[0].split(":")[0])   # ':amd64' abschneiden
+            # 'apt list --upgradable' braucht keine Root-Rechte und keinen
+            # vorherigen update-Lauf; ohne frische Paketlisten meldet es nur
+            # weniger, statt zu scheitern.
+            upgradable = set()
+            out = proc.output_of(["apt", "list", "--upgradable"],
+                                 timeout=proc.LONG_TIMEOUT)
+            for line in out.splitlines():
+                if "/" in line:
+                    upgradable.add(line.split("/")[0].split(":")[0])
+            return installed, upgradable
+
         if self.method == "native" or not self.method:
             return None, set()          # wird ueber shutil.which geprueft
 
@@ -188,11 +213,13 @@ class PackageCheckWorker(QThread):
                          "has_update": False}
             else:
                 is_installed = all(pkg in installed for pkg in idents)
-                if not is_installed and self.method == "dnf":
+                if not is_installed and self.method in ("dnf", "apt"):
                     # Selbst gebaut oder aus einem fremden Repo: kein RPM, aber
                     # das Programm ist da. Frueher stand hier trotzdem "fehlt",
                     # und ein Klick auf Installieren waere ins Leere gelaufen.
-                    binary = DNF_BINARY_FALLBACK.get(name)
+                    fallback = (DNF_BINARY_FALLBACK if self.method == "dnf"
+                                else APT_BINARY_FALLBACK)
+                    binary = fallback.get(name)
                     if binary and shutil.which(binary):
                         is_installed = True
                 state = {"installed": is_installed,
@@ -1713,6 +1740,12 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
     def _package_groups_for(self, method):
         """Welche Status-Zeilen je Methode?"""
+        if method == "apt":
+            # Debian/Ubuntu/Mint: WiVRn aus der PPA plus die Komponenten, die
+            # es dort NICHT als Paket gibt (xrizer aus dem GitHub-Release).
+            groups = dict(INSTALL_APT)
+            groups.update(apt_github_groups())
+            return groups
         if method == "dnf":
             # Fedora-Repos (wivrn, wivrn-dashboard, opencomposite) PLUS die
             # COPR-Komponenten (xrizer). Letztere standen frueher nur in einem
@@ -1967,6 +2000,39 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             if hasattr(self, "refresh_openvr_ui"):
                 self.refresh_openvr_ui()
 
+    def _confirm_apt_ppa(self):
+        """
+        Rueckfrage vor dem Eintragen der WiVRn-PPA.
+
+        WiVRn liegt nicht in den offiziellen Ubuntu-Quellen. Eine PPA ist ein
+        Fremdrepository und bleibt nach der Installation dauerhaft aktiv — sie
+        liefert dann auch Updates. Beides sollte der Nutzer wissen, bevor es
+        passiert; dieselbe Haltung wie beim COPR auf Fedora.
+        """
+        if getattr(self, "_apt_ppa_confirmed", False):
+            return True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(tr("apt_ppa_title"))
+        box.setText(tr("apt_ppa_text").format(ppa=UBUNTU_WIVRN_PPA))
+        yes_btn = box.addButton(tr("apt_ppa_yes"), QMessageBox.AcceptRole)
+        box.addButton(tr("fedora_copr_no"), QMessageBox.RejectRole)
+        box.setDefaultButton(yes_btn)
+        box.exec()
+        ok = box.clickedButton() == yes_btn
+        self._apt_ppa_confirmed = ok
+        return ok
+
+    def _apt_packages_still_missing(self):
+        """Welche der angeforderten .deb-Pakete sind nicht angekommen?"""
+        missing = []
+        for pkg in getattr(self, "_last_install_pkgs", []):
+            out = proc.output_of(["dpkg-query", "-W", "-f=${db:Status-Status}", pkg],
+                                 timeout=proc.DEFAULT_TIMEOUT)
+            if (out or "").strip() != "installed":
+                missing.append(pkg)
+        return missing
+
     def _pending_dnf_copr_packages(self):
         """
         Welche COPR-Komponenten fehlen noch? Rueckgabe: [(anzeigename, pkg), ...]
@@ -2126,12 +2192,22 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             if copr:
                 copr_map = {pkg: copr for pkg in pkgs}
 
-        helper = "dnf" if source in ("dnf", SOURCE_COPR) else source
+        ppa = ""
+        if source == SOURCE_PPA:
+            # Hier gibt es KEIN Dropdown (es gaebe nur eine Quelle), also fehlt
+            # die stillschweigende Zustimmung. Deshalb wird gefragt, bevor ein
+            # Fremdrepository ins System eingetragen wird.
+            if not self._confirm_apt_ppa():
+                return
+            ppa = UBUNTU_WIVRN_PPA
+
+        helper = ("dnf" if source in ("dnf", SOURCE_COPR)
+                  else "apt" if source == SOURCE_PPA else source)
         self.ui.btn_install.setEnabled(False)
         self._last_install_method = self._install_method()
         self._last_install_pkgs = list(pkgs)
         self._xrizer_github_after_install = False
-        self.worker = InstallWorker(pkgs, helper=helper, copr_map=copr_map)
+        self.worker = InstallWorker(pkgs, helper=helper, copr_map=copr_map, ppa=ppa)
         self.worker.status_signal.connect(self.ui.lbl_worker_status.setText)
         self.worker.finished_signal.connect(self.on_installation_finished)
         self.worker.start()
@@ -2151,6 +2227,39 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             return
         if not method:
             self.ui.lbl_worker_status.setText(tr("install_no_method"))
+            return
+
+        if method == "apt":
+            # Debian/Ubuntu/Mint: fehlende .deb-Pakete aus der PPA, danach —
+            # falls noetig — xrizer aus dem GitHub-Release.
+            packages_to_process = []
+            for pkgs in INSTALL_APT.values():
+                for pkg in pkgs:
+                    out = proc.output_of(["dpkg-query", "-W", "-f=${db:Status-Status}", pkg],
+                                         timeout=proc.DEFAULT_TIMEOUT)
+                    if (out or "").strip() != "installed":
+                        packages_to_process.append(pkg)
+
+            github_wanted = bool(apt_github_groups()) and not venv.find_openvr_compat("xrizer")
+            if packages_to_process and not self._confirm_apt_ppa():
+                packages_to_process = []
+
+            if not packages_to_process:
+                if github_wanted:
+                    self.start_xrizer_github_download()
+                    return
+                self.ui.lbl_worker_status.setText(tr("install_check_done"))
+                return
+
+            self._xrizer_github_after_install = github_wanted
+            self._last_install_method = method
+            self._last_install_pkgs = list(packages_to_process)
+            self.ui.btn_install.setEnabled(False)
+            self.worker = InstallWorker(packages_to_process, helper="apt",
+                                        ppa=UBUNTU_WIVRN_PPA)
+            self.worker.status_signal.connect(self.ui.lbl_worker_status.setText)
+            self.worker.finished_signal.connect(self.on_installation_finished)
+            self.worker.start()
             return
 
         if method == "dnf":
@@ -2256,6 +2365,12 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             self._xrizer_github_after_install = False
             self.start_xrizer_github_download()
             return
+        if m == "apt":
+            missing = self._apt_packages_still_missing()
+            if missing:
+                log.warning("apt-Installation unvollstaendig: %s", ", ".join(missing))
+                self._install_missing_note = tr("install_apt_missing").format(
+                    pkgs=", ".join(missing))
         if m == "dnf":
             missing = self._dnf_packages_still_missing()
             # Genau der Fall aus dem Fehlerbericht: das COPR antwortet mit

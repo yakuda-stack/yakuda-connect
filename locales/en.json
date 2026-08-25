@@ -613,5 +613,9 @@
     "design_role_borders": "Borders",
     "design_role_text": "Text",
     "design_role_secondary": "Secondary text",
-    "design_role_danger": "Stop / delete"
+    "design_role_danger": "Stop / delete",
+    "apt_ppa_title": "Install WiVRn from the LVRA PPA?",
+    "apt_ppa_text": "WiVRn is not in the official Ubuntu sources; it lives in the Linux VR Adventures project's PPA:\n\n    {ppa}\n\nA PPA is a third-party repository. It stays active after the installation and will also supply updates for WiVRn.\n\nChoosing 'Yes' opens a terminal that adds the PPA, refreshes the package lists and installs WiVRn, one after the other. All you do there is enter your sudo password.\n\nNote: Steam games additionally need xrizer, which the PPA does not carry — it is fetched straight from the GitHub release instead (no repository, no root).",
+    "apt_ppa_yes": "Yes, add the PPA and install",
+    "install_apt_missing": "⚠ Not installed: {pkgs}. Check apt's output in the terminal — usually the PPA has no build for this Ubuntu release."
 }

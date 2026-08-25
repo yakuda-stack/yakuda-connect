@@ -1,5 +1,23 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.2.4
+
+**EN**
+
+* **Debian / Ubuntu / Linux Mint can install WiVRn from the app** (tested on Mint 22.3 "Zena"). Until now the installation tab offered these systems nothing but a set of commands to copy. WiVRn is not in the official Ubuntu sources, but it is packaged in the Linux VR Adventures PPA — the same situation as xrizer on Fedora, and handled the same way: the app asks once before adding a third-party repository, then adds the PPA, refreshes the package lists and installs, all in one visible terminal window. `add-apt-repository` is pulled in via `software-properties-common` if missing.
+* **On Mint the Ubuntu codename matters.** `lsb_release -cs` returns the Mint name there (`zena`), not `noble`. A hand-written sources line would point nowhere, which is why the install deliberately goes through `add-apt-repository` — it resolves the base release itself.
+* **xrizer on apt systems comes from the GitHub release.** The PPA carries no OpenVR translation layer, and without one no SteamVR game starts under Proton. The download built for Fedora is reused: release ZIP into `~/.local/share/xrizer`, no repository, no root. OpenComposite has no comparable release archive and is therefore not offered on apt systems — it can still be built manually and selected in the streaming tab.
+* **The WiVRn dashboard is not offered here either**, for the same reason as on Fedora: a second interface on the same config and the same service, redundant next to yakuda-connect. `wivrn-dashboard` would pull `wivrn-server` in anyway; installing the server directly is enough.
+* **Package status and post-install verification for apt.** Installed packages are read from `dpkg-query` (only genuinely `installed` ones — a removed package whose config remains no longer counts), updates from `apt list --upgradable`. After a run, every requested package is checked again and the missing ones are named, usually meaning the PPA has no build for this Ubuntu release.
+
+**DE**
+
+* **Debian / Ubuntu / Linux Mint können WiVRn aus der App installieren** (getestet auf Mint 22.3 „Zena"). Bisher bot der Installations-Tab diesen Systemen nur Befehle zum Kopieren. WiVRn liegt nicht in den offiziellen Ubuntu-Quellen, wohl aber in der PPA des Linux-VR-Adventures-Projekts — dieselbe Lage wie bei xrizer auf Fedora und deshalb derselbe Umgang: die App fragt einmal, bevor sie ein Fremdrepository einträgt, und erledigt danach PPA eintragen, Paketlisten aktualisieren und installieren in einem sichtbaren Terminalfenster. Fehlt `add-apt-repository`, wird `software-properties-common` vorher nachgezogen.
+* **Auf Mint zählt der Ubuntu-Codename.** `lsb_release -cs` liefert dort den Mint-Namen (`zena`), nicht `noble`. Eine von Hand geschriebene sources-Zeile zeigte damit ins Leere — deshalb läuft die Installation bewusst über `add-apt-repository`, das die Basis selbst auflöst.
+* **xrizer kommt auf apt-Systemen aus dem GitHub-Release.** Die PPA enthält keinen OpenVR-Übersetzer, und ohne einen startet unter Proton kein SteamVR-Spiel. Genutzt wird der Download, der für Fedora gebaut wurde: Release-ZIP nach `~/.local/share/xrizer`, ohne Repo, ohne Root. OpenComposite hat kein vergleichbares Release-Archiv und wird auf apt-Systemen deshalb nicht angeboten — selbst gebaut lässt es sich weiterhin im Streaming-Tab auswählen.
+* **Das WiVRn-Dashboard wird auch hier nicht angeboten**, aus demselben Grund wie auf Fedora: zweite Oberfläche auf derselben Konfiguration und demselben Dienst, neben yakuda-connect überflüssig. `wivrn-dashboard` würde `wivrn-server` ohnehin mitziehen; den Server direkt zu installieren reicht.
+* **Paketstatus und Nachkontrolle für apt.** Installierte Pakete kommen aus `dpkg-query` (nur wirklich `installed` — ein entferntes Paket mit verbliebener Konfiguration zählt nicht mehr mit), Updates aus `apt list --upgradable`. Nach einem Durchlauf wird jedes angeforderte Paket erneut geprüft; was fehlt, steht namentlich da — meist heißt das, dass die PPA für diese Ubuntu-Version nicht baut.
+
 ### 🚀 v1.2.3
 
 **EN**
