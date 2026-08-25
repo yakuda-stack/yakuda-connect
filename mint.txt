@@ -1,0 +1,4 @@
+for s in noble jammy plucky questing; do
+  echo -n "$s: "; curl -o /dev/null -s -w "%{http_code}\n" \
+    https://ppa.launchpadcontent.net/lvra/wivrn/ubuntu/dists/$s/Release
+done
