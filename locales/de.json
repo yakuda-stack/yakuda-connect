@@ -617,5 +617,10 @@
     "apt_ppa_title": "WiVRn aus der LVRA-PPA installieren?",
     "apt_ppa_text": "WiVRn liegt nicht in den offiziellen Ubuntu-Quellen, sondern in der PPA des Linux-VR-Adventures-Projekts:\n\n    {ppa}\n\nEine PPA ist ein Fremdrepository. Sie bleibt nach der Installation aktiv und liefert dann auch Updates für WiVRn.\n\nBei 'Ja' öffnet sich ein Terminal, in dem nacheinander die PPA eingetragen, die Paketlisten aktualisiert und WiVRn installiert wird. Du gibst dort nur dein sudo-Passwort ein.\n\nHinweis: Für Steam-Spiele wird zusätzlich xrizer gebraucht — das gibt es in der PPA nicht und wird deshalb direkt aus dem GitHub-Release geladen (ohne Repo, ohne Root).",
     "apt_ppa_yes": "Ja, PPA eintragen und installieren",
-    "install_apt_missing": "⚠ Nicht installiert: {pkgs}. Prüfe die Meldung von apt im Terminal — meist baut die PPA nicht für diese Ubuntu-Version."
+    "install_apt_missing": "⚠ Nicht installiert: {pkgs}. Prüfe die Meldung von apt im Terminal — meist baut die PPA nicht für diese Ubuntu-Version.",
+    "apt_ppa_unsupported_title": "PPA baut nicht für diese Ubuntu-Version",
+    "apt_ppa_unsupported_text": "Die PPA {ppa} hat keine Pakete für „{codename}“ — der Basis dieser Distribution.\n\nEin Eintragen würde mit „Cannot add PPA: This PPA does not support {codename}“ abbrechen, deshalb wird es gar nicht erst versucht.\n\nStattdessen gibt es WiVRn als Flatpak von Flathub. Der läuft auf jeder Distribution und bringt xrizer und OpenComposite gleich mit — ein extra Download entfällt.\n\nZu wissen: der Flatpak läuft in einer Sandbox. SteamVR-Lighthouse-Tracker funktionieren damit nicht, die Konfiguration liegt unter ~/.var/app/, und die Steuerung des Servers aus yakuda-connect heraus ist eingeschränkt.",
+    "apt_flatpak_yes": "WiVRn als Flatpak installieren",
+    "apt_flatpak_title": "WiVRn als Flatpak",
+    "apt_flatpak_missing": "Flatpak ist auf diesem System nicht installiert.\n\n    sudo apt install flatpak\n\nDanach erneut versuchen."
 }

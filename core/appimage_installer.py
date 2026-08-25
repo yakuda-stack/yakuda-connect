@@ -361,6 +361,69 @@ def detect_install_methods(tool):
     return methods
 
 
+def ubuntu_codename():
+    """
+    Der UBUNTU-Codename des Systems ("noble", "jammy", ...) oder "".
+
+    Wichtig fuer Linux Mint: 'lsb_release -cs' liefert dort den MINT-Namen
+    ('zena', 'xia', 'virginia'), nicht den der Ubuntu-Basis. In
+    /etc/os-release steht dagegen UBUNTU_CODENAME — und genau danach richten
+    sich die PPAs.
+    """
+    data = {}
+    try:
+        with open("/etc/os-release", encoding="utf-8") as fh:
+            for line in fh:
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    data[key.strip()] = value.strip().strip('"').strip("'")
+    except OSError:
+        return ""
+    return data.get("UBUNTU_CODENAME") or data.get("VERSION_CODENAME") or ""
+
+
+def ppa_supports_codename(owner_repo, codename, timeout=6):
+    """
+    Baut diese PPA fuer diese Ubuntu-Ausgabe? True / False / None (unklar).
+
+    Geprueft wird, ob es die Release-Datei der Ausgabe gibt. Ohne diese
+    Vorabpruefung laeuft der Nutzer in
+    'Cannot add PPA: This PPA does not support noble' — eine Meldung, die
+    mitten in einer laufenden Installation auftaucht und wie ein Fehler der
+    App aussieht, obwohl schlicht kein Paket existiert.
+
+    None bedeutet: nicht erreichbar (kein Netz, Launchpad down). Dann wird
+    NICHT blockiert — lieber der Versuch als eine falsche Absage.
+    """
+    if not codename:
+        return None
+    owner_repo = owner_repo.replace("ppa:", "")
+    url = (f"https://ppa.launchpadcontent.net/{owner_repo}/ubuntu/"
+           f"dists/{codename}/Release")
+    req = urllib.request.Request(url, method="HEAD",
+                                 headers={"User-Agent": "yakuda-connect"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return 200 <= r.status < 300
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        return None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        log.debug("PPA-Pruefung fehlgeschlagen: %s", exc)
+        return None
+
+
+def flatpak_app_installed(app_id):
+    """True, wenn diese Flatpak-Anwendung installiert ist (Benutzer ODER System)."""
+    if not shutil.which("flatpak"):
+        return False
+    res = proc.run(["flatpak", "info", app_id],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   timeout=proc.DEFAULT_TIMEOUT)
+    return res.returncode == 0
+
+
 def dnf_available():
     """True, wenn dnf da ist — also Fedora/Nobara & Verwandte."""
     return shutil.which("dnf") is not None

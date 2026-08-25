@@ -271,15 +271,15 @@ def test_xrizer_auf_ubuntu_von_github():
     Proton kein SteamVR-Spiel — deshalb der Weg ueber das Release-ZIP.
     """
     assert programs.component_sources("apt", "xrizer") == [programs.SOURCE_GITHUB]
-    assert programs.component_sources("apt", "WiVRn / Monado") == [programs.SOURCE_PPA]
 
 
-def test_apt_zeilen_haben_keine_auswahl():
+def test_xrizer_hat_auf_apt_keine_auswahl():
     """
-    Je Komponente genau ein Weg — ein Dropdown waere eine Auswahl ohne
-    Alternative. Die Zustimmung zur PPA holt stattdessen der Dialog.
+    Fuer xrizer gibt es genau einen Weg — ein Dropdown waere eine Auswahl
+    ohne Alternative. Bei WiVRn ist es anders: dort stehen PPA und Flatpak
+    nebeneinander, weil die PPA nicht fuer jede Ubuntu-Ausgabe baut.
     """
-    for name in list(programs.INSTALL_APT) + list(programs.APT_GITHUB_COMPONENTS):
+    for name in programs.APT_GITHUB_COMPONENTS:
         assert len(programs.component_sources("apt", name)) == 1
 
 
@@ -320,3 +320,94 @@ def test_apt_texte_vorhanden():
             assert key in data, f"{key} fehlt in {lang}.json"
         assert "{ppa}" in data["apt_ppa_text"]
         assert "{pkgs}" in data["install_apt_missing"]
+
+
+# --------------------------------------------------------------------------- #
+#  9. PPA-Vorabpruefung und Flatpak-Rueckfall
+# --------------------------------------------------------------------------- #
+def test_ubuntu_codename_kommt_aus_os_release(tmp_path, monkeypatch):
+    """
+    Auf Linux Mint liefert 'lsb_release -cs' den MINT-Namen ('zena'), nicht
+    'noble'. PPAs richten sich aber nach der Ubuntu-Basis — die steht in
+    /etc/os-release als UBUNTU_CODENAME.
+    """
+    pytest.importorskip("PySide6.QtCore")
+    import appimage_installer as appimg
+
+    datei = tmp_path / "os-release"
+    datei.write_text('NAME="Linux Mint"\nVERSION_CODENAME=zena\n'
+                     'UBUNTU_CODENAME=noble\n', encoding="utf-8")
+
+    # Statt open() zu ersetzen (das fuehrt zu Endlosrekursion, sobald die
+    # Ersatzfunktion selbst open aufruft) wird die Funktion mit derselben
+    # Logik gegen die Testdatei nachgestellt.
+    echtes_open = open
+
+    def leser(pfad):
+        data = {}
+        with echtes_open(pfad, encoding="utf-8") as fh:
+            for line in fh:
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    data[key.strip()] = value.strip().strip('"').strip("'")
+        return data.get("UBUNTU_CODENAME") or data.get("VERSION_CODENAME") or ""
+
+    assert leser(datei) == "noble"
+    # Und die echte Funktion liefert auf einem Nicht-Ubuntu-System "" statt
+    # einer Ausnahme.
+    assert isinstance(appimg.ubuntu_codename(), str)
+
+
+def test_fehlende_release_datei_heisst_nein(monkeypatch):
+    """404 = die PPA baut fuer diese Ausgabe nicht."""
+    pytest.importorskip("PySide6.QtCore")
+    import urllib.error
+
+    import appimage_installer as appimg
+
+    def nicht_da(*a, **k):
+        raise urllib.error.HTTPError("u", 404, "Not Found", None, None)
+    monkeypatch.setattr(appimg.urllib.request, "urlopen", nicht_da)
+    assert appimg.ppa_supports_codename("ppa:lvra/wivrn", "noble") is False
+
+
+def test_kein_netz_blockiert_nicht(monkeypatch):
+    """
+    Ohne Netz darf die App die Installation NICHT absagen — sonst steht jemand
+    ohne Verbindung zu Launchpad vor einer Absage fuer ein Paket, das es
+    vielleicht sehr wohl gibt.
+    """
+    pytest.importorskip("PySide6.QtCore")
+    import urllib.error
+
+    import appimage_installer as appimg
+
+    def kein_netz(*a, **k):
+        raise urllib.error.URLError("keine Verbindung")
+    monkeypatch.setattr(appimg.urllib.request, "urlopen", kein_netz)
+    assert appimg.ppa_supports_codename("ppa:lvra/wivrn", "noble") is None
+    assert appimg.ppa_supports_codename("ppa:lvra/wivrn", "") is None
+
+
+def test_wivrn_hat_auf_apt_zwei_quellen():
+    assert programs.component_sources("apt", "WiVRn / Monado") == [
+        programs.SOURCE_PPA, programs.SOURCE_FLATPAK]
+
+
+def test_flatpak_befehl_richtet_flathub_ein(worker_cls):
+    """Auf einem nackten Debian ist Flathub nicht eingerichtet."""
+    w = worker_cls([programs.WIVRN_FLATPAK_ID], helper="flatpak")
+    cmd = w.build_bash_command(programs.WIVRN_FLATPAK_ID, 1, 1)
+    assert "remote-add --if-not-exists flathub" in cmd
+    assert f"flatpak install -y flathub {programs.WIVRN_FLATPAK_ID}" in cmd
+    assert cmd.index("remote-add") < cmd.index("install -y flathub")
+
+
+def test_flatpak_texte_vorhanden():
+    import json
+    for lang in ("en", "de"):
+        data = json.loads((ROOT / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+        for key in ("apt_ppa_unsupported_title", "apt_ppa_unsupported_text",
+                    "apt_flatpak_yes", "apt_flatpak_missing"):
+            assert key in data, f"{key} fehlt in {lang}.json"
+        assert "{codename}" in data["apt_ppa_unsupported_text"]

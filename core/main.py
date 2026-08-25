@@ -99,7 +99,8 @@ import vr_autotune as autotune
 from programs import (INSTALL_PACKAGES, INSTALL_DNF, INSTALL_DNF_COPR,
                       INSTALL_APT, APT_BINARY_FALLBACK, UBUNTU_WIVRN_PPA,
                       apt_github_groups, DNF_BINARY_FALLBACK, SOURCE_LABELS,
-                      SOURCE_COPR, SOURCE_GITHUB, SOURCE_PPA,
+                      SOURCE_COPR, SOURCE_GITHUB, SOURCE_PPA, SOURCE_FLATPAK,
+                      WIVRN_FLATPAK_ID,
                       component_sources, dnf_copr_groups, dnf_copr_for_package,
                       TOOLS_APPS, TOOLS_OSC)
 import games as games_db
@@ -221,6 +222,12 @@ class PackageCheckWorker(QThread):
                                 else APT_BINARY_FALLBACK)
                     binary = fallback.get(name)
                     if binary and shutil.which(binary):
+                        is_installed = True
+                    # Der Flatpak legt keine Binary in den PATH und taucht in
+                    # keiner Paketliste auf — ohne diese Abfrage stuende in der
+                    # Zeile "fehlt", obwohl WiVRn laeuft.
+                    elif (self.method == "apt" and name in INSTALL_APT
+                          and appimg.flatpak_app_installed(WIVRN_FLATPAK_ID)):
                         is_installed = True
                 state = {"installed": is_installed,
                          "has_update": any(pkg in updatable for pkg in idents)}
@@ -2011,6 +2018,29 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         """
         if getattr(self, "_apt_ppa_confirmed", False):
             return True
+
+        # Baut die PPA ueberhaupt fuer diese Ubuntu-Ausgabe? Auf Mint 22.x
+        # (Basis 'noble') lautet die Antwort nein, und ohne diese Vorabpruefung
+        # sieht der Nutzer erst mitten in der laufenden Installation
+        # 'Cannot add PPA: This PPA does not support noble'.
+        codename = appimg.ubuntu_codename()
+        supported = appimg.ppa_supports_codename(UBUNTU_WIVRN_PPA, codename)
+        if supported is False:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Warning)
+            box.setWindowTitle(tr("apt_ppa_unsupported_title"))
+            box.setText(tr("apt_ppa_unsupported_text").format(
+                ppa=UBUNTU_WIVRN_PPA, codename=codename))
+            flat_btn = box.addButton(tr("apt_flatpak_yes"), QMessageBox.AcceptRole)
+            box.addButton(tr("fedora_copr_no"), QMessageBox.RejectRole)
+            box.setDefaultButton(flat_btn)
+            box.exec()
+            if box.clickedButton() == flat_btn:
+                self.install_wivrn_flatpak()
+            return False
+        # supported is None -> Launchpad nicht erreichbar. Dann NICHT
+        # blockieren: lieber der Versuch als eine falsche Absage.
+
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
         box.setWindowTitle(tr("apt_ppa_title"))
@@ -2022,6 +2052,32 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         ok = box.clickedButton() == yes_btn
         self._apt_ppa_confirmed = ok
         return ok
+
+    def install_wivrn_flatpak(self):
+        """
+        WiVRn als Flatpak von Flathub installieren.
+
+        Der Weg fuer Systeme, fuer die die PPA nicht baut. Der Flatpak bringt
+        xrizer UND OpenComposite mit — auf diesem Weg braucht es also auch den
+        GitHub-Download nicht. Dafuer laeuft er in einer Sandbox: die
+        Konfiguration liegt unter ~/.var/app/, und die Steuerung des Servers
+        aus yakuda-connect heraus ist eingeschraenkt. Genau das sagt die
+        Rueckfrage dem Nutzer auch.
+        """
+        if getattr(self, "worker", None) and self.worker.isRunning():
+            return
+        if not shutil.which("flatpak"):
+            QMessageBox.warning(self, tr("apt_flatpak_title"),
+                                tr("apt_flatpak_missing"))
+            return
+        self.ui.btn_install.setEnabled(False)
+        self._last_install_method = "flatpak"
+        self._last_install_pkgs = []          # Nachkontrolle laeuft ueber flatpak info
+        self._xrizer_github_after_install = False
+        self.worker = InstallWorker([WIVRN_FLATPAK_ID], helper="flatpak")
+        self.worker.status_signal.connect(self.ui.lbl_worker_status.setText)
+        self.worker.finished_signal.connect(self.on_installation_finished)
+        self.worker.start()
 
     def _apt_packages_still_missing(self):
         """Welche der angeforderten .deb-Pakete sind nicht angekommen?"""
@@ -2169,6 +2225,10 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
             return
         source = self._selected_source(name)
         if not source:
+            return
+
+        if source == SOURCE_FLATPAK:
+            self.install_wivrn_flatpak()
             return
 
         if source == SOURCE_GITHUB:

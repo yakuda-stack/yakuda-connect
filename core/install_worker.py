@@ -189,7 +189,12 @@ class InstallWorker(QThread):
                 "sleep 2")
 
         if self.helper == "flatpak":
+            # remote-add zuerst: auf Mint ist Flathub eingerichtet, auf einem
+            # nackten Debian nicht. '--if-not-exists' aendert nichts, wenn es
+            # das Remote schon gibt.
             return (f"echo '=== Installiere {pkg} (Flatpak) ==='; "
+                    f"flatpak remote-add --if-not-exists flathub "
+                    f"https://flathub.org/repo/flathub.flatpakrepo; "
                     f"flatpak install -y flathub {pkg}; " + tail)
 
         if self.helper == "apt":

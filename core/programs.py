@@ -137,6 +137,18 @@ INSTALL_DNF_COPR = {
 # yakuda-connect nutzt, braucht sie nicht (gleiche Begruendung wie auf Fedora).
 UBUNTU_WIVRN_PPA = "ppa:lvra/wivrn"
 
+# Zweiter Weg, wenn die PPA fuer die Ubuntu-Ausgabe des Systems nicht baut —
+# auf Linux Mint 22.x (Basis noble) genau der Fall: 'Cannot add PPA: This PPA
+# does not support noble'. Der Flatpak von Flathub gibt es fuer jede
+# Distribution und er bringt xrizer UND OpenComposite gleich mit.
+#
+# Preis dafuer (steht so auch im Wiki des Projekts): in der Sandbox
+# funktionieren SteamVR-Lighthouse-Tracker nicht, und die Konfiguration liegt
+# unter ~/.var/app/io.github.wivrn.wivrn/ statt ~/.config/wivrn/. Die
+# Steuerung des Servers aus yakuda-connect heraus ist damit eingeschraenkt —
+# installieren und erkennen geht, alles Weitere folgt spaeter.
+WIVRN_FLATPAK_ID = "io.github.wivrn.wivrn"
+
 INSTALL_APT = {
     "WiVRn / Monado": ["wivrn-server"],
 }
@@ -178,11 +190,13 @@ def apt_github_groups():
 SOURCE_GITHUB = "github"
 SOURCE_COPR = "copr"
 SOURCE_PPA = "ppa"
+SOURCE_FLATPAK = "flatpak"
 
 SOURCE_LABELS = {
     "dnf": "Fedora-Repos",
     SOURCE_COPR: f"COPR {FEDORA_XRIZER_COPR}",
     SOURCE_PPA: f"PPA {UBUNTU_WIVRN_PPA.replace('ppa:', '')}",
+    SOURCE_FLATPAK: "Flatpak (Flathub)",
     SOURCE_GITHUB: "GitHub-Release",
     "yay": "AUR (yay)",
     "paru": "AUR (paru)",
@@ -205,7 +219,9 @@ def component_sources(method, name):
         # deshalb nicht — es gaebe nichts auszuwaehlen.
         if name in APT_GITHUB_COMPONENTS:
             return [SOURCE_GITHUB]
-        return [SOURCE_PPA]
+        # WiVRn: PPA zuerst (native Pakete, volle Steuerung), Flatpak als
+        # zweite Quelle fuer Systeme, fuer die die PPA nicht baut.
+        return [SOURCE_PPA, SOURCE_FLATPAK]
     if method in ("yay", "paru"):
         # xrizer gibt es auch auf Arch als Release-ZIP — praktisch, wenn der
         # AUR-Build gerade klemmt.

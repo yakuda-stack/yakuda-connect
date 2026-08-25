@@ -14,7 +14,7 @@
 |---|---|---|
 | **Arch-based** | ✅ Tested — primary development system | Full feature set: AUR installation, all components |
 | **Fedora-based** | ✅ Tested | Components come from the Fedora repos; xrizer from the COPR `@xr-sig/xrizer` or the GitHub release. The WiVRn dashboard is deliberately not offered here — yakuda-connect already provides the controls |
-| Debian / Ubuntu / Linux Mint | ✅ Tested (Mint 22.3) | WiVRn is installed from the Linux VR Adventures PPA (`ppa:lvra/wivrn`), xrizer straight from its GitHub release. OpenComposite is not offered here — no release archive exists |
+| Debian / Ubuntu / Linux Mint | ✅ Tested (Mint 22.3) | WiVRn from the Linux VR Adventures PPA (`ppa:lvra/wivrn`) where it builds, otherwise the Flathub Flatpak; xrizer straight from its GitHub release. Note: the PPA has no build for Ubuntu 24.04 `noble`, the base of Mint 22.x |
 
 ### 📸 Interface Preview
 
@@ -173,6 +173,7 @@ These are all of them. Only the first two happen without you clicking anything.
 | `raw.githubusercontent.com` | ~1.5 s after start, automatic | Reads one file and compares its version number with the installed one | `core/install_worker.py` |
 | `raw.githubusercontent.com` | ~1.5 s after start, automatic | Version of the game database (`config/games.json`) | `core/games.py` |
 | `api.github.com` | Only on click | Finds the latest WiVRn release (APK), AppImage tools and the newest xrizer release | `core/main.py`, `core/appimage_installer.py`, `core/xrizer_github.py` |
+| `ppa.launchpadcontent.net` | Only on click, apt systems only | Checks whether the WiVRn PPA has a build for this Ubuntu release before adding it (HEAD request, no download) | `core/appimage_installer.py` |
 | `github.com` / `codeload.github.com` | Only on click | Downloads AppImages, the WayVR design, the reference backup, the xrizer release ZIP (into `~/.local/share/xrizer`, no root) | `core/appimage_installer.py`, `core/backup_manager.py`, `core/xrizer_github.py` |
 | `shared.fastly.steamstatic.com` | When opening the Games tab | Cover images for detected Steam games, cached locally | `core/games.py` |
 
