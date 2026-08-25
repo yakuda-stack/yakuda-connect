@@ -99,7 +99,8 @@ import vr_autotune as autotune
 from programs import (INSTALL_PACKAGES, INSTALL_DNF, INSTALL_DNF_COPR,
                       INSTALL_APT, APT_BINARY_FALLBACK, UBUNTU_WIVRN_PPA,
                       apt_github_groups, DNF_BINARY_FALLBACK, SOURCE_LABELS,
-                      SOURCE_COPR, SOURCE_GITHUB, SOURCE_PPA, SOURCE_FLATPAK,
+                      SOURCE_COPR, SOURCE_GITHUB, SOURCE_PPA, SOURCE_FLATPAK, SOURCE_GUIDE,
+                      native_guide_url,
                       WIVRN_FLATPAK_ID,
                       component_sources, dnf_copr_groups, dnf_copr_for_package,
                       TOOLS_APPS, TOOLS_OSC)
@@ -2053,6 +2054,26 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self._apt_ppa_confirmed = ok
         return ok
 
+    def show_native_guide(self):
+        """
+        Anleitung fuer die native Installation oeffnen.
+
+        Auf Debian/Ubuntu/Mint automatisiert die App den nativen Weg nicht:
+        zu viele Sonderfaelle je Ausgabe. Wer ihn geht, wird hinterher
+        trotzdem erkannt — sobald 'wivrn-server' im PATH liegt, zeigt die
+        Statuszeile "installiert", ganz gleich woher es kommt.
+        """
+        url = native_guide_url()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(tr("native_guide_title"))
+        box.setText(tr("native_guide_text"))
+        open_btn = box.addButton(tr("native_guide_open"), QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Close)
+        box.exec()
+        if box.clickedButton() == open_btn:
+            QDesktopServices.openUrl(QUrl(url))
+
     def install_wivrn_flatpak(self):
         """
         WiVRn als Flatpak von Flathub installieren.
@@ -2229,6 +2250,10 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
         if source == SOURCE_FLATPAK:
             self.install_wivrn_flatpak()
+            return
+
+        if source == SOURCE_GUIDE:
+            self.show_native_guide()
             return
 
         if source == SOURCE_GITHUB:

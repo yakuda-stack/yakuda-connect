@@ -149,6 +149,26 @@ UBUNTU_WIVRN_PPA = "ppa:lvra/wivrn"
 # installieren und erkennen geht, alles Weitere folgt spaeter.
 WIVRN_FLATPAK_ID = "io.github.wivrn.wivrn"
 
+# Anleitung fuer die native Installation auf Debian/Ubuntu/Mint.
+#
+# Auf diesen Systemen ist der native Weg mit so vielen Sonderfaellen behaftet
+# (PPA ohne Build fuer die eigene Ausgabe, fehlender OpenVR-Uebersetzer,
+# Selbstbau von OpenComposite), dass die App ihn nicht mehr automatisiert.
+# Wer ihn trotzdem gehen will, bekommt eine Anleitung — und yakuda-connect
+# erkennt das Ergebnis danach von selbst (ueber wivrn-server im PATH,
+# siehe APT_BINARY_FALLBACK).
+#
+# VIDEO leer lassen, solange keines hinterlegt ist: ein toter YouTube-Link ist
+# schlimmer als gar keiner. Ist es gesetzt, oeffnet der Knopf das Video, sonst
+# die Wiki-Seite.
+NATIVE_GUIDE_VIDEO_URL = ""
+NATIVE_GUIDE_URL = "https://wiki.vronlinux.org/docs/fossvr/wivrn/#installing-wivrn"
+
+
+def native_guide_url():
+    """Video, wenn eines hinterlegt ist — sonst die Wiki-Anleitung."""
+    return NATIVE_GUIDE_VIDEO_URL or NATIVE_GUIDE_URL
+
 INSTALL_APT = {
     "WiVRn / Monado": ["wivrn-server"],
 }
@@ -191,12 +211,14 @@ SOURCE_GITHUB = "github"
 SOURCE_COPR = "copr"
 SOURCE_PPA = "ppa"
 SOURCE_FLATPAK = "flatpak"
+SOURCE_GUIDE = "guide"
 
 SOURCE_LABELS = {
     "dnf": "Fedora-Repos",
     SOURCE_COPR: f"COPR {FEDORA_XRIZER_COPR}",
     SOURCE_PPA: f"PPA {UBUNTU_WIVRN_PPA.replace('ppa:', '')}",
     SOURCE_FLATPAK: "Flatpak (Flathub)",
+    SOURCE_GUIDE: "Nativ (Anleitung)",
     SOURCE_GITHUB: "GitHub-Release",
     "yay": "AUR (yay)",
     "paru": "AUR (paru)",
@@ -219,9 +241,18 @@ def component_sources(method, name):
         # deshalb nicht — es gaebe nichts auszuwaehlen.
         if name in APT_GITHUB_COMPONENTS:
             return [SOURCE_GITHUB]
-        # WiVRn: PPA zuerst (native Pakete, volle Steuerung), Flatpak als
-        # zweite Quelle fuer Systeme, fuer die die PPA nicht baut.
-        return [SOURCE_PPA, SOURCE_FLATPAK]
+        # WiVRn: Flatpak ZUERST und damit Vorauswahl.
+        #
+        # Der native Weg ist auf Debian-Systemen kein gleichwertiger zweiter
+        # Weg, sondern ein Minenfeld: die PPA baut fuer Ubuntu 24.04 ('noble',
+        # Basis von Mint 22.x) gar nicht, ein OpenVR-Uebersetzer fehlt dort
+        # ohnehin, und OpenComposite muesste selbst gebaut werden. Der Flatpak
+        # bringt alles mit und laeuft auf jeder Ausgabe.
+        #
+        # Die PPA bleibt waehlbar — auf Ausgaben, fuer die sie baut, ist sie
+        # der bessere Weg (volle Steuerung, Lighthouse-Tracker). Und wer es
+        # ganz von Hand will, bekommt ueber SOURCE_GUIDE die Anleitung.
+        return [SOURCE_FLATPAK, SOURCE_PPA, SOURCE_GUIDE]
     if method in ("yay", "paru"):
         # xrizer gibt es auch auf Arch als Release-ZIP — praktisch, wenn der
         # AUR-Build gerade klemmt.

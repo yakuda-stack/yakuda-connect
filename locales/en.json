@@ -622,5 +622,8 @@
     "apt_ppa_unsupported_text": "The PPA {ppa} carries no packages for \"{codename}\" — the base of this distribution.\n\nAdding it would fail with \"Cannot add PPA: This PPA does not support {codename}\", so it isn't attempted.\n\nWiVRn is available as a Flatpak from Flathub instead. It runs on any distribution and ships xrizer and OpenComposite with it, so no extra download is needed.\n\nWorth knowing: the Flatpak runs in a sandbox. SteamVR lighthouse trackers don't work with it, the configuration lives under ~/.var/app/, and controlling the server from yakuda-connect is limited.",
     "apt_flatpak_yes": "Install WiVRn as a Flatpak",
     "apt_flatpak_title": "WiVRn as a Flatpak",
-    "apt_flatpak_missing": "Flatpak is not installed on this system.\n\n    sudo apt install flatpak\n\nThen try again."
+    "apt_flatpak_missing": "Flatpak is not installed on this system.\n\n    sudo apt install flatpak\n\nThen try again.",
+    "native_guide_title": "Install WiVRn natively",
+    "native_guide_text": "On Debian, Ubuntu and Linux Mint, yakuda-connect does not automate the native route — there are too many differences per release: the PPA does not build for every Ubuntu version, an OpenVR translation layer is missing there anyway, and OpenComposite would have to be built by hand.\n\nThe guide walks through the native installation step by step.\n\nAfterwards there is nothing else to do here: as soon as wivrn-server is in your PATH, yakuda-connect picks it up on its own, no matter where it came from.",
+    "native_guide_open": "Open the guide"
 }

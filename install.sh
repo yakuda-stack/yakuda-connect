@@ -52,7 +52,14 @@ pm_install() {
     case "$PM" in
         pacman) sudo pacman -S --needed --noconfirm "$@" ;;
         dnf)    sudo dnf install -y "$@" ;;
-        apt)    sudo apt-get update -qq && sudo apt-get install -y "$@" ;;
+        # 'update' und 'install' bewusst NICHT mit && verketten: ein
+        # 'apt-get update', das ueber eine einzige kaputte Fremdquelle
+        # stolpert, gibt einen Fehlercode zurueck — und haette damit die
+        # eigentliche Installation verhindert, obwohl das Paket laengst in den
+        # zwischengespeicherten Listen steht. Genau so blieb libxcb-cursor0
+        # auf einem Mint-System aus, ohne dass jemand einen Grund sah.
+        apt)    sudo apt-get update -qq || echo "[Info] apt-get update meldete einen Fehler — fahre trotzdem fort."
+                sudo apt-get install -y "$@" ;;
         zypper) sudo zypper --non-interactive install "$@" ;;
         *)      return 1 ;;
     esac
@@ -93,7 +100,13 @@ install_qt_xcb_libs() {
     # Bewusst ohne Anfuehrungszeichen: die Liste soll in einzelne
     # Paketnamen zerfallen.
     # shellcheck disable=SC2086
-    pm_install $wanted || true
+    if ! pm_install $wanted; then
+        # Eine ganze Liste faellt schon, wenn ein einziger Name auf dieser
+        # Ausgabe anders heisst. Deshalb der zweite Versuch mit genau der
+        # Bibliothek, ohne die Qt nachweislich nicht startet.
+        echo "[Info] Sammelinstallation fehlgeschlagen — versuche libxcb-cursor0 einzeln..."
+        pm_install libxcb-cursor0 || true
+    fi
 }
 
 # Laesst sich das xcb-Plugin wirklich laden? Prueft die Bibliotheken, ohne ein

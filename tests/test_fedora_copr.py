@@ -389,9 +389,38 @@ def test_kein_netz_blockiert_nicht(monkeypatch):
     assert appimg.ppa_supports_codename("ppa:lvra/wivrn", "") is None
 
 
-def test_wivrn_hat_auf_apt_zwei_quellen():
-    assert programs.component_sources("apt", "WiVRn / Monado") == [
-        programs.SOURCE_PPA, programs.SOURCE_FLATPAK]
+def test_flatpak_ist_auf_apt_die_vorauswahl():
+    """
+    Der native Weg ist auf Debian-Systemen kein gleichwertiger zweiter Weg:
+    die PPA baut nicht fuer jede Ubuntu-Ausgabe, ein OpenVR-Uebersetzer fehlt
+    dort ohnehin. Der Flatpak bringt alles mit — deshalb steht er vorn.
+    """
+    quellen = programs.component_sources("apt", "WiVRn / Monado")
+    assert quellen[0] == programs.SOURCE_FLATPAK
+    assert programs.SOURCE_PPA in quellen
+    assert programs.SOURCE_GUIDE in quellen
+
+
+def test_anleitung_hat_ein_ziel():
+    """
+    Ein toter Link waere schlimmer als gar keiner: solange kein Video
+    hinterlegt ist, muss die Wiki-Seite herhalten.
+    """
+    url = programs.native_guide_url()
+    assert url.startswith("https://")
+    if programs.NATIVE_GUIDE_VIDEO_URL:
+        assert url == programs.NATIVE_GUIDE_VIDEO_URL
+    else:
+        assert url == programs.NATIVE_GUIDE_URL
+
+
+def test_nativ_installiertes_wivrn_wird_erkannt():
+    """
+    Wer der Anleitung folgt, soll danach nichts weiter tun muessen: liegt
+    wivrn-server im PATH, gilt die Komponente als installiert — unabhaengig
+    davon, ob ein .deb, ein Selbstbau oder sonst etwas dahintersteckt.
+    """
+    assert programs.APT_BINARY_FALLBACK["WiVRn / Monado"] == "wivrn-server"
 
 
 def test_flatpak_befehl_richtet_flathub_ein(worker_cls):
