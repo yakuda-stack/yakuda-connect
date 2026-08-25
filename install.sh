@@ -58,6 +58,14 @@ pm_install() {
     esac
 }
 
+# Gibt es dieses Paket in den aktiven apt-Quellen? Nur fuer apt sinnvoll.
+# 'apt-cache policy' listet einen Kandidaten nur, wenn das Paket existiert;
+# bei einem unbekannten Namen bleibt die Ausgabe leer.
+apt_has_package() {
+    [ "$PM" = "apt" ] || return 1
+    apt-cache policy "$1" 2>/dev/null | grep -qE "Kandidat|Candidate"
+}
+
 # --- Grundwerkzeuge pruefen ---
 if ! command -v git &>/dev/null; then
     echo "[Info] git wird benoetigt – installiere es..."
@@ -106,11 +114,20 @@ if ! have_pyside; then
             pm_install python3-pyside6 || true
             ;;
         apt)
-            # Debian/Ubuntu: aufgeteilte Pakete. qtsvg wird fuer das SVG-Icon
-            # gebraucht, qtnetwork fuer den Update-Check.
-            pm_install python3-pyside6.qtwidgets python3-pyside6.qtgui \
-                       python3-pyside6.qtcore python3-pyside6.qtsvg \
-                       python3-pyside6.qtnetwork || true
+            # Debian/Ubuntu splitten PySide6 in Einzelpakete auf. ABER: erst ab
+            # Debian 13 (trixie) bzw. Ubuntu 25.04. Auf Ubuntu 24.04 "noble" —
+            # und damit auf Linux Mint 22.x — gibt es ueberhaupt kein PySide6,
+            # nur noch PySide2. Ein blindes apt install produziert dort acht
+            # Zeilen rote Fehlermeldungen, obwohl gleich danach der venv-Weg
+            # sauber greift. Deshalb vorher fragen, ob es die Pakete gibt.
+            if apt_has_package python3-pyside6.qtwidgets; then
+                # qtsvg fuer das SVG-Icon, qtnetwork fuer den Update-Check.
+                pm_install python3-pyside6.qtwidgets python3-pyside6.qtgui \
+                           python3-pyside6.qtcore python3-pyside6.qtsvg \
+                           python3-pyside6.qtnetwork || true
+            else
+                echo "[Info] Diese Ausgabe hat kein PySide6 in den Paketquellen."
+            fi
             ;;
         zypper)
             # Tumbleweed/Leap benennen das Paket je nach Version anders.
@@ -124,13 +141,34 @@ fi
 # --break-system-packages, kein Konflikt mit PEP 668).
 if ! have_pyside; then
     echo "[Info] Kein PySide6 aus den Distro-Repos – lege ein venv unter $VENV_DIR an..."
-    if ! "$PY_BIN" -c "import venv" &>/dev/null; then
+
+    # Debian/Ubuntu/Mint liefern das Modul 'venv' mit, aber OHNE 'ensurepip'.
+    # Ein 'import venv' klappt dort also, und 'python3 -m venv' scheitert
+    # trotzdem mit "ensurepip is not available". Geprueft werden muss deshalb
+    # ensurepip — nicht venv.
+    if ! "$PY_BIN" -c "import ensurepip" &>/dev/null; then
+        echo "[Info] ensurepip fehlt – installiere die noetigen Python-Pakete..."
+        PY_MM="$("$PY_BIN" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
         case "$PM" in
             dnf)    pm_install python3-devel || true ;;
-            apt)    pm_install python3-venv python3-pip || true ;;
+            # 'python3-venv' ist auf Ubuntu nur ein Metapaket; die eigentliche
+            # Datei steckt in python3.12-venv (oder was auch immer die
+            # Systemversion ist). Genau dieses Paket nennt auch die
+            # Fehlermeldung von python3 -m venv.
+            apt)    pm_install "python${PY_MM}-venv" || pm_install python3-venv || true
+                    pm_install python3-pip || true ;;
             zypper) pm_install python3-venv python3-pip || true ;;
         esac
     fi
+
+    if ! "$PY_BIN" -c "import ensurepip" &>/dev/null; then
+        echo "[Fehler] Das venv-Modul ist unvollstaendig (ensurepip fehlt) und"
+        echo "         liess sich nicht nachinstallieren. Bitte von Hand:"
+        echo "             sudo apt install python3-venv python3-pip"
+        echo "         Danach dieses Skript erneut starten."
+        exit 1
+    fi
+
     sudo rm -rf "$VENV_DIR"
     sudo "$PY_BIN" -m venv "$VENV_DIR"
     sudo "$VENV_DIR/bin/python3" -m pip install --upgrade pip
