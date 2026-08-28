@@ -385,7 +385,10 @@ class Ui_MainWindow:
         # er an, erscheint unter den betroffenen Schaltflaechen ein
         # ausklappbarer Kasten mit Pfaden, Rechten und dem passenden
         # Terminal-Befehl (siehe ui/advanced_panel.py).
-        adv_row = QWidget()
+        # Als Attribut gemerkt, nicht nur als lokale Variable: mit einem
+        # Hintergrundbild muss diese Zeile durchscheinend werden, und dafuer
+        # muss core/main.py sie erreichen koennen.
+        self.adv_row = adv_row = QWidget()
         adv_row.setStyleSheet("background-color:#1c1f26;")
         adv_layout = QHBoxLayout(adv_row)
         adv_layout.setContentsMargins(14, 10, 14, 14)
@@ -408,6 +411,9 @@ class Ui_MainWindow:
 
         # Content Area
         self.pages = QStackedWidget()
+        # Benannt, damit die Hintergrundbild-Regel nur diesen Stapel trifft
+        # und nicht die Sub-Tab-Stapel darin (ui/theme.py -> stack_tint_css).
+        self.pages.setObjectName("ykpages")
         self.main_layout.addWidget(self.pages)
 
         self.tab_installation = QWidget()
@@ -1245,7 +1251,14 @@ class Ui_MainWindow:
     def _settings_card(self):
         """Eine Karte (QFrame) im Nord-Card-Look. Gibt (frame, vbox) zurück."""
         card = QFrame()
-        card.setStyleSheet("QFrame { background-color:#21252b; border-radius:10px; }")
+        # Selektor mit Objektnamen statt schlichtem 'QFrame': QLabel erbt von
+        # QFrame, ein blankes 'QFrame { ... }' faerbt also JEDES Label in der
+        # Karte mit. Bei deckender Farbe faellt das nicht auf — sobald die
+        # Karte fuer ein Hintergrundbild halbdurchsichtig wird, malt jedes
+        # Label die Farbe ein zweites Mal darueber und steht als dunkler
+        # Kasten im Bild.
+        card.setObjectName("ykcard")
+        card.setStyleSheet("QFrame#ykcard { background-color:#21252b; border-radius:10px; }")
         v = QVBoxLayout(card)
         v.setContentsMargins(16, 14, 16, 14)
         v.setSpacing(10)
@@ -1335,8 +1348,13 @@ class Ui_MainWindow:
 
         # ---- Sub-Tab-Navigation ----
         self.settings_subtabs = QTabWidget()
+        # Die Flaeche der Sub-Tabs bleibt durchsichtig statt eigener Farbe.
+        # Sichtbar aendert das nichts — dahinter liegt der Seitenstapel in
+        # exakt derselben Farbe. Es ist aber die Voraussetzung dafuer, dass ein
+        # Hintergrundbild hier ueberhaupt durchscheinen KANN: eine eigene
+        # Hintergrundfarbe am Widget schlaegt jede Regel von weiter oben.
         self.settings_subtabs.setStyleSheet("""
-            QTabWidget::pane { border:none; background-color:#181a1f; top:-1px; }
+            QTabWidget::pane { border:none; background:transparent; top:-1px; }
             QTabBar { qproperty-drawBase:0; }
             QTabBar::tab {
                 background:#21252b; color:#7b88a1; padding:8px 18px;
@@ -1683,8 +1701,9 @@ class Ui_MainWindow:
 
         # ---- Sub-Tab-Navigation (wie im Settings-Tab) ----
         self.tools_subtabs = QTabWidget()
+        # Durchsichtig wie im Settings-Tab (gleicher Grund, siehe dort).
         self.tools_subtabs.setStyleSheet("""
-            QTabWidget::pane { border:none; background-color:#181a1f; top:-1px; }
+            QTabWidget::pane { border:none; background:transparent; top:-1px; }
             QTabBar { qproperty-drawBase:0; }
             QTabBar::tab {
                 background:#21252b; color:#7b88a1; padding:8px 18px;
@@ -1714,12 +1733,13 @@ class Ui_MainWindow:
         from PySide6.QtWidgets import QFrame
 
         card = QFrame()
+        card.setObjectName("toolcard")
         featured = bool(tool.get("featured"))
         if featured:
             # Hervorgehobene Karte: kräftigerer Rahmen + leicht abgesetzter
             # Hintergrund in der Nord-Frost-Akzentfarbe.
             card.setStyleSheet("""
-                QFrame {
+                QFrame#toolcard {
                     background-color: #252b34;
                     border-radius: 6px;
                     border: 1px solid #88c0d0;
@@ -1727,7 +1747,7 @@ class Ui_MainWindow:
             """)
         else:
             card.setStyleSheet("""
-                QFrame {
+                QFrame#toolcard {
                     background-color: #21252b;
                     border-radius: 6px;
                     border: 1px solid #2e3440;

@@ -149,7 +149,8 @@ class VrRuntimeWidget(QWidget):
     def _card(self):
         """Karte im gleichen Look wie die uebrigen Settings-Karten."""
         card = QFrame()
-        card.setStyleSheet("QFrame { background-color:#21252b; border-radius:10px; }")
+        card.setObjectName("ykcard")
+        card.setStyleSheet("QFrame#ykcard { background-color:#21252b; border-radius:10px; }")
         v = QVBoxLayout(card)
         v.setContentsMargins(16, 14, 16, 14)
         v.setSpacing(10)

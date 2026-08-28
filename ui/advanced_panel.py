@@ -101,8 +101,9 @@ class AdvancedBox(QWidget):
 
         # --- Inhalt (erst nach dem Aufklappen sichtbar) --------------------
         self.body = QFrame()
+        self.body.setObjectName("advbody")
         self.body.setStyleSheet(
-            "QFrame { background-color:#1e222a; border:1px solid #3b4252;"
+            "QFrame#advbody { background-color:#1e222a; border:1px solid #3b4252;"
             " border-radius:6px; }")
         body_v = QVBoxLayout(self.body)
         body_v.setContentsMargins(10, 8, 10, 8)

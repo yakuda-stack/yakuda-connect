@@ -212,6 +212,15 @@ class CustomizationWidget(QWidget):
 
     def _set_background(self, path):
         theme.set_background(path)
+        # Beim ERSTEN Bild die Karten leicht durchscheinend machen.
+        #
+        # Bei voller Deckkraft ist von einem Hintergrundbild nur der schmale
+        # Rand um die Karten zu sehen — auf die Frage "warum passiert nichts?"
+        # laeuft das zuverlaessig hinaus. OSC-DreamChatbox startet aus dem
+        # gleichen Grund bei 82 %. Der Regler bleibt frei: wer wieder 100 %
+        # will, zieht ihn zurueck, und dabei bleibt es dann auch.
+        if path and theme.current()["card_opacity"] == 100:
+            theme.set_card_opacity(85)
         theme.save()
         self.refresh()
         self.changed.emit()

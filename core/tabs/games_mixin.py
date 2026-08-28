@@ -779,11 +779,13 @@ class GamesTabMixin:
 
         for proton in games_db.visible_protons(game):
             row_frame = QFrame()
+            row_frame.setObjectName("protonrow")
             is_rec = proton.get("role") == rec_role
             row_frame.setStyleSheet(
-                "QFrame { background-color: #2e3440; border-radius: 4px; border: none; }"
+                "QFrame#protonrow { background-color: #2e3440; border-radius: 4px; border: none; }"
                 if is_rec else
-                "QFrame { background-color: transparent; border: 1px solid #2e3440; border-radius: 4px; }")
+                "QFrame#protonrow { background-color: transparent;"
+                " border: 1px solid #2e3440; border-radius: 4px; }")
             row = QVBoxLayout(row_frame)
             row.setContentsMargins(10, 8, 10, 8)
             row.setSpacing(4)

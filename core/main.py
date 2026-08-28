@@ -7,6 +7,7 @@ import os
 import json
 import datetime
 import platform
+import time
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QMessageBox,
                                QHBoxLayout, QVBoxLayout, QComboBox, QLineEdit,
                                QPushButton, QFileDialog, QWidget)
@@ -42,7 +43,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.2.4"
+APP_VERSION = "v1.2.6"
 
 # Community-Links (Settings -> "Community & Updates")
 DISCORD_URL = "https://discord.gg/X5TaN4A47h"
@@ -114,6 +115,8 @@ import advanced_info as adv
 from jsonio import update_json
 import version as version_mod
 from ui import theme
+from ui.background import BackgroundLayer
+import wivrn_server
 from translations import tr, tr_amp, set_language, get_language
 from PySide6.QtCore import QThread, Signal as QtSignal
 
@@ -457,6 +460,22 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
         # Paket-Status-Labels werden methoden-abhängig erzeugt (_rebuild_package_rows)
         self.prog_labels = {}
+
+        # Ebene fuer das Hintergrundbild — wird bei der ersten apply_theme()
+        # angelegt (vorher gibt es das Wurzel-Widget noch nicht lange genug).
+        self._bg_layer = None
+
+        # --- Geordnetes Beenden des Servers ---
+        # Ein SIGTERM wirkt nicht sofort: nach einer VR-Sitzung baut der Server
+        # erst Encoder und Audiogeraet ab. Statt die Oberflaeche waehrenddessen
+        # einzufrieren, prueft dieser Timer im Vierteltakt nach und fasst nach,
+        # wenn es zu lange dauert (siehe stop_wivrn_server).
+        self._server_stopping = False
+        self._stop_started = 0.0
+        self._stop_killed = False
+        self._shutdown_timer = QTimer(self)
+        self._shutdown_timer.setInterval(self._STOP_TICK_MS)
+        self._shutdown_timer.timeout.connect(self._poll_server_shutdown)
 
         self.init_logic_connections()
         # Farbthema anwenden, sobald die Oberflaeche steht. Vorher hat noch
@@ -1731,20 +1750,72 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         """
         try:
             count = theme.apply_to_tree(self)
+
+            # --- Hintergrundbild ---
+            # Es liegt auf einer eigenen Ebene ganz hinten im Fenster (siehe
+            # ui/background.py); ein Stylesheet am Wurzel-Widget hat frueher
+            # nichts gezeichnet. Die Ebene wird einmal angelegt und danach nur
+            # noch mit einem neuen Pfad versorgt — "" entfernt das Bild wieder.
+            if self._bg_layer is None:
+                self._bg_layer = BackgroundLayer(self.ui.central_widget)
+            visible = self._bg_layer.set_image(theme.background_path())
+
             # Auch das Stylesheet der Anwendung: dort steht die Flaeche hinter
             # den Karten (QStackedWidget) sowie Dialoge, Menues und Tooltips.
-            theme.apply_to_app(QApplication.instance())
-            bg = theme.window_background_css()
-            if bg:
-                root = self.ui.central_widget
-                base = root.property("yk_base_qss") or ""
-                root.setStyleSheet(theme.tint(base) + "\n" + bg)
-            log.debug("[Theme] %s Stylesheets eingefaerbt (%s)", count,
-                      theme.current().get("theme"))
+            app = QApplication.instance()
+            theme.apply_to_app(app)
+            if visible and app is not None:
+                # Mit Bild kommen ein paar Regeln dazu, damit nichts mehr
+                # undurchsichtig davorliegt. apply_to_app baut jedes Mal vom
+                # Original aus neu auf — Anhaengen kann sich also nicht
+                # aufsummieren.
+                app.setStyleSheet(app.styleSheet() + "\n" + theme.IMAGE_SURFACES_CSS)
+
+            # Der Seitenstapel ist deckend eingefaerbt und laege sonst UEBER
+            # dem Bild. Nur mit Bild durchsichtig schalten, damit ohne Bild
+            # alles bleibt, wie es war.
+            self.ui.pages.setStyleSheet(theme.stack_tint_css() if visible else "")
+            self._apply_column_tint(visible)
+
+            log.debug("[Theme] %s Stylesheets eingefaerbt (%s, Bild: %s)", count,
+                      theme.current().get("theme"), "ja" if visible else "nein")
         except Exception:
             # Ein Fehler beim Faerben darf die App nicht am Start hindern —
             # im schlimmsten Fall sieht sie aus wie immer.
             log.exception("[Theme] Einfaerben fehlgeschlagen")
+
+    # Die drei Flaechen, die zusammen die Seitenleiste ausmachen. Alle drei
+    # tragen ihre Farbe als EIGENES Stylesheet — und ein Widget-Stylesheet
+    # schlaegt jede Regel aus dem Anwendungs-Stylesheet. Genau deshalb endete
+    # das Hintergrundbild frueher an der Kante der Leiste.
+    _COLUMN_WIDGETS = ("sidebar_container", "sidebar", "adv_row")
+
+    def _apply_column_tint(self, with_image):
+        """
+        Seitenleiste ueber dem Hintergrundbild nur noch einfaerben statt
+        fuellen — so laeuft das Bild in EINEM Stueck hinter der ganzen
+        Oberflaeche durch, statt an der Leiste abgeschnitten zu werden.
+
+        Uebernommen aus OSC-DreamChatbox (core/theming.py, COLUMN_TINT). Ohne
+        Bild bekommt jedes Widget wieder sein normal eingefaerbtes Stylesheet.
+        """
+        for name in self._COLUMN_WIDGETS:
+            widget = getattr(self.ui, name, None)
+            if widget is None:
+                continue
+            # apply_to_tree hat das unveraenderte Original schon hinterlegt;
+            # von dort aus wird jedes Mal neu gerechnet, damit sich nichts
+            # aufaddiert.
+            base = widget.property("yk_base_qss")
+            if base is None:
+                base = widget.styleSheet()
+                widget.setProperty("yk_base_qss", base)
+            # Ohne Deckkraft faerben: die Leiste soll dem Karten-Regler NICHT
+            # folgen. Mit Bild bekommt sie stattdessen den festen Tint.
+            css = theme.tint(base, allow_opacity=False)
+            if with_image:
+                css = theme.make_translucent(css, theme.COLUMN_TINT)
+            widget.setStyleSheet(css)
 
     def _package_groups_for(self, method):
         """Welche Status-Zeilen je Methode?"""
@@ -2727,7 +2798,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         damit direkt am Geraet statt in einer eigenen Zeile weiter oben.
         """
         self.ui.list_headsets.clear()
-        if proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode != 0:
+        if not wivrn_server.is_running(self.server_process):
             self.ui.list_headsets.addItem(tr("dashboard_no_server"))
             return
         try:
@@ -2772,7 +2843,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
 
     def toggle_pairing_mode(self, checked):
         if checked:
-            if proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode != 0:
+            if not wivrn_server.is_running(self.server_process):
                 self.ui.chk_pairing.setChecked(False)
                 return
             self.pairing_process = subprocess.Popen(["wivrnctl", "pair"], stdout=subprocess.PIPE, text=True)
@@ -2826,8 +2897,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         scharfgeschaltet wird.
         """
         # Server nicht (mehr) aktiv? -> Timer entwaffnen, nichts starten.
-        server_running = (self.server_process and self.server_process.poll() is None) or \
-            proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode == 0
+        server_running = wivrn_server.is_running(self.server_process)
         if not server_running:
             self.autostart_timer.stop()
             return
@@ -2865,8 +2935,7 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         Autostart-Programme werden vorher beendet, damit es beim nächsten
         Verbinden keine doppelten Instanzen gibt.
         """
-        server_running = (self.server_process and self.server_process.poll() is None) or \
-            proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode == 0
+        server_running = wivrn_server.is_running(self.server_process)
         if not server_running:
             QMessageBox.information(
                 self, tr("autostart_reset_title"), tr("autostart_reset_no_server"))
@@ -3424,7 +3493,30 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         self.update_server_status_ui()
         QTimer.singleShot(500, self.refresh_headset_list)
 
+    # --- Zeitvorgaben fuers Beenden -------------------------------------- #
+    # Nach dem SIGTERM raeumt der Server selbst auf (Encoder, Audiogeraet,
+    # Client-Socket). Vier Sekunden reichen dafuer auch auf langsamen Systemen
+    # deutlich; danach wird nachgefasst. Wer beim Nachfassen ebenfalls nicht
+    # reagiert, ist kein normaler Fall mehr und bekommt eine Meldung.
+    _STOP_TERM_MS = 4000
+    _STOP_KILL_MS = 3000
+    _STOP_TICK_MS = 250
+
     def stop_wivrn_server(self):
+        """
+        Server beenden — gestuft und mit Nachpruefung.
+
+        Frueher wurde hier ein SIGTERM abgeschickt, die Prozessreferenz sofort
+        weggeworfen und der Server als beendet gemeldet. War er nach der
+        VR-Sitzung noch mit Aufraeumen beschaeftigt, lief er weiter; das
+        weggeworfene Kind blieb ausserdem als Zombie stehen, den 'pgrep' brav
+        als laufenden Server meldete. Ergebnis: der Statusknopf holte den
+        Schalter zurueck auf AN und man musste zwei-, dreimal beenden.
+
+        Jetzt uebernimmt ein Timer die Nachschau (die Oberflaeche bleibt dabei
+        bedienbar) und eskaliert notfalls auf SIGKILL. Geerntet wird das eigene
+        Kind in jedem Fall — siehe core/wivrn_server.py.
+        """
         self.ui.chk_pairing.setChecked(False)
 
         # Autostart-Programme beenden und Zustand zurücksetzen
@@ -3439,23 +3531,81 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
                 log.debug("stop_wivrn_server: ignoriert — %s", exc)
             self._server_log_fh = None
 
-        if self.server_process: self.server_process.terminate()
-        else: proc.run(["pkill", "wivrn-server"], timeout=proc.DEFAULT_TIMEOUT)
-        self.server_process = None
+        self._server_stopping = True
         self._server_running = False
+        self._stop_started = time.monotonic()
+        self._stop_killed = False
+        wivrn_server.request_stop(self.server_process)
+
         self.update_server_status_ui()
         self.ui.list_headsets.clear()
         self.ui.list_headsets.addItem(tr("dashboard_no_server"))
 
-        # Zweiter (und letzter) Pruefzeitpunkt der Einmal-Automatik: jetzt ist
-        # der Server aus, also darf in WiVRns config.json geschrieben werden.
-        # Die anderthalb Sekunden geben dem Prozess Zeit, wirklich zu enden —
-        # sonst sieht der pgrep im Worker ihn noch und ueberspringt alles.
-        QTimer.singleShot(1500, self._start_auto_backup_check)
+        if not self._shutdown_timer.isActive():
+            self._shutdown_timer.start()
+        # Meistens ist der Server nach Millisekunden weg. Einmal sofort
+        # nachsehen, damit in diesem Normalfall gar kein Zwischenzustand
+        # aufblitzt.
+        QTimer.singleShot(120, self._poll_server_shutdown)
+
+    def _poll_server_shutdown(self):
+        """Timer-Tick waehrend des Beendens: nachsehen, notfalls nachfassen."""
+        if not self._server_stopping:
+            return
+        if not wivrn_server.is_running(self.server_process):
+            self._finish_server_shutdown(True)
+            return
+
+        elapsed = (time.monotonic() - self._stop_started) * 1000
+        if not self._stop_killed and elapsed >= self._STOP_TERM_MS:
+            self._stop_killed = True
+            log.warning("[Server] reagiert nach %.0f ms nicht auf SIGTERM.", elapsed)
+            # Erst den Dienst (falls es einer ist) — sonst startet systemd den
+            # Server nach jedem Kill sofort neu und wir kaempfen gegen Windmuehlen.
+            wivrn_server.stop_user_service()
+            wivrn_server.force_stop(self.server_process)
+        elif elapsed >= self._STOP_TERM_MS + self._STOP_KILL_MS:
+            self._finish_server_shutdown(False)
+
+    def _finish_server_shutdown(self, stopped):
+        """Beenden abschliessen — erfolgreich oder aufgegeben."""
+        self._shutdown_timer.stop()
+        self._server_stopping = False
+
+        if stopped:
+            # Das eigene Kind ernten. Ohne diesen Schritt bleibt ein Zombie
+            # zurueck, den die Statusabfrage als laufenden Server liest.
+            wivrn_server.reap(self.server_process)
+            self.server_process = None
+            self._server_running = False
+            log.info("[Server] beendet.")
+        else:
+            self._server_running = True
+            log.error("[Server] laeuft trotz SIGKILL weiter: PIDs %s",
+                      wivrn_server.server_pids())
+
+        self._set_toggle_silently(self._server_running)
+        self.update_server_status_ui()
+
+        if stopped:
+            # Zweiter (und letzter) Pruefzeitpunkt der Einmal-Automatik: jetzt
+            # ist der Server wirklich aus, also darf in WiVRns config.json
+            # geschrieben werden. Frueher stand hier eine feste Wartezeit von
+            # 1,5 s — die war geraten und bei langsamem Beenden zu kurz.
+            QTimer.singleShot(500, self._start_auto_backup_check)
+        else:
+            QMessageBox.warning(self, tr("dashboard_stop_failed_title"),
+                                tr("dashboard_stop_failed_text"))
 
     def update_server_status_ui(self):
         """Passt die Statusanzeige an den GEMERKTEN Zustand an (kein Subprozess)."""
-        if self._server_running:
+        if self._server_stopping:
+            # Gelb ist die Signalfarbe fuer "Achtung/Uebergang" und wird von
+            # keinem Thema umgefaerbt — genau richtig fuer diesen Moment.
+            self.ui.lbl_status_dot.setStyleSheet("color: #ebcb8b; font-size: 24px; margin-left: 10px;")
+            self.ui.lbl_status_text.setText(tr("dashboard_stopping"))
+            self.ui.lbl_status_text.setStyleSheet("font-weight: bold; color: #ebcb8b;")
+        elif self._server_running:
             self.ui.lbl_status_dot.setStyleSheet("color: #a3be8c; font-size: 24px; margin-left: 10px;")
             self.ui.lbl_status_text.setText(tr("dashboard_active"))
             self.ui.lbl_status_text.setStyleSheet("font-weight: bold; color: #a3be8c;")
@@ -3510,6 +3660,10 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
         # einen frischen Worker starten, auf den niemand mehr wartet.
         self.usb_poll_timer.stop()
         self.autostart_timer.stop()
+        # Auch die Nachschau beim Server-Beenden: laeuft sie noch, wuerde ihr
+        # naechster Tick auf ein halb abgeraeumtes Fenster zugreifen.
+        self._shutdown_timer.stop()
+        self._server_stopping = False
 
         for name in self._BACKGROUND_WORKERS:
             worker = getattr(self, name, None)
@@ -3538,8 +3692,10 @@ class VRApp(GamesTabMixin, ToolsTabMixin, QMainWindow):
     def manual_server_check(self):
         """Prüft auf Knopfdruck (oder beim Start) einmalig den echten Server-Zustand
         und gleicht Schalter + Anzeige daran an."""
-        running = (self.server_process and self.server_process.poll() is None) or \
-            proc.run(["pgrep", "wivrn-server"], stdout=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT).returncode == 0
+        # Ueber wivrn_server statt pgrep: pgrep zaehlt auch Zombies mit und
+        # meldete deshalb einen Server, der laengst beendet war (der Grund
+        # dafuer, dass der Schalter nach dem Beenden zurueck auf AN sprang).
+        running = wivrn_server.is_running(self.server_process)
         self._server_running = running
         self._set_toggle_silently(running)
         self.update_server_status_ui()

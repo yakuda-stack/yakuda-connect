@@ -292,12 +292,27 @@ def _rgba(hex_str, alpha_percent):
     return f"rgba({r}, {g}, {b}, {alpha_percent / 100:.2f})"
 
 
-def tint(css):
+# Welche Rollen der Deckkraft-Regler betrifft.
+#
+# "sidebar" steht hier, obwohl der Regler "Deckkraft der Karten" heisst: die
+# sichtbaren Karten der Oberflaeche sind mit #21252b gebaut, und das ist die
+# Sidebar-Rolle. Ohne diesen Eintrag bewegte der Regler nur die Rolle "cards"
+# (#2e3440) — eine Farbe, die fast nirgends eine Karte einfaerbt. Der Regler
+# sah also aus, als tue er nichts.
+_OPACITY_ROLES = ("cards", "inner", "sidebar")
+
+
+def tint(css, allow_opacity=True):
     """
     Ein Stylesheet auf das aktive Thema umstellen.
 
     Im Standardthema ohne Aenderungen kommt die Zeichenkette unveraendert
     zurueck — dann wird auch nichts neu gesetzt.
+
+    ``allow_opacity=False`` faerbt nur um und laesst die Deckkraft aussen vor.
+    Gebraucht wird das fuer das Anwendungs-Stylesheet: dort stehen Dialoge,
+    Menues und Tooltips in derselben Farbe wie die Karten, und ein
+    halbdurchsichtiger Dialog ueber laufendem Text ist unlesbar.
     """
     if not css or is_default():
         return css
@@ -310,7 +325,7 @@ def tint(css):
         # Deckkraft nur auf Karten/Innenflaechen: das Fenster selbst muss
         # deckend bleiben, sonst scheint der Desktop durch.
         role = _OFFSETS.get(color.lower(), (None, 0))[0]
-        if opacity < 100 and role in ("cards", "inner"):
+        if allow_opacity and opacity < 100 and role in _OPACITY_ROLES:
             return prop + _rgba(mapped, opacity)
         return prop + mapped
 
@@ -337,14 +352,110 @@ def apply_to_app(app):
         return False
     if _app_base_qss is None:
         _app_base_qss = app.styleSheet()
-    app.setStyleSheet(tint(_app_base_qss))
+    # Ohne Deckkraft: in diesem Stylesheet stehen Dialoge, Menues und
+    # Tooltips. Die duerfen nie durchscheinen (siehe tint()).
+    app.setStyleSheet(tint(_app_base_qss, allow_opacity=False))
     return True
 
 
-def window_background_css():
-    """Stylesheet-Schnipsel fuer das Hintergrundbild (oder "")."""
+def background_path():
+    """
+    Pfad zum Hintergrundbild — oder "", wenn keins gesetzt ist oder die Datei
+    inzwischen fehlt (verschobenes Wallpaper, abgezogener USB-Stick).
+    """
     bg = _state["background"]
-    if not bg or not os.path.exists(bg):
+    return bg if (bg and os.path.exists(bg)) else ""
+
+
+def has_background():
+    return bool(background_path())
+
+
+# Der Seitenstapel ist deckend eingefaerbt (QStackedWidget { background-color:
+# #181a1f }, siehe ui/ui_main.py). Solange das so bleibt, liegt ein
+# Hintergrundbild unsichtbar darunter. Diese Regel wird deshalb GENAU DANN am
+# Seitenstapel gesetzt, wenn ein Bild aktiv ist — ohne Bild bleibt die
+# Oberflaeche unveraendert deckend.
+def stack_tint_css():
+    """
+    Regel fuer die grosse Flaeche hinter den Karten, wenn ein Bild aktiv ist.
+
+    Nicht voellig durchsichtig, sondern derselbe leichte Schleier wie ueber
+    der Seitenleiste. Grund: die Zwischenueberschriften ("Server Control",
+    "Pairing Mode" ...) stehen ausserhalb der Karten direkt auf dem Bild, und
+    Nebentext auf einem hellen Wallpaper ist schlicht nicht mehr lesbar. Der
+    Schleier kostet fast nichts an Bildwirkung — an der Seitenleiste sieht man
+    genau, wie viel noch durchkommt.
+
+    Der Objektname im Selektor haelt die Regel bei DIESEM Stapel: das
+    Stylesheet eines Widgets gilt auch fuer seine Kinder, und die Sub-Tabs in
+    Einstellungen und Tools bringen einen eigenen QStackedWidget mit, der den
+    Schleier sonst ein zweites Mal auftruege.
+    """
+    return (f"QStackedWidget#ykpages {{ background-color:"
+            f" {_rgba(role_color('window'), COLUMN_TINT)}; }}")
+
+# Zusatzregeln, die NUR mit einem Hintergrundbild gelten.
+#
+# Der Grund steht in einer einzigen Zeile im Stylesheet von OSC-DreamChatbox:
+# dort heisst die Grundregel "QWidget { ... background: transparent; }", hier
+# nur "QWidget { color: ...; }". Ohne den Zusatz faellt jedes Widget ohne
+# eigenen Hintergrund auf die Fensterfarbe der Palette zurueck, sobald die
+# Karte darueber halbdurchsichtig wird — sichtbar als dunkle Kaesten hinter
+# Beschriftungen, Schaltern und Reglern.
+#
+# Bewusst nur mit Bild und nur als ANWENDUNGS-Regel: ein Widget, das seinen
+# Hintergrund selbst setzt, behaelt ihn (Widget-Stylesheets schlagen
+# Anwendungs-Regeln), und ohne Bild aendert sich gar nichts.
+IMAGE_SURFACES_CSS = (
+    # QSlider steht bewusst NICHT in der Liste: dessen Rille und Griff sind
+    # eigene Unterelemente, ein transparenter Widget-Hintergrund nimmt ihnen
+    # die Zeichnung.
+    "QLabel, QCheckBox, QRadioButton, QToolButton"
+    " { background: transparent; }\n"
+    "QStackedWidget, QStackedWidget > QWidget { background: transparent; }\n"
+    "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }\n"
+)
+
+# Wie stark die Seitenleiste ueber dem Bild noch eingefaerbt wird. Uebernommen
+# aus OSC-DreamChatbox (COLUMN_TINT dort): ein Hauch Abdunkelung fuer die
+# Lesbarkeit, keine Fuellung. Mit 1.0 waere die Leiste wieder deckend und das
+# Bild endete an ihrer Kante — genau der Zustand, den es zu beheben galt.
+COLUMN_TINT = 30
+
+
+def make_translucent(css, percent):
+    """
+    Alle HINTERGRUNDfarben eines Stylesheets auf eine Deckkraft setzen.
+
+    Nur ``background``/``background-color`` — bei ``color:`` waere
+    halbdurchsichtige SCHRIFT die Folge, und die liest niemand mehr.
+
+    Gedacht fuer die Seitenleiste: sie hat ihre Farbe als eigenes Stylesheet
+    am Widget, und ein Widget-Stylesheet schlaegt jede Regel von weiter oben.
+    Ueber die Farbrollen liesse sich das nicht loesen — die Leiste benutzt
+    denselben Grundton wie die Eingabefelder, und die sollen deckend bleiben.
+    """
+    if not css:
+        return css
+
+    def sub(match):
+        return match.group(1) + _rgba(map_color(match.group(2)), percent)
+
+    return _BG_PATTERN.sub(sub, css)
+
+
+def window_background_css():
+    """
+    Stylesheet-Schnipsel fuer das Hintergrundbild (oder "").
+
+    NICHT MEHR IN BENUTZUNG: das Bild liegt seit v1.2.5 auf einer eigenen
+    Ebene (ui/background.py), weil ein schlichtes QWidget ``border-image``
+    nicht zuverlaessig zeichnet. Die Funktion bleibt fuer aeltere Aufrufer und
+    den Test bestehen.
+    """
+    bg = background_path()
+    if not bg:
         return ""
     # border-image skaliert auf die Fenstergroesse, ohne zu kacheln.
     return f'#yk_root {{ border-image: url("{bg}") 0 0 0 0 stretch stretch; }}'

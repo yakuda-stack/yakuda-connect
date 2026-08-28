@@ -1,0 +1,37 @@
+yakuda-connect v1.2.5 — Drop-in
+===============================
+Nur geaenderte/neue Dateien. Ordnerstruktur ueber das Projekt kopieren:
+
+    cp -r yakuda-connect-v1.2.5/. /pfad/zu/yakuda-connect/
+
+Behoben
+-------
+1. WiVRn-Server ging erst beim zweiten/dritten Beenden aus.
+   Ursache: das eigene Kind wurde nie geerntet und blieb als Zombie stehen;
+   pgrep filtert Zombies nicht und meldete deshalb weiter "laeuft". Ausserdem
+   wurde nach dem SIGTERM nie nachgeprueft.
+   -> core/wivrn_server.py (neu): /proc-Pruefung ohne Zombies, gestuftes
+      Beenden (SIGTERM -> systemd-Dienst -> SIGKILL), Ernten des Kindes.
+   -> core/main.py: stop_wivrn_server laeuft ueber einen Timer, GUI bleibt
+      bedienbar; alle pgrep-Stellen ersetzt.
+
+2. Hintergrundbild war nie zu sehen.
+   Ursache: border-image an einem schlichten QWidget zeichnet nicht, und der
+   deckende Seitenstapel lag darueber.
+   -> ui/background.py (neu): echte Bildebene ganz hinten, formatfuellend.
+   -> core/main.py, ui/theme.py, ui/ui_main.py: Flaeche darueber wird NUR mit
+      Bild durchsichtig geschaltet.
+
+Geaenderte Dateien
+------------------
+  core/main.py            core/version.py         core/wivrn_server.py  (neu)
+  ui/theme.py             ui/background.py (neu)  ui/ui_main.py
+  locales/de.json         locales/en.json
+  tests/test_wivrn_server.py (neu)  tests/test_background.py (neu)
+  CHANGELOG.md            packaging/aur/PKGBUILD
+
+Geprueft
+--------
+  pytest -q            402 bestanden
+  python3 tests/smoke.py   24 Pruefungen bestanden
+  ruff check           sauber

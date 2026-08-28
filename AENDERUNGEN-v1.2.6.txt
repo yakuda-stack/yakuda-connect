@@ -1,0 +1,45 @@
+yakuda-connect v1.2.6 — Drop-in
+===============================
+Nur geaenderte/neue Dateien. Ordnerstruktur ueber das Projekt kopieren:
+
+    cp -r yakuda-connect-v1.2.6/. /pfad/zu/yakuda-connect/
+
+Enthaelt auch v1.2.5 (Server-Beenden), falls das noch nicht drin ist.
+
+Behoben in v1.2.6 — Hintergrundbild
+-----------------------------------
+Die Bildebene aus v1.2.5 war korrekt ganz hinten im Fenster, es lagen aber
+noch drei Flaechen davor. Unterschied zu OSC-DreamChatbox, wo dasselbe
+Feature sofort lief: dort heisst die Grundregel
+"QWidget { ... background: transparent; }" und die ganze App wird aus EINEM
+Stylesheet gestylt. Hier gibt es rund 110 Stylesheets an einzelnen Widgets,
+und ein Widget-Stylesheet schlaegt jede Regel von weiter oben.
+
+  1. Seitenleiste (3 Widgets mit #1c1f26) schnitt das Bild an der 200-px-Kante
+     ab  ->  bekommt jetzt COLUMN_TINT (30 %) statt Fuellung.
+  2. Deckkraft-Regler wirkte nur auf #2e3440/#3b4252, die Karten sind aber aus
+     #21252b (Sidebar-Rolle)  ->  Rolle folgt jetzt dem Regler; Dialoge,
+     Menues und Tooltips ausgenommen.
+  3. "QFrame { ... }" als Selektor faerbte jedes QLabel in der Karte mit
+     (QLabel erbt von QFrame)  ->  sechs Stellen auf Objektnamen umgestellt.
+     Ein Test wacht ueber neue blanke Selektoren.
+  4. Zusatzregeln nur mit Bild; Content-Flaeche mit leichtem Schleier statt
+     voller Transparenz (Zwischenueberschriften stehen direkt auf dem Bild).
+  5. Erstes Bild setzt die Kartendeckkraft auf 85 % (DreamChatbox: 82 %).
+
+Ohne Hintergrundbild aendert sich nichts.
+
+Behoben in v1.2.5 — Server-Beenden
+----------------------------------
+WiVRn ging erst beim zweiten/dritten Mal aus: das eigene Kind wurde nie
+geerntet und blieb als Zombie stehen, pgrep filtert Zombies nicht.
+core/wivrn_server.py prueft jetzt /proc ohne Zombies und beendet gestuft
+(SIGTERM -> systemd-Dienst -> SIGKILL), die Oberflaeche bleibt bedienbar.
+
+Geprueft
+--------
+  pytest -q                407 bestanden
+  python3 tests/smoke.py    24 Pruefungen bestanden
+  ruff check               sauber
+  zusaetzlich: Settings, Dashboard, Tools, Games und Streaming je mit und
+  ohne Bild aus der laufenden App gerendert und angesehen

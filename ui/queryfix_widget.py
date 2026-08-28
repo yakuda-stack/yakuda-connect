@@ -104,8 +104,9 @@ class QueryFixWidget(QGroupBox):
         body_l.addWidget(self.list)
 
         self.details = QFrame()
+        self.details.setObjectName("queryfixdetails")
         self.details.setStyleSheet(
-            "QFrame { background-color: #2e3440; border-radius: 4px; }")
+            "QFrame#queryfixdetails { background-color: #2e3440; border-radius: 4px; }")
         det_l = QVBoxLayout(self.details)
         det_l.setContentsMargins(12, 8, 12, 10)
         self.lbl_details = QLabel("")
