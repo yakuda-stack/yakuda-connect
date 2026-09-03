@@ -1,7 +1,7 @@
 {
   "info": {
-    "version": "1.2.4",
-    "last_updated": "2026-09-26"
+    "version": "1.2.5",
+    "last_updated": "2026-09-04"
   },
   "picture_template": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg",
   "proton_versions": {
@@ -97,7 +97,9 @@
         "cachyos": "CachyOSPro11",
         "default": "Pro11",
         "alternative": "Pro11GE"
-      }
+      },
+      "amd_start": "OXR_NO_TEXTURE_SOURCE_ALPHA=1 %command%",
+      "nvidia_start": "OXR_NO_TEXTURE_SOURCE_ALPHA=1 %command%"      
     },
     "2472940": {
       "name": "Wanderer: The Fragments of Fate",
@@ -110,9 +112,7 @@
           "en": "Proton-GE with extra media/audio codecs. Unreal Engine 5 — GPUs below 10 GB VRAM benefit noticeably from gamemoderun."
         },
         "alternative": "Pro11"
-      },
-      "amd_start": "OXR_NO_TEXTURE_SOURCE_ALPHA=1 %command%",
-      "nvidia_start": "OXR_NO_TEXTURE_SOURCE_ALPHA=1 %command%"      
+      }
     }
   }
 }
