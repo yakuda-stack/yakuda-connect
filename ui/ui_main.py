@@ -621,7 +621,11 @@ class Ui_MainWindow:
                 row["lbl_title"].setText(tr(row["title_key"]))
                 row["lbl_desc"].setText(tr(row["desc_key"]))
                 row["btn_start"].setText(tr("controls_start_btn"))
-            self.btn_obah_expand.setText(tr("obah_panel_title"))
+            self.btn_obah_expand.setText(tr("obah_panel_title").replace("&", "&&"))
+            if hasattr(self, "xrbinder_card"):
+                self.xrbinder_card.retranslate()
+                self.btn_xr_reset_all.setText(tr("xrb_reset_all"))
+                self.btn_xr_reset_all.setToolTip(tr("xrb_reset_all_tip"))
             self.btn_obah_refresh.setText(tr("obah_refresh_btn"))
             self.btn_obah_pick_manifest.setText(tr("obah_pick_manifest"))
             self.btn_obah_pick_manifest.setToolTip(tr("obah_pick_manifest_tip"))
@@ -2003,6 +2007,15 @@ class Ui_MainWindow:
                 "btn_start": btn_start, "title_key": title_key, "desc_key": desc_key,
             }
 
+        # xrBinder: eigene Karte im selben Stil, direkt ueber dem Bereich
+        # „Controls per obah & xrBinder“ (OpenXR-Spiele stehen dort mit in der
+        # Spieleliste, siehe core/tabs/xr_controls_mixin.py).
+        from xrbinder_session import XrBinderSession
+        from ui.xrbinder_panel import XrBinderCard
+        self.xrbinder_session = XrBinderSession()
+        self.xrbinder_card = XrBinderCard(self.xrbinder_session)
+        outer.addWidget(self.xrbinder_card)
+
         outer.addWidget(self._build_obah_panel())
         outer.addStretch()
 
@@ -2030,7 +2043,7 @@ class Ui_MainWindow:
         self.btn_obah_expand.setCursor(Qt.PointingHandCursor)
         self.btn_obah_expand.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.btn_obah_expand.setArrowType(Qt.RightArrow)
-        self.btn_obah_expand.setText(tr("obah_panel_title"))
+        self.btn_obah_expand.setText(tr("obah_panel_title").replace("&", "&&"))
         self.btn_obah_expand.setStyleSheet("""
             QToolButton { background: transparent; border: none; color: #eceff4;
                           font-size: 13px; font-weight: bold; padding: 2px; }
@@ -2050,6 +2063,40 @@ class Ui_MainWindow:
         self.btn_obah_refresh.setVisible(False)
         head.addWidget(self.btn_obah_refresh)
         v.addLayout(head)
+
+        # ---- Hinweis: obah und/oder xrBinder fehlen (controls_mixin.
+        #      update_controls_notice blendet die Zeilen ein/aus)
+        self.obah_notice = QFrame()
+        self.obah_notice.setObjectName("obahnotice")
+        self.obah_notice.setStyleSheet("""
+            QFrame#obahnotice { background-color: #2e2a22; border-radius: 5px;
+                                border: 1px solid #5c4d2e; }
+            QLabel { color: #ebcb8b; font-size: 12px; background: transparent; border: none; }
+            QPushButton { background-color: #5e81ac; color: white; font-size: 11px;
+                          font-weight: bold; padding: 0px 14px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #81a1c1; }
+            QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
+        """)
+        notice_v = QVBoxLayout(self.obah_notice)
+        notice_v.setContentsMargins(12, 8, 12, 8)
+        notice_v.setSpacing(6)
+        self.obah_notice_rows = {}
+        for key in ("obah", "xrbinder"):
+            row_w = QWidget()
+            row_h = QHBoxLayout(row_w)
+            row_h.setContentsMargins(0, 0, 0, 0)
+            row_h.setSpacing(10)
+            lbl = QLabel()
+            lbl.setWordWrap(True)
+            row_h.addWidget(lbl, 1)
+            btn = QPushButton()
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFixedHeight(26)
+            row_h.addWidget(btn, 0, Qt.AlignVCenter)
+            notice_v.addWidget(row_w)
+            self.obah_notice_rows[key] = {"row": row_w, "label": lbl, "button": btn}
+        self.obah_notice.setVisible(False)
+        v.addWidget(self.obah_notice)
 
         self.obah_body = QWidget()
         self.obah_body.setVisible(False)
@@ -2225,6 +2272,13 @@ class Ui_MainWindow:
         self.btn_obah_discard.setCursor(Qt.PointingHandCursor)
         self.btn_obah_discard.setStyleSheet(small_css)
         status_row.addWidget(self.btn_obah_discard)
+        # Nur bei OpenXR-Spielen (xrBinder): alle Umbelegungen zuruecknehmen
+        self.btn_xr_reset_all = QPushButton(tr("xrb_reset_all"))
+        self.btn_xr_reset_all.setToolTip(tr("xrb_reset_all_tip"))
+        self.btn_xr_reset_all.setCursor(Qt.PointingHandCursor)
+        self.btn_xr_reset_all.setStyleSheet(small_css)
+        self.btn_xr_reset_all.setVisible(False)
+        status_row.addWidget(self.btn_xr_reset_all)
         # Speichern: Klick = Standardziel, Pfeil = Ziel waehlen (wie obahs Dialog)
         self.btn_obah_save = _QToolButton()
         self.btn_obah_save.setPopupMode(_QToolButton.MenuButtonPopup)

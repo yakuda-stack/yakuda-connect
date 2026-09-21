@@ -8,6 +8,8 @@
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
+🎮 **Controller remapping for OpenVR *and* OpenXR games:** OpenVR games are edited via [obah](https://github.com/galister/obah), OpenXR games (e.g. Unreal games under Proton) via [xrBinder](https://gitlab.com/mittorn/xrBinder) — both in the same controller view in the Controls tab.
+
 ### 🐧 Tested systems
 
 | System | Status | Notes |
@@ -30,14 +32,22 @@
     <td><b>Advanced Settings</b><br><img src="assets/settings2.png" alt="Settings 2" width="300"/></td>
   </tr>
   <tr>
-    <td><b>Tools Hub</b><br><img src="assets/games1.png" alt="Tools" width="300"/></td>
-    <td><b>General Settings</b><br><img src="assets/games2.png" alt="Settings" width="300"/></td>
+    <td><b>Games Library</b><br><img src="assets/games1.png" alt="Games" width="300"/></td>
+    <td><b>Game Settings</b><br><img src="assets/games2.png" alt="Games 2" width="300"/></td>
+    <td><b>Controls — Controller View</b><br><img src="assets/controls1.png" alt="Controls" width="300"/></td>
+  </tr>
+  <tr>
+    <td><b>Controls — Editing Bindings</b><br><img src="assets/controls2.png" alt="Controls 2" width="300"/></td>
   </tr>
 </table>
 <table>
   <tr>
     <td><b>Dashboard</b><br><img src="assets/miau.gif" alt="Dashboard" width="600"/></td>
+  </tr>
 </table>
+
+All screenshots: [assets/README.md](assets/README.md)
+
 ---
 
 ## 🚀 Key Features
@@ -46,7 +56,8 @@
 * **VR Games Library:** The Games tab auto-detects every installed Steam VR game and shows it as a cover tile — with curated Proton profiles and tested launch options for games like VRChat, auto-recommendations for everything else, and one-click **Use** (set Proton version) and **▶ Play** (launch via Steam) buttons.
 * **ProtonPlus Integration:** Install the recommended Proton builds (Proton-GE, GE-RTSP, Proton-CachyOS) straight from a game's panel via the ProtonPlus CLI.
 * **Advanced Autostart Chain:** Launch multiple VR companion tools (such as WayVR, VRCX, OpenComposite, SlimeVR, or OSC tools) automatically in a custom sequence.
-* **Controls Tab:** Switch on stick control via [XR HOTAS](https://github.com/galister/xr-hotas) or binding editing via [obah](https://github.com/galister/obah) — if a tool is missing, the app asks how to install it. Pick game, controller and bindings to load from dropdowns (preset: VRChat · Oculus/Meta Touch · xrizer), then browse every action set as a tab — both controllers drawn side by side with a line from each binding to its button, SteamVR-style. Click a button to edit its bindings (everything obah can do: add/remove bindings, mode, actions, parameters), edit poses, haptics, skeleton and chords (button combinations) in their own sections, and save as xrizer, VapoR or OpenComposite binding. Drag cards into any order — the card below moves out of the way and the gap closes — move each controller drawing on its own, swap the controller images for your own (`assets/controls`), collapse cards down to their names with **Tidy view** (or one at a time by right-clicking), and keep whole arrangements as named profiles. Unsaved changes are never lost silently: switching game or closing the app asks first.
+* **Controls Tab (OpenVR & OpenXR):** Switch on stick control via [XR HOTAS](https://github.com/galister/xr-hotas) or binding editing via [obah](https://github.com/galister/obah) — if a tool is missing, the app asks how to install it. Pick game, controller and bindings to load from dropdowns (preset: VRChat · Oculus/Meta Touch · xrizer), then browse every action set as a tab — both controllers drawn side by side with a line from each binding to its button, SteamVR-style. Click a button to edit its bindings (everything obah can do: add/remove bindings, mode, actions, parameters), edit poses, haptics, skeleton and chords (button combinations) in their own sections, and save as xrizer, VapoR or OpenComposite binding. Drag cards into any order — the card below moves out of the way and the gap closes — move each controller drawing on its own, swap the controller images for your own (`assets/controls`), collapse cards down to their names with **Tidy view** (or one at a time by right-clicking), and keep whole arrangements as named profiles. Unsaved changes are never lost silently: switching game or closing the app asks first.
+* **OpenXR games (xrBinder):** Games that use OpenXR directly (no SteamVR bindings, e.g. Unreal games under Proton) appear in the same controller editor as OpenVR games (“Controls via obah & xrBinder”). One switch on the xrBinder card builds and enables [xrBinder](https://gitlab.com/mittorn/xrBinder) by mittorn; start the game once, then click a button and assign functions — reset per button or all at once, applied live where possible.
 * **Launch tools from their card:** every installed tool in the Tools tab has a **▶ Start** button — command-line tools (obah, XR HOTAS, adb) open in a terminal, everything else starts straight away.
 * **Cargo Tools on any Distro:** obah and XR HOTAS are built with `cargo install` in a visible terminal; a missing C compiler, OpenXR library or Rust toolchain is installed along the way.
 * **OSC Toolbox:** One-click OSC Query fix for supported OSC tools (OSC Leash, OscGoesBrrr) when VRChat OSC acts up.

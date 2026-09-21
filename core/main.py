@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.3.2"
+APP_VERSION = "v1.3.3"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -93,6 +93,7 @@ from tabs.dashboard_mixin import (DashboardMixin,          # noqa: F401
 from tabs.games_mixin import GamesTabMixin
 from tabs.tools_mixin import ToolsTabMixin
 from tabs.controls_mixin import ControlsTabMixin
+from tabs.xr_controls_mixin import XrControlsMixin
 
 # Interne Importe (liegen im selben Ordner 'core')
 from install_worker import (InstallWorker, UpdateWorker, AppUpdateCheckWorker,
@@ -256,7 +257,8 @@ class PackageCheckWorker(QThread):
         self.result_signal.emit(results, updates_available)
 
 
-class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, QMainWindow):
+class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrControlsMixin,
+            QMainWindow):
     """
     Hauptfenster.
 
@@ -3749,6 +3751,14 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, QMai
         if self._exit_stop_wanted():
             self._stop_server_for_exit()
         self._server_stopping = False
+
+        # xrBinder-Karte im Controls-Tab: eigener IPC-Thread
+        panel = getattr(self.ui, "xrbinder_card", None)
+        if panel is not None:
+            try:
+                panel.shutdown()
+            except Exception as exc:  # noqa: BLE001
+                log.debug("closeEvent (xrbinder): ignoriert — %s", exc)
 
         for name in self._BACKGROUND_WORKERS:
             worker = getattr(self, name, None)

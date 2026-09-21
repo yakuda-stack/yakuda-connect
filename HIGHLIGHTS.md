@@ -1,5 +1,27 @@
 # Highlights - Yakuda Connect
 
+### 🚀 v1.3.3 — 2026-09-21
+
+#### 🇩🇪 Deutsch
+
+* **OpenXR-Spiele umbelegen – genau wie OpenVR-Spiele.** Spiele ohne SteamVR-Bindings (z. B. viele Unreal-Spiele unter Proton wie Wanderer) stehen jetzt mit „· OpenXR“ in derselben Spieleliste und bekommen dieselbe Controller-Ansicht. Im Hintergrund arbeitet [xrBinder](https://gitlab.com/mittorn/xrBinder) von mittorn.
+* **Ein Schalter richtet alles ein.** Die neue Karte „xrBinder“ oben im Controls-Tab baut und aktiviert xrBinder. Danach das Spiel einmal starten – es taucht von selbst in der Liste auf.
+* **Taste anklicken, Funktion zuweisen.** Der Dialog zeigt nur die Funktionen deines Controllers; alles für andere Controller steht unten in einem eigenen Menü. „✕“ nimmt eine Funktion weg, „↪“ zeigt, was verschoben wurde.
+* **Zurück auf Standard.** Pro Taste im Dialog oder alles auf einmal mit „↺ Alles auf Standard“.
+* **Live, wo es geht.** Läuft das Spiel, kommt die neue Belegung nach „Speichern“ sofort an – sonst beim nächsten Start.
+* **Aufgeräumte Spieleliste.** Oben OpenVR-Spiele, dann OpenXR-Spiele, ganz unten die ohne Action-Datei.
+* **Die App sagt dir, was fehlt.** Ist obah oder xrBinder nicht installiert oder aus, steht das oben im Bereich – mit Knopf zum Installieren bzw. Einschalten.
+
+#### 🇬🇧 English
+
+* **Remap OpenXR games – just like OpenVR games.** Games without SteamVR bindings (e.g. many Unreal games under Proton such as Wanderer) now appear with “· OpenXR” in the same game list and get the same controller view. [xrBinder](https://gitlab.com/mittorn/xrBinder) by mittorn does the work in the background.
+* **One switch sets everything up.** The new “xrBinder” card at the top of the Controls tab builds and enables xrBinder. Then start the game once – it shows up in the list by itself.
+* **Click a button, assign a function.** The dialog only lists functions of your controller; everything meant for other controllers sits at the bottom in its own menu. “✕” removes a function, “↪” shows what was moved.
+* **Back to default.** Per button in the dialog, or everything at once with “↺ All to default”.
+* **Live where possible.** If the game is running, the new layout arrives right after “Save” – otherwise on the next start.
+* **Tidier game list.** OpenVR games first, then OpenXR games, games without an action file at the bottom.
+* **The app tells you what's missing.** If obah or xrBinder isn't installed or is switched off, the section says so at the top – with a button to install or switch it on.
+
 ### 🚀 v1.3.2 — 2026-09-21
 
 #### 🇩🇪 Deutsch

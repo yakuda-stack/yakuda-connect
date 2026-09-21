@@ -1,5 +1,41 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.3.3 — 2026-09-21
+
+#### 🇩🇪 Deutsch
+
+**Controls: Tasten für OpenXR-Spiele umlegen (xrBinder)**
+
+* **OpenXR-Spiele im selben Editor wie obah.** Der Bereich heißt jetzt „Controls per obah & xrBinder“. OpenXR-Spiele (z. B. viele Unreal-Spiele unter Proton) stehen mit „· OpenXR“ in derselben Spieleliste (Reihenfolge: OpenVR-Spiele, OpenXR-Spiele, ganz unten die ohne Action-Datei) und bekommen dieselbe Controller-Ansicht: zwei Controller, je Taste eine Karte, Klick öffnet den Tasten-Dialog. Der Controller wird erkannt, im Hintergrund arbeitet [xrBinder](https://gitlab.com/mittorn/xrBinder) von mittorn (MIT). OpenVR-Spiele laufen weiter über obah.
+* **Neue Karte „xrBinder“ oben** neben XR HOTAS und obah, gleiches Design. Der Schalter baut xrBinder beim ersten Mal im sichtbaren Terminal (git + cmake, ohne GUI), trägt das Layer unter `~/.local/share/openxr/1/api_layers/implicit.d/yakuda-xrbinder.json` ein, schreibt `~/.config/xrBinder/xrBinder.ini` und startet den IPC-Dienst (`yakuda-xrbinder-ipc.service`, sonst Hintergrundprozess). Eine eigene `xrBinder.ini` wird vorher gesichert.
+* **Tasten-Dialog:** je Teil der Taste (Drücken, Berühren, Stärke …) die Funktionen des Spiels, die dort liegen. „＋ Funktion zuweisen“ legt eine Funktion hierher (sie verschwindet von ihrer alten Taste), „✕“ nimmt sie weg (verschoben → zurück an ihre Taste, sonst abgeschaltet). „↪“ markiert verschobene Funktionen. Die Liste zeigt nur Funktionen des erkannten Controllers; Funktionen für andere Controller (z. B. „Mixed Reality …“ bei Unreal) stehen unten unter „Andere Controller / ohne Taste“.
+* **Hinweis, wenn etwas fehlt:** Ist obah oder xrBinder nicht installiert (oder xrBinder aus / neu zu bauen), steht das oben im Bereich — mit Knopf „Installieren“ bzw. „Einschalten“ (gleicher Weg wie der Schalter der Karte).
+* **Zurücksetzen:** „↺ Standard für diese Taste“ im Dialog, „↺ Alles auf Standard“ über der Ansicht.
+* **Spiel einmal starten reicht.** Laufende Spiele melden sich automatisch; ihre Aktionen werden gemerkt (`~/.config/yakuda-connect/xrbinder/<Spiel>.json`), danach geht das Bearbeiten auch ohne laufendes Spiel.
+* **Nur Tasten, die es gibt.** Angeboten wird nur, was im aktiven Controller-Profil des Spiels existiert und vom Typ passt. Die Quellen stammen aus einer Tabelle der Kern-Profile der OpenXR-Spezifikation (Simple, Touch, Index, Vive, WMR), jeder Pfad wurde gegen Monados Prüfung getestet. Ein falscher Pfad hätte sonst alle Tasten des Spiels für dieses Profil gekostet.
+* **Live, wo es sicher ist.** Läuft das Spiel, wird nach „Speichern“ neu geladen — aber nur, wenn dabei keine aktive Umbelegung wegfällt. Das Entfernen stürzt in xrBinder das Spiel ab (nachgestellt); dann heißt es „gilt nach Neustart“.
+* **Unreal-Spiele (z. B. Wanderer):** Sie fragen ihre Tasten ohne Hand ab. Das aktualisiert xrBinder nicht — Umbelegungen kamen nie an. Beim Bauen wird deshalb eine Zeile in xrBinder korrigiert, und jede Umbelegung gilt zusätzlich für die Abfrage ohne Hand (`aktion.any`). Ältere Builds zeigen „bitte Neu bauen“.
+* **Von Hand kopierte xrBinder-Dateien** im `implicit.d`-Ordner werden erkannt; „Aufräumen“ verschiebt sie in einen Sicherungsordner, damit das Layer nicht doppelt lädt.
+* **Neue Dateien:** `core/xrbinder.py` (Dateien, Dienst, Bauen), `core/xrbinder_ipc.py` (UDP-Protokoll, Offsets per `offsetof` aus xrBinders Headern), `core/xrbinder_session.py`, `core/xr_bindings.py` (Belegungsregeln), `core/tabs/xr_controls_mixin.py`, `ui/xrbinder_panel.py` (Karte), `ui/xr_button_dialog.py`, `tests/test_xrbinder.py`, `tests/test_xr_bindings.py`.
+
+#### 🇬🇧 English
+
+**Controls: remap buttons for OpenXR games (xrBinder)**
+
+* **OpenXR games in the same editor as obah.** The section is now called “Controls via obah & xrBinder”. OpenXR games (e.g. many Unreal games under Proton) appear with “· OpenXR” in the same game list (order: OpenVR games, OpenXR games, games without an action file last) and get the same controller view: two controllers, one card per button, click opens the button dialog. The controller is detected; [xrBinder](https://gitlab.com/mittorn/xrBinder) by mittorn (MIT) does the work in the background. OpenVR games keep using obah.
+* **New “xrBinder” card at the top** next to XR HOTAS and obah, same design. The switch builds xrBinder on first use in a visible terminal (git + cmake, no GUI), registers the layer at `~/.local/share/openxr/1/api_layers/implicit.d/yakuda-xrbinder.json`, writes `~/.config/xrBinder/xrBinder.ini` and starts the IPC service (`yakuda-xrbinder-ipc.service`, otherwise a background process). An existing hand-made `xrBinder.ini` is backed up first.
+* **Button dialog:** per part of the button (press, touch, strength …) the game functions currently on it. “＋ Assign function” moves a function here (it leaves its old button), “✕” removes it (moved → back to its button, otherwise disabled). “↪” marks moved functions. The list only shows functions of the detected controller; functions for other controllers (e.g. “Mixed Reality …” in Unreal games) are at the bottom under “Other controllers / no button”.
+* **Notice when something is missing:** if obah or xrBinder is not installed (or xrBinder is off / needs a rebuild), the section says so at the top — with an “Install” or “Switch on” button (same path as the card's switch).
+* **Reset:** “↺ Default for this button” in the dialog, “↺ All to default” above the view.
+* **Starting the game once is enough.** Running games register automatically; their actions are remembered (`~/.config/yakuda-connect/xrbinder/<game>.json`), so editing works without the game running afterwards.
+* **Only buttons that exist.** Only what exists in the game's active controller profile and matches the type is offered. Sources come from a table of the OpenXR core profiles (Simple, Touch, Index, Vive, WMR); every path was checked against Monado's validation. A wrong path would otherwise have cost the game all its bindings for that profile.
+* **Live where it is safe.** If the game is running, “Save” reloads the config — but only if no active remapping gets removed. Removing one crashes the game in xrBinder (reproduced); then the result says “applies after restart”.
+* **Unreal games (e.g. Wanderer):** they query their buttons without a hand. xrBinder does not update that case, so remappings never arrived. The build now patches one line in xrBinder, and every remapping also covers the no-hand query (`action.any`). Older builds show “please Rebuild”.
+* **Hand-copied xrBinder files** in the `implicit.d` folder are detected; “Clean up” moves them to a backup folder so the layer is not loaded twice.
+* **New files:** `core/xrbinder.py` (files, service, build), `core/xrbinder_ipc.py` (UDP protocol, offsets taken via `offsetof` from xrBinder's headers), `core/xrbinder_session.py`, `core/xr_bindings.py` (binding rules), `core/tabs/xr_controls_mixin.py`, `ui/xrbinder_panel.py` (card), `ui/xr_button_dialog.py`, `tests/test_xrbinder.py`, `tests/test_xr_bindings.py`.
+
+---
+
 ### 🚀 v1.3.2 — 2026-09-21
 
 #### 🇩🇪 Deutsch

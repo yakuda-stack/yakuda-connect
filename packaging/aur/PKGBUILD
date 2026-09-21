@@ -11,7 +11,7 @@
 # Von dort wird gepusht — nicht von hier.
 
 pkgname=yakuda-connect
-pkgver=1.3.2
+pkgver=1.3.3
 pkgrel=1
 pkgdesc="WiVRn VR management software with gaming optimization and OpenXR/OpenVR fixes"
 arch=('any')
@@ -33,7 +33,8 @@ optdepends=('iproute2: Headset-Verbindungserkennung (ss)'
             'libcap: VR-Prioritaet setzen (setcap/getcap)'
             'wivrn-server: VR-Streaming-Server (Kernfunktion)'
             'wivrn-dashboard: Konfigurationsoberflaeche fuer WiVRn'
-            'opencomposite-git: OpenVR-Kompatibilitaet fuer VRChat & Co.')
+            'opencomposite-git: OpenVR-Kompatibilitaet fuer VRChat & Co.'
+            'cmake: xrBinder bauen (OpenXR-Tastenbelegung im Controls-Tab)')
 provides=('yakuda-connect')
 conflicts=('yakuda-connect-git')
 # Tag-Format im Repo ist v<version> -> v1.1.2

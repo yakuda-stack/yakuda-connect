@@ -34,6 +34,7 @@ from translations import get_language
 
 import appimage_installer as appimg
 import paths
+import xrbinder as xb
 from jsonio import read_json, update_json
 from translations import tr
 
@@ -158,6 +159,14 @@ class ControlsTabMixin:
             self._render_control(key, installed)
 
         self.setup_obah_panel()
+        # OpenXR-Spiele (xrBinder): Karte oben + XR-Modus im obah-Bereich
+        self.setup_xr_controls()
+        # Hinweis „obah/xrBinder fehlt“ im Bereich
+        self.ui.obah_notice_rows["obah"]["button"].clicked.connect(self._notice_install_obah)
+        self.ui.obah_notice_rows["xrbinder"]["button"].clicked.connect(
+            self.ui.xrbinder_card.request_on)
+        self.ui.xrbinder_card.rendered.connect(self.update_controls_notice)
+        self.update_controls_notice()
 
     # ------------------------------------------------------------------ #
     #  Einklappbarer Bereich „Controls per obah“
@@ -293,14 +302,19 @@ class ControlsTabMixin:
     def _on_obah_games_found(self, games):
         ui = self.ui
         self._obah_scanned = True
-        self._obah_games = list(games)
+        # Reihenfolge: OpenVR-Spiele mit Action-Datei, dann OpenXR-Spiele
+        # (xrBinder, eingefuegt von xr_append_games), ganz unten die ohne
+        # Action-Datei (grau). Die obah-Eintraege stehen im Dropdown in genau
+        # dieser Reihenfolge (Schluessel koennen doppelt sein, deshalb zaehlt
+        # die Position — siehe _obah_combo_index).
+        self._obah_games = sorted(games, key=lambda g: not g.has_manifest)
         ui.btn_obah_refresh.setEnabled(True)
         previous = getattr(self, "_obah_last_game", None)
 
         combo = ui.combo_obah_game
         combo.blockSignals(True)
         combo.clear()
-        if not games:
+        if not games and not self.xr_game_names():
             self._update_manifest_buttons(None)
             combo.addItem(tr("obah_no_games"))
             combo.setEnabled(False)
@@ -309,33 +323,57 @@ class ControlsTabMixin:
             self._obah_bindings = None
             self._fill_obah_controllers()
             return
-        for i, g in enumerate(games):
+        for g in self._obah_games:
             combo.addItem(self._game_label(g), g.key)
+            i = combo.count() - 1
             tip = g.actions_json or g.game_folder or tr("obah_no_folder")
             if not g.has_manifest:
                 # grau wie Controller ohne Bindings — waehlbar, aber mit Hinweis
                 combo.setItemData(i, QColor("#7b88a1"), Qt.ForegroundRole)
             combo.setItemData(i, tip, Qt.ToolTipRole)
+        self.xr_append_games(combo)
         combo.setEnabled(True)
         idx = combo.findData(previous) if previous else -1
         if idx < 0:
             # Voreinstellung: VRChat, wenn installiert — sonst das erste
             # Spiel, das sich auch bearbeiten laesst
-            idx = next((i for i, g in enumerate(games)
-                        if g.name.strip().lower() == PREFERRED_GAME and g.has_manifest), -1)
+            j = next((j for j, g in enumerate(self._obah_games)
+                      if g.name.strip().lower() == PREFERRED_GAME and g.has_manifest), -1)
+            idx = self._obah_combo_index(j)
         if idx < 0:
-            idx = next((i for i, g in enumerate(games) if g.has_manifest), 0)
+            j = next((j for j, g in enumerate(self._obah_games) if g.has_manifest), 0)
+            idx = max(0, self._obah_combo_index(j))
         combo.setCurrentIndex(idx)
         combo.blockSignals(False)
         self._on_obah_game_changed(combo.currentIndex())
 
     def _current_obah_game(self):
-        idx = self.ui.combo_obah_game.currentIndex()
-        if 0 <= idx < len(self._obah_games) and self.ui.combo_obah_game.isEnabled():
-            return self._obah_games[idx]
-        return None
+        combo = self.ui.combo_obah_game
+        idx = combo.currentIndex()
+        if idx < 0 or not combo.isEnabled() or self._is_xr_item(idx):
+            return None
+        n = sum(1 for i in range(idx) if not self._is_xr_item(i))
+        return self._obah_games[n] if n < len(self._obah_games) else None
+
+    def _is_xr_item(self, i):
+        data = self.ui.combo_obah_game.itemData(i)
+        return isinstance(data, str) and data.startswith("xr:")
+
+    def _obah_combo_index(self, j):
+        """Dropdown-Zeile des j-ten obah-Spiels (OpenXR-Eintraege uebersprungen)."""
+        if j < 0:
+            return -1
+        n = -1
+        for i in range(self.ui.combo_obah_game.count()):
+            if not self._is_xr_item(i):
+                n += 1
+                if n == j:
+                    return i
+        return -1
 
     def _on_obah_game_changed(self, _index):
+        if self.xr_on_game_changed():
+            return
         game = self._current_obah_game()
         self._obah_last_game = game.key if game else None
         self._update_manifest_buttons(game)
@@ -347,7 +385,7 @@ class ControlsTabMixin:
             self.ui.lbl_obah_hint.setText(
                 tr("obah_no_manifest_hint").format(
                     folder=self._short_home(game.game_folder) if game.game_folder
-                    else tr("obah_no_folder")))
+                    else tr("obah_no_folder")) + "\n" + tr("xrb_obah_hint_xr"))
             return
         try:
             self._obah_bindings = ob.scan_bindings(game) if game else None
@@ -567,6 +605,9 @@ class ControlsTabMixin:
     def _refresh_obah_editor(self):
         """Nach jeder Auswahl-Aenderung: Manifest + Binding laden, Tabs setzen."""
         ui = self.ui
+        if getattr(self, "_xr_mode", False):
+            self.xr_refresh_editor()
+            return
         if getattr(self, "_obah_dirty", False):
             self._ask_save_before_leaving()
         sel = self.obah_selection()
@@ -611,6 +652,9 @@ class ControlsTabMixin:
         self._render_obah_views()
 
     def _render_obah_views(self):
+        if getattr(self, "_xr_mode", False):
+            self.xr_render_views()
+            return
         ui = self.ui
         edit = getattr(self, "_obah_edit", None)
         if not edit or ui.obah_set_tabs.count() == 0:
@@ -843,6 +887,9 @@ class ControlsTabMixin:
         """Klick auf eine Karte: Bindings dieser Eingabe bearbeiten (wie obah)."""
         from ui.binding_dialog import BindingDialog
 
+        if getattr(self, "_xr_mode", False):
+            self.xr_open_dialog(view, input_path)
+            return
         edit = getattr(self, "_obah_edit", None)
         if not edit:
             return
@@ -871,12 +918,23 @@ class ControlsTabMixin:
         self._obah_dirty = bool(dirty)
         self.ui.btn_obah_discard.setEnabled(self._obah_dirty)
 
+    def _obah_save_target_label(self):
+        if getattr(self, "_xr_mode", False):
+            return "xrBinder"
+        return {"xrizer": "xrizer", "vapor": "VapoR",
+                "opencomposite": "OpenComposite"}[self._default_save_kind()]
+
     def _default_save_kind(self):
         """Speicherziel: die geladene Quelle, wenn sie beschreibbar ist, sonst xrizer."""
         src = (self._obah_edit or {}).get("source")
         return src if src in oe.SAVE_KINDS else "xrizer"
 
     def _update_obah_save_button(self):
+        if getattr(self, "_xr_mode", False):
+            self.xr_update_save_button()
+            return
+        for act in self.ui.menu_obah_save.actions():
+            act.setEnabled(True)
         kind = self._default_save_kind()
         label = {"xrizer": "xrizer", "vapor": "VapoR", "opencomposite": "OpenComposite"}[kind]
         self.ui.btn_obah_save.setText("💾  " + tr("obah_save_as").format(target=label))
@@ -888,6 +946,8 @@ class ControlsTabMixin:
         vorher als .bak gesichert. Danach wird die gespeicherte Quelle
         geladen — so sieht man, was jetzt wirklich auf der Platte steht.
         """
+        if getattr(self, "_xr_mode", False):
+            return self.xr_save()
         edit = edit or self._obah_edit
         if not edit:
             return False
@@ -921,6 +981,9 @@ class ControlsTabMixin:
     def discard_obah_changes(self):
         if not self._obah_dirty:
             return
+        if getattr(self, "_xr_mode", False):
+            self.xr_discard()
+            return
         self._set_obah_dirty(False)
         self._refresh_obah_editor()
 
@@ -935,9 +998,7 @@ class ControlsTabMixin:
         box.setWindowTitle(tr("obah_unsaved_title"))
         box.setText(tr("obah_close_text"))
         btn_save = box.addButton(tr("obah_unsaved_save").format(
-            target={"xrizer": "xrizer", "vapor": "VapoR",
-                    "opencomposite": "OpenComposite"}[self._default_save_kind()]),
-            QMessageBox.AcceptRole)
+            target=self._obah_save_target_label()), QMessageBox.AcceptRole)
         btn_discard = box.addButton(tr("obah_unsaved_discard"), QMessageBox.DestructiveRole)
         box.addButton(tr("bd_cancel"), QMessageBox.RejectRole)
         box.setDefaultButton(btn_save)
@@ -960,9 +1021,7 @@ class ControlsTabMixin:
         box.setWindowTitle(tr("obah_unsaved_title"))
         box.setText(tr("obah_unsaved_text"))
         btn_save = box.addButton(tr("obah_unsaved_save").format(
-            target={"xrizer": "xrizer", "vapor": "VapoR",
-                    "opencomposite": "OpenComposite"}[self._default_save_kind()]),
-            QMessageBox.AcceptRole)
+            target=self._obah_save_target_label()), QMessageBox.AcceptRole)
         box.addButton(tr("obah_unsaved_discard"), QMessageBox.DestructiveRole)
         box.setDefaultButton(btn_save)
         box.exec()
@@ -1009,7 +1068,7 @@ class ControlsTabMixin:
 
     def _update_obah_profile_buttons(self, *_args):
         # Beim Aufbau gibt es noch keine Auswahl — dann sind Laden/Speichern aus.
-        edit = bool(getattr(self, "_obah_edit", None))
+        edit = bool(getattr(self, "_obah_edit", None)) and not getattr(self, "_xr_mode", False)
         has = bool(self._selected_obah_profile())
         self.ui.btn_obah_profile_load.setEnabled(has and edit)
         self.ui.btn_obah_profile_delete.setEnabled(has)
@@ -1029,7 +1088,7 @@ class ControlsTabMixin:
         from PySide6.QtWidgets import QInputDialog
 
         edit = getattr(self, "_obah_edit", None)
-        if not edit:
+        if not edit or edit.get("xr"):
             return
         profiles = self._load_obah_profiles()
         suggestion = self._selected_obah_profile() or edit["game"].name
@@ -1070,7 +1129,7 @@ class ControlsTabMixin:
 
         edit = getattr(self, "_obah_edit", None)
         name = self._selected_obah_profile()
-        if not edit or not name:
+        if not edit or not name or edit.get("xr"):
             return
         entry = self._load_obah_profiles().get(name) or {}
         binding = entry.get("binding")
@@ -1166,6 +1225,7 @@ class ControlsTabMixin:
 
     def obah_retranslate(self):
         """Nach Sprachwechsel: Dropdown-Texte neu, Auswahl bleibt."""
+        self.update_controls_notice()
         if not getattr(self, "_obah_scanned", False):
             return
         if not self._obah_games:
@@ -1236,6 +1296,61 @@ class ControlsTabMixin:
             lbl.setStyleSheet("color: #7b88a1; font-size: 12px; font-style: italic;")
         row["toggle"].setEnabled(not installing)
         row["btn_start"].setVisible(installed and not installing)
+        self.update_controls_notice()
+
+    def update_controls_notice(self):
+        """
+        Hinweis oben im Bereich „Controls per obah & xrBinder“: fehlt obah
+        oder xrBinder, steht dort, was dann nicht geht, mit Knopf zum
+        Installieren/Einschalten (gleicher Weg wie der Schalter der Karte).
+        """
+        ui = self.ui
+        rows = getattr(ui, "obah_notice_rows", None)
+        if not rows:
+            return
+        shown = False
+        # obah
+        if "obah" in ui.controls_rows:
+            pending = "obah" in getattr(self, "_controls_pending", set())
+            missing = pending or not self._control_installed("obah")
+            r = rows["obah"]
+            r["row"].setVisible(missing)
+            if missing:
+                shown = True
+                r["label"].setText("⚠  " + tr("notice_obah_missing"))
+                r["button"].setText(tr("controls_installing") if pending else tr("notice_install"))
+                r["button"].setEnabled(not pending)
+        # xrBinder
+        card = getattr(ui, "xrbinder_card", None)
+        r = rows["xrbinder"]
+        if card is None:
+            r["row"].setVisible(False)
+        else:
+            building = card.is_building()
+            if building:
+                text, btn = "notice_xrb_missing", "xrb_building"
+            elif not xb.is_built():
+                text, btn = "notice_xrb_missing", "notice_install"
+            elif xb.needs_rebuild():
+                text, btn = "notice_xrb_rebuild", "xrb_rebuild"
+            elif not card.is_enabled():
+                text, btn = "notice_xrb_off", "notice_enable"
+            else:
+                text = btn = None
+            r["row"].setVisible(text is not None)
+            if text:
+                shown = True
+                r["label"].setText("⚠  " + tr(text))
+                r["button"].setText(tr(btn))
+                r["button"].setEnabled(not building)
+        ui.obah_notice.setVisible(shown)
+
+    def _notice_install_obah(self):
+        toggle = self.ui.controls_rows["obah"]["toggle"]
+        if toggle.isChecked() and not self._control_installed("obah"):
+            # Schalter steht schon an (z. B. abgebrochene Installation): neu anstossen
+            self._set_control_toggle("obah", False)
+        toggle.setChecked(True)
 
     # ------------------------------------------------------------------ #
     #  Schalter
