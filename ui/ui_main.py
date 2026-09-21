@@ -623,6 +623,9 @@ class Ui_MainWindow:
                 row["btn_start"].setText(tr("controls_start_btn"))
             self.btn_obah_expand.setText(tr("obah_panel_title"))
             self.btn_obah_refresh.setText(tr("obah_refresh_btn"))
+            self.btn_obah_pick_manifest.setText(tr("obah_pick_manifest"))
+            self.btn_obah_pick_manifest.setToolTip(tr("obah_pick_manifest_tip"))
+            self.btn_obah_clear_manifest.setToolTip(tr("obah_clear_manifest_tip"))
             self.btn_obah_layout_reset.setText(tr("obah_layout_reset"))
             self.btn_obah_tidy.setText(tr("obah_tidy"))
             self.btn_obah_tidy.setToolTip(tr("obah_tidy_tip"))
@@ -2127,6 +2130,28 @@ class Ui_MainWindow:
             grid.addWidget(combo, row, 2)
             combos.append(combo)
         self.combo_obah_game, self.combo_obah_controller, self.combo_obah_source = combos
+
+        # Action-Datei von Hand waehlen (wenn die Suche nichts findet)
+        small_css = """
+            QPushButton { background-color: #3b4252; color: #88c0d0; font-size: 11px;
+                          padding: 0px 10px; border-radius: 4px; border: none; }
+            QPushButton:hover { background-color: #4c566a; }
+            QPushButton:disabled { background-color: #2e3440; color: #4c566a; }
+        """
+        manifest_row = QHBoxLayout()
+        manifest_row.setSpacing(6)
+        self.btn_obah_pick_manifest = QPushButton(tr("obah_pick_manifest"))
+        self.btn_obah_pick_manifest.setToolTip(tr("obah_pick_manifest_tip"))
+        self.btn_obah_clear_manifest = QPushButton("✕")
+        self.btn_obah_clear_manifest.setToolTip(tr("obah_clear_manifest_tip"))
+        for b in (self.btn_obah_pick_manifest, self.btn_obah_clear_manifest):
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFixedHeight(28)
+            b.setStyleSheet(small_css)
+            b.setEnabled(False)
+            manifest_row.addWidget(b)
+        self.btn_obah_clear_manifest.setVisible(False)
+        grid.addLayout(manifest_row, 0, 3)
 
         self.lbl_obah_hint = QLabel("")
         self.lbl_obah_hint.setWordWrap(True)

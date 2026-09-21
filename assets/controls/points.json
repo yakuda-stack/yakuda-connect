@@ -1,0 +1,383 @@
+{
+  "_info": "Punkte der Eingaben in Bildpixeln (x, y) je Bilddatei. Siehe README.md.",
+  "oculus_touch_left": {
+    "size": [
+      742,
+      1389
+    ],
+    "points": {
+      "/input/joystick": [
+        352,
+        367
+      ],
+      "/input/x": [
+        512,
+        452
+      ],
+      "/input/y": [
+        620,
+        379
+      ],
+      "/input/system": [
+        485,
+        558
+      ],
+      "/input/trigger": [
+        702,
+        207
+      ],
+      "/input/grip": [
+        430,
+        845
+      ],
+      "/input/thumbrest": [
+        625,
+        480
+      ]
+    }
+  },
+  "oculus_touch_right": {
+    "size": [
+      742,
+      1389
+    ],
+    "points": {
+      "/input/joystick": [
+        388,
+        367
+      ],
+      "/input/a": [
+        228,
+        452
+      ],
+      "/input/b": [
+        120,
+        379
+      ],
+      "/input/system": [
+        255,
+        558
+      ],
+      "/input/trigger": [
+        42,
+        207
+      ],
+      "/input/grip": [
+        320,
+        845
+      ],
+      "/input/thumbrest": [
+        115,
+        480
+      ]
+    }
+  },
+  "vive_focus3_controller_left": {
+    "size": [
+      742,
+      1389
+    ],
+    "points": {
+      "/input/joystick": [
+        352,
+        367
+      ],
+      "/input/x": [
+        512,
+        452
+      ],
+      "/input/y": [
+        620,
+        379
+      ],
+      "/input/system": [
+        485,
+        558
+      ],
+      "/input/trigger": [
+        702,
+        207
+      ],
+      "/input/grip": [
+        430,
+        845
+      ]
+    }
+  },
+  "vive_focus3_controller_right": {
+    "size": [
+      742,
+      1389
+    ],
+    "points": {
+      "/input/joystick": [
+        388,
+        367
+      ],
+      "/input/a": [
+        228,
+        452
+      ],
+      "/input/b": [
+        120,
+        379
+      ],
+      "/input/system": [
+        255,
+        558
+      ],
+      "/input/trigger": [
+        42,
+        207
+      ],
+      "/input/grip": [
+        320,
+        845
+      ]
+    }
+  },
+  "knuckles_left": {
+    "size": [
+      985,
+      1425
+    ],
+    "points": {
+      "/input/thumbstick": [
+        669,
+        274
+      ],
+      "/input/trackpad": [
+        724,
+        352
+      ],
+      "/input/pinch": [
+        724,
+        352
+      ],
+      "/input/b": [
+        817,
+        372
+      ],
+      "/input/a": [
+        737,
+        417
+      ],
+      "/input/system": [
+        654,
+        437
+      ],
+      "/input/trigger": [
+        874,
+        552
+      ],
+      "/input/grip": [
+        599,
+        772
+      ],
+      "/input/finger/index": [
+        499,
+        972
+      ],
+      "/input/finger/middle": [
+        499,
+        972
+      ],
+      "/input/finger/ring": [
+        499,
+        972
+      ],
+      "/input/finger/pinky": [
+        499,
+        972
+      ]
+    }
+  },
+  "knuckles_right": {
+    "size": [
+      985,
+      1425
+    ],
+    "points": {
+      "/input/thumbstick": [
+        316,
+        274
+      ],
+      "/input/trackpad": [
+        261,
+        352
+      ],
+      "/input/pinch": [
+        261,
+        352
+      ],
+      "/input/b": [
+        168,
+        372
+      ],
+      "/input/a": [
+        248,
+        417
+      ],
+      "/input/system": [
+        331,
+        437
+      ],
+      "/input/trigger": [
+        111,
+        552
+      ],
+      "/input/grip": [
+        386,
+        772
+      ],
+      "/input/finger/index": [
+        486,
+        972
+      ],
+      "/input/finger/middle": [
+        486,
+        972
+      ],
+      "/input/finger/ring": [
+        486,
+        972
+      ],
+      "/input/finger/pinky": [
+        486,
+        972
+      ]
+    }
+  },
+  "vive_controller_left": {
+    "size": [
+      699,
+      1394
+    ],
+    "points": {
+      "/input/application_menu": [
+        123,
+        329
+      ],
+      "/input/trackpad": [
+        103,
+        529
+      ],
+      "/input/system": [
+        93,
+        749
+      ],
+      "/input/trigger": [
+        330,
+        581
+      ],
+      "/input/grip": [
+        236,
+        799
+      ]
+    }
+  },
+  "vive_controller_right": {
+    "size": [
+      699,
+      1394
+    ],
+    "points": {
+      "/input/application_menu": [
+        575,
+        329
+      ],
+      "/input/trackpad": [
+        595,
+        529
+      ],
+      "/input/system": [
+        605,
+        749
+      ],
+      "/input/trigger": [
+        363,
+        589
+      ],
+      "/input/grip": [
+        463,
+        799
+      ]
+    }
+  },
+  "gamepad": {
+    "size": [
+      1680,
+      1136
+    ],
+    "points": {
+      "/input/trigger_left": [
+        327,
+        80
+      ],
+      "/input/trigger_right": [
+        1343,
+        80
+      ],
+      "/input/shoulder_left": [
+        335,
+        203
+      ],
+      "/input/shoulder_right": [
+        1350,
+        203
+      ],
+      "/input/joystick_left": [
+        352,
+        462
+      ],
+      "/input/joystick_right": [
+        1135,
+        695
+      ],
+      "/input/dpad_up": [
+        607,
+        625
+      ],
+      "/input/dpad_down": [
+        607,
+        770
+      ],
+      "/input/dpad_left": [
+        535,
+        697
+      ],
+      "/input/dpad_right": [
+        680,
+        697
+      ],
+      "/input/guide": [
+        840,
+        400
+      ],
+      "/input/start": [
+        688,
+        441
+      ],
+      "/input/back": [
+        975,
+        441
+      ],
+      "/input/y": [
+        1338,
+        352
+      ],
+      "/input/x": [
+        1210,
+        470
+      ],
+      "/input/b": [
+        1475,
+        455
+      ],
+      "/input/a": [
+        1330,
+        583
+      ]
+    }
+  }
+}

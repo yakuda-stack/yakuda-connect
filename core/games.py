@@ -1065,6 +1065,43 @@ def load_cached_games():
     return tested_list, untested, True
 
 
+def games_tab_entries():
+    """
+    Genau die Spiele, die der Games-Tab zeigt — für andere Tabs (Controls).
+
+    Rückgabe: [{"id", "name", "kind", "exe"}] mit kind =
+      "steam"    : Steam-Spiel (getestet oder ungetestet)
+      "shortcut" : Nicht-Steam-Spiel aus Steam (hat eine AppID)
+      "local"    : eigener Eintrag ohne Steam (id = 'local:<n>', exe gesetzt)
+
+    Nutzt den Cache des Games-Tabs. Wurde dort noch nie gescannt, wird
+    einmal gescannt (schnell, siehe scan_installed_games) — gespeichert wird
+    dabei nichts, das bleibt Sache des Games-Tabs.
+    """
+    tested, untested, scanned = load_cached_games()
+    if not scanned:
+        try:
+            tested, untested = scan_installed_games()
+        except Exception as exc:  # noqa: BLE001 — lieber leer als Absturz
+            log.warning("games_tab_entries: Scan fehlgeschlagen — %s", exc)
+            tested, untested = [], []
+    hidden = set(load_hidden_games())
+    out = []
+    for appid in tested:
+        if appid not in hidden and appid in GAMES:
+            out.append({"id": appid, "name": GAMES[appid]["name"], "kind": "steam", "exe": ""})
+    for g in untested:
+        appid = g["appid"]
+        if appid in hidden:
+            continue
+        kind = "shortcut" if steam_shortcuts.is_shortcut_id(appid) else "steam"
+        out.append({"id": appid, "name": g["name"], "kind": kind, "exe": ""})
+    for entry in load_local_games():
+        out.append({"id": entry["id"], "name": entry["name"], "kind": "local",
+                    "exe": entry["exe"]})
+    return out
+
+
 # --------------------------------------------------------------------------- #
 #  Auto-Scan beim Öffnen des Games-Tabs
 # --------------------------------------------------------------------------- #

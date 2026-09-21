@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.3.1"
+APP_VERSION = "v1.3.2"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -267,6 +267,9 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, QMai
     """
     def __init__(self):
         super().__init__()
+        # Mausrad aendert keine Aufklapplisten mehr (scrollt die Seite)
+        from ui import no_wheel
+        no_wheel.install(QApplication.instance())
         #loading initliserung
         self.is_loading = True
         # UI Instanziieren und anwenden

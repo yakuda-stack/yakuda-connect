@@ -21,6 +21,12 @@ Eine Abweichung, bewusst: obah sucht den Spielordner unter
 'installdir' ab, und der weicht beim Namen oft ab (Doppelpunkte,
 Markenzeichen, ...). Wir nehmen 'installdir' und fallen auf den Namen
 zurueck — so tauchen hier auch Spiele auf, die obah uebersieht.
+
+Zweite Abweichung (seit v1.3.2): Die Spieleliste enthaelt zusaetzlich ALLE
+Spiele aus dem Games-Tab — auch Nicht-Steam-Spiele und eigene Eintraege.
+Deren Ordner kommt aus Startordner bzw. Programmpfad. Spiele ohne
+Action-Datei stehen mit in der Liste, sind aber nicht bearbeitbar
+(ObahGame.has_manifest == False) — obah braucht die Datei fuer die Aktionen.
 """
 import json
 import os
@@ -34,8 +40,17 @@ log = get_logger("obah_bindings")
 # src/steam.rs: MANIFEST_NAMES
 MANIFEST_NAMES = ("actions.json", "action_manifest.json",
                   "vr_actions.json", "steamvr_actions.json")
+# Zusaetzlich (nicht in obah): Unreals SteamVR-Input-Plugin nennt seine
+# Datei so und legt sie unter Config/SteamVRBindings/ ab — ohne diesen Namen
+# fehlen alle Unreal-Spiele mit SteamVR-Eingabe.
+EXTRA_MANIFEST_NAMES = ("steamvr_manifest.json",)
+SEARCH_NAMES = MANIFEST_NAMES + EXTRA_MANIFEST_NAMES
 # src/steam.rs: find_actions_json -> 'depth > 8' bricht ab
 MAX_DEPTH = 8
+# Proton-Prefix: dort schreiben manche Spiele die Datei erst beim Start hin
+PREFIX_SUBDIRS = ("AppData/Local", "AppData/LocalLow", "AppData/Roaming",
+                  "Documents", "Saved Games")
+PREFIX_MAX_DIRS = 8000
 
 # src/input_profiles.rs: INPUT_PROFILES_BYTES — Reihenfolge wie in obah.
 # (pico_controller liegt in obahs profiles/, ist aber nicht eingetragen und
@@ -81,12 +96,36 @@ def controller_label(controller_type):
     return CONTROLLER_LABELS.get(controller_type, format_name(controller_type))
 
 
+# Art eines Spiels (wie im Games-Tab)
+KIND_STEAM = "steam"
+KIND_SHORTCUT = "shortcut"      # Nicht-Steam-Spiel in Steam
+KIND_LOCAL = "local"            # eigener Eintrag ohne Steam
+
+
 @dataclass
 class ObahGame:
     name: str
     appid: str
     game_folder: str
     actions_json: str
+    kind: str = KIND_STEAM
+
+    @property
+    def has_manifest(self):
+        """Nur mit Action-Datei lassen sich Bindings anzeigen und bearbeiten."""
+        return bool(self.actions_json)
+
+    manual: bool = False     # Action-Datei vom Nutzer selbst gewaehlt
+
+    @property
+    def key(self):
+        """Eindeutige Kennung fuer Dropdowns — auch ohne Spielordner."""
+        return self.game_folder or f"{self.kind}:{self.appid}"
+
+    @property
+    def ident(self):
+        """Feste Kennung (aendert sich nicht, wenn eine Datei gewaehlt wird)."""
+        return f"{self.kind}:{self.appid}"
 
 
 @dataclass
@@ -117,7 +156,7 @@ class GameBindings:
 # --------------------------------------------------------------------------- #
 #  1. Spiele
 # --------------------------------------------------------------------------- #
-def find_actions_json(game_folder, max_depth=MAX_DEPTH):
+def find_actions_json(game_folder, max_depth=MAX_DEPTH, max_dirs=None):
     """
     Pfad des OpenVR-Action-Manifests im Spielordner, sonst None.
 
@@ -125,18 +164,25 @@ def find_actions_json(game_folder, max_depth=MAX_DEPTH):
     ein Manifest weiter oben gewinnt. Bei Unity liegt es typischerweise
     unter <Spiel>_Data/StreamingAssets/SteamVR/actions.json.
     """
-    if not os.path.isdir(game_folder):
+    if not game_folder or not os.path.isdir(game_folder):
         return None
     queue = deque([(game_folder, 0)])
+    seen = 0
     while queue:
         current, depth = queue.popleft()
+        seen += 1
+        if max_dirs is not None and seen > max_dirs:
+            return None
         try:
             entries = list(os.scandir(current))
         except OSError:
             continue
         for e in entries:
-            if e.name in MANIFEST_NAMES and e.is_file():
-                return e.path
+            if e.name in SEARCH_NAMES and e.is_file():
+                # obahs Namen ungeprueft (wie obah), die zusaetzlichen nur,
+                # wenn wirklich Aktionen drinstehen
+                if e.name in MANIFEST_NAMES or is_action_manifest(e.path):
+                    return e.path
         if depth >= max_depth:
             continue
         for e in entries:
@@ -145,6 +191,46 @@ def find_actions_json(game_folder, max_depth=MAX_DEPTH):
                     queue.append((e.path, depth + 1))
             except OSError:
                 pass
+    return None
+
+
+def is_action_manifest(path):
+    """Sieht die Datei aus wie ein OpenVR-Action-Manifest (Liste 'actions')?"""
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and isinstance(data.get("actions"), list) \
+        and isinstance(data.get("action_sets", []), list)
+
+
+def prefix_dirs(appid):
+    """Ordner im Proton-Prefix des Spiels, in denen gesucht wird."""
+    if not str(appid or "").isdigit():
+        return []
+    try:
+        import vr_environment as venv
+        roots = venv.steam_data_roots()
+    except Exception:  # noqa: BLE001 — Tests / ohne Steam
+        return []
+    out = []
+    rel = f"steamapps/compatdata/{appid}/pfx/drive_c/users/steamuser"
+    for root in roots:
+        user = os.path.join(root, rel)
+        for sub in PREFIX_SUBDIRS:
+            path = os.path.join(user, sub)
+            if os.path.isdir(path):
+                out.append(path)
+    return out
+
+
+def find_prefix_manifest(appid, dirs=None):
+    """Action-Datei im Proton-Prefix (nur Dateien mit echten Aktionen)."""
+    for base in (dirs if dirs is not None else prefix_dirs(appid)):
+        path = find_actions_json(base, max_depth=7, max_dirs=PREFIX_MAX_DIRS)
+        if path and is_action_manifest(path):
+            return path
     return None
 
 
@@ -158,30 +244,178 @@ def _game_folder(app):
     return ""
 
 
-def list_games(apps=None, cancelled=None):
-    """
-    Alle installierten Steam-Spiele mit Action-Manifest, alphabetisch
-    (wie obah: ohne Gross-/Kleinschreibung).
+# Ordner, die sicher kein Spielordner sind. Zeigt der Startordner eines
+# Nicht-Steam-Spiels dorthin (Heroic/Lutris-Starter, /usr/bin, ...), wird
+# gar nicht erst gesucht — sonst liefe die Suche durchs halbe System.
+_NO_SEARCH = {"/", "/usr", "/usr/bin", "/usr/local", "/usr/local/bin", "/bin",
+              "/opt", "/home", "/tmp", "/var", "/etc", "/mnt", "/media", "/run"}
+# Obergrenze fuer die Suche in Ordnern ausserhalb von Steam
+LIBRARY_MAX_DIRS = 4000
 
-    apps: Liste wie games.installed_steam_apps() (fuer Tests austauschbar).
+
+def _unquote(text):
+    text = (text or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1]
+    return text
+
+
+def library_folder(start_dir="", exe=""):
     """
+    Spielordner eines Nicht-Steam- oder eigenen Spiels: der Startordner,
+    sonst der Ordner der Programmdatei. "" wenn keiner taugt.
+    """
+    home = os.path.realpath(os.path.expanduser("~"))
+    candidates = [_unquote(start_dir)]
+    exe = _unquote(exe)
+    if exe:
+        candidates.append(os.path.dirname(exe))
+    for cand in candidates:
+        if not cand:
+            continue
+        path = os.path.realpath(os.path.expanduser(cand))
+        if path in _NO_SEARCH or path == home or not os.path.isdir(path):
+            continue
+        return path
+    return ""
+
+
+def _library_entries():
+    """Spiele des Games-Tabs; leer, wenn das Modul nicht geht (Tests)."""
+    try:
+        import games
+        return games.games_tab_entries()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Spiele aus dem Games-Tab nicht lesbar: %s", exc)
+        return []
+
+
+def _shortcut_map():
+    try:
+        import steam_shortcuts
+        return {s["appid"]: s for s in steam_shortcuts.list_shortcuts()}
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Nicht-Steam-Spiele nicht lesbar: %s", exc)
+        return {}
+
+
+def list_games(apps=None, cancelled=None, library=None, shortcuts=None, manual=None,
+               search_prefix=True):
+    """
+    Alle Spiele fuer Schritt 1, alphabetisch (ohne Gross-/Kleinschreibung):
+
+      * jedes installierte Steam-Spiel mit Action-Manifest (wie obah)
+      * dazu jedes Spiel aus dem Games-Tab — Steam, Nicht-Steam und eigene.
+        Ohne Action-Datei steht es trotzdem da (has_manifest == False).
+
+    apps      : Liste wie games.installed_steam_apps() (fuer Tests)
+    library   : Liste wie games.games_tab_entries() (fuer Tests); fehlt sie
+                und fehlt auch apps, wird der Games-Tab gelesen
+    shortcuts : {appid: Eintrag wie steam_shortcuts.list_shortcuts()}
+    manual    : {ObahGame.ident: pfad} — vom Nutzer gewaehlte Action-Dateien;
+                fehlt es, wird controls_manifests.json gelesen
+    search_prefix : ohne Datei im Spielordner auch im Proton-Prefix suchen
+    """
+    if manual is None:
+        manual = load_manual_manifests() if apps is None else {}
     if apps is None:
         import games
         apps = games.installed_steam_apps()
-    found = []
+        if library is None:
+            library = _library_entries()
+    library = library or []
+    found = {}                       # key -> ObahGame
+    by_appid = {}
     for app in apps:
         if cancelled and cancelled():
             break
         folder = _game_folder(app)
+        appid = str(app.get("appid", ""))
+        by_appid[appid] = (app, folder)
         if not folder:
             continue
         manifest = find_actions_json(folder)
         if manifest:
-            found.append(ObahGame(name=app.get("name") or folder,
-                                  appid=str(app.get("appid", "")),
-                                  game_folder=folder, actions_json=manifest))
-    found.sort(key=lambda g: g.name.lower())
-    return found
+            g = ObahGame(name=app.get("name") or folder, appid=appid,
+                         game_folder=folder, actions_json=manifest)
+            found[g.key] = g
+
+    steam_ids = {g.appid for g in found.values()}
+    if any(e.get("kind") == KIND_SHORTCUT for e in library) and shortcuts is None:
+        shortcuts = _shortcut_map()
+    shortcuts = shortcuts or {}
+
+    for entry in library:
+        if cancelled and cancelled():
+            break
+        kind = entry.get("kind") or KIND_STEAM
+        gid = str(entry.get("id", ""))
+        name = entry.get("name") or gid
+        if kind == KIND_STEAM:
+            if gid in steam_ids:
+                continue                        # schon oben (mit Manifest)
+            _app, folder = by_appid.get(gid, (None, ""))
+            manifest = ""                       # oben schon gesucht: keins
+        else:
+            if kind == KIND_SHORTCUT:
+                sc = shortcuts.get(gid) or {}
+                folder = library_folder(sc.get("start_dir", ""), sc.get("exe", ""))
+            else:
+                folder = library_folder("", entry.get("exe", ""))
+            manifest = find_actions_json(folder, max_dirs=LIBRARY_MAX_DIRS) or "" \
+                if folder else ""
+        if not manifest and search_prefix:
+            # Unreal & Co. schreiben die Datei teils erst beim Start in den
+            # Proton-Prefix (AppData/Local/<Spiel>/Saved/...)
+            manifest = find_prefix_manifest(gid) or ""
+        g = ObahGame(name=name, appid=gid, game_folder=folder,
+                     actions_json=manifest, kind=kind)
+        if g.key in found:
+            continue                            # gleicher Ordner wie ein Steam-Spiel
+        found[g.key] = g
+
+    # Von Hand gewaehlte Dateien gewinnen immer (auch ueber eine gefundene)
+    for g in found.values():
+        path = manual.get(g.ident)
+        if path and os.path.isfile(path):
+            g.actions_json = path
+            g.manual = True
+            if not g.game_folder:
+                # xrizer-/OpenComposite-Dateien brauchen einen Ordner
+                g.game_folder = os.path.dirname(path)
+
+    return sorted(found.values(), key=lambda g: g.name.lower())
+
+
+# --------------------------------------------------------------------------- #
+#  Von Hand gewaehlte Action-Dateien
+# --------------------------------------------------------------------------- #
+def manual_manifests_file():
+    import paths
+    return paths.config_file("controls_manifests.json")
+
+
+def load_manual_manifests():
+    """{ObahGame.ident: pfad}; leer, wenn es nichts gibt."""
+    try:
+        from jsonio import read_json
+        data = read_json(manual_manifests_file(), default={})
+    except Exception as exc:  # noqa: BLE001
+        log.warning("controls_manifests.json nicht lesbar: %s", exc)
+        return {}
+    games = data.get("games") if isinstance(data, dict) else None
+    return {str(k): str(v) for k, v in (games or {}).items() if v}
+
+
+def set_manual_manifest(ident, path):
+    """Datei merken (path) oder vergessen (None). True bei Erfolg."""
+    from jsonio import update_json
+    games = load_manual_manifests()
+    if path:
+        games[ident] = path
+    else:
+        games.pop(ident, None)
+    return bool(update_json(manual_manifests_file(), {"games": games}))
 
 
 # --------------------------------------------------------------------------- #
@@ -224,6 +458,8 @@ def default_bindings(actions_json):
 def scan_bindings(game):
     """Je Controller aus CONTROLLER_TYPES: welche Bindings gibt es fuer dieses Spiel?"""
     avail = {ct: Availability() for ct in CONTROLLER_TYPES}
+    if not game.has_manifest or not game.game_folder:
+        return GameBindings(game=game, controllers=avail)
 
     for ct in default_bindings(game.actions_json):
         if ct in avail:

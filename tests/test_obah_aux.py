@@ -592,3 +592,217 @@ def test_reset_layout_also_brings_the_bindings_back(loaded, qapp):
     app.reset_obah_layout()
     assert not ui.obah_view_left.is_tidy()
     assert not ui.btn_obah_tidy.isChecked()
+
+
+# --------------------------------------------------------------------------- #
+#  points.json — Punkte passend zu den mitgelieferten Bildern (v1.3.2)
+# --------------------------------------------------------------------------- #
+def test_every_texture_input_has_a_point(qapp):
+    """Jedes Bild mit Eintrag in points.json kennt alle Eingaben seiner Seite."""
+    import ui.controller_view as cv
+    cv.clear_texture_cache()
+    for ct in ob.CONTROLLER_TYPES:
+        sides = ("left", "right") if oe.is_handed(ct) else ("single",)
+        for side in sides:
+            tex = cv.texture_layout(ct, side)
+            if tex is None:
+                continue                    # altes Verfahren (Profilpunkte)
+            pix, crop, pts = tex
+            want = {d.path for d in oe.inputs_for_side(ct, side)}
+            assert want <= set(pts), (ct, side, want - set(pts))
+            for path in want:               # alles liegt auf dem sichtbaren Teil
+                x, y = pts[path]
+                assert crop.contains(x, y), (ct, side, path, (x, y))
+
+
+def test_points_follow_the_texture(qapp):
+    """Mit points.json sitzen die Punkte im Bildrechteck, an der Bildstelle."""
+    import ui.controller_view as cv
+    cv.clear_texture_cache()
+    view = cv.ControllerBindingView()
+    views = [oe.InputView(input=d) for d in oe.inputs_for_side("knuckles", "left")]
+    view.resize(900, 600)
+    view.set_data("knuckles", "left", views, {"title": "L"})
+    pix, crop, pts = cv.texture_layout("knuckles", "left")
+    rect = view._img_rect
+    assert abs(rect.width() / rect.height() - crop.width() / crop.height()) < 0.01
+    for i in range(view.card_count()):
+        path = view._layout[i][2].input.path
+        pt = view.point_of(i)
+        assert rect.adjusted(-1, -1, 1, 1).contains(pt), path
+        k = rect.width() / crop.width()
+        assert abs(pt.x() - (rect.left() + (pts[path][0] - crop.left()) * k)) < 0.5
+
+
+def test_mirrored_generic_texture_mirrors_points(qapp, tmp_path, monkeypatch):
+    """Nur ein Bild ohne Seite: rechts wird es samt Punkten gespiegelt."""
+    from PySide6.QtGui import QColor, QImage
+    import ui.controller_view as cv
+    img = QImage(200, 100, QImage.Format_ARGB32)
+    img.fill(QColor(20, 30, 40, 255))
+    img.save(str(tmp_path / "knuckles.png"))
+    (tmp_path / "points.json").write_text(json.dumps(
+        {"knuckles": {"size": [200, 100], "points": {"/input/trigger": [20, 50]}}}))
+    monkeypatch.setattr(cv, "texture_dirs", lambda: [str(tmp_path)])
+    cv.clear_texture_cache()
+    assert cv.texture_layout("knuckles", "left")[2]["/input/trigger"] == (20, 50)
+    assert cv.texture_layout("knuckles", "right")[2]["/input/trigger"] == (180, 50)
+
+
+def test_wrong_aspect_ignores_points(qapp, tmp_path, monkeypatch):
+    """Eigenes Bild mit anderem Seitenverhaeltnis: Punkte aus dem Profil."""
+    from PySide6.QtGui import QColor, QImage
+    import ui.controller_view as cv
+    img = QImage(300, 100, QImage.Format_ARGB32)
+    img.fill(QColor(20, 30, 40, 255))
+    img.save(str(tmp_path / "knuckles_left.png"))
+    (tmp_path / "points.json").write_text(json.dumps(
+        {"knuckles_left": {"size": [100, 100], "points": {"/input/trigger": [20, 50]}}}))
+    monkeypatch.setattr(cv, "texture_dirs", lambda: [str(tmp_path)])
+    cv.clear_texture_cache()
+    assert cv.texture_layout("knuckles", "left") is None
+
+
+def _pair(ct):
+    from ui.controller_view import ControllerBindingView, ControllerPair
+    left, right = ControllerBindingView(), ControllerBindingView()
+    pair = ControllerPair(left, right)
+    pair.resize(1300, 600)
+    for v, side in ((left, "left"), (right, "right")):
+        v.set_data(ct, side, [oe.InputView(input=d) for d in oe.inputs_for_side(ct, side)],
+                   {"title": side})
+    pair.show()                  # versteckt kommen keine resizeEvents an
+    pair.relayout()
+    return pair, left, right
+
+
+def test_left_and_right_same_size_and_mirrored(qapp):
+    for ct in ("oculus_touch", "knuckles", "vive_controller", "vive_focus3_controller"):
+        pair, left, right = _pair(ct)
+        assert left._img_rect.size() == right._img_rect.size(), ct
+        # gleicher Abstand zur Mitte
+        gap_l = left.width() - left._img_rect.right()
+        gap_r = right._img_rect.left()
+        assert abs(gap_l - gap_r) < 1, (ct, gap_l, gap_r)
+
+
+def test_controller_stops_at_the_middle_and_mirrors(qapp):
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    pair, left, right = _pair("knuckles")
+    saved = []
+    right.layout_changed.connect(saved.append)
+    c = left._img_rect.center()
+    steps = ((QEvent.MouseButtonPress, c, left.mousePressEvent),
+             (QEvent.MouseMove, c + QPointF(10, 0), left.mouseMoveEvent),
+             (QEvent.MouseMove, c + QPointF(500, 40), left.mouseMoveEvent),
+             (QEvent.MouseButtonRelease, c + QPointF(500, 40), left.mouseReleaseEvent))
+    for typ, pos, fn in steps:
+        btns = Qt.NoButton if typ == QEvent.MouseButtonRelease else Qt.LeftButton
+        fn(QMouseEvent(typ, pos, pos, Qt.LeftButton, btns, Qt.NoModifier))
+    assert left._img_rect.right() <= left.width() + 0.5          # nicht ueber die Wand
+    assert right._img_rect.left() >= -0.5
+    assert abs(left._img_rect.top() - right._img_rect.top()) < 0.5   # gespiegelt mit
+    assert saved and saved[-1]["image"] is not None                  # Gegenseite gemerkt
+
+
+def test_both_controllers_on_same_height_with_different_cards(qapp):
+    """Mehr/laengere Karten auf einer Seite duerfen den Controller nicht versetzen."""
+    from ui.controller_view import ControllerBindingView, ControllerPair
+    for ct in ("oculus_touch", "vive_controller", "vive_focus3_controller"):
+        left, right = ControllerBindingView(), ControllerBindingView()
+        pair = ControllerPair(left, right)
+        pair.resize(1300, 600)
+        pair.show()
+        left.set_data(ct, "left", [oe.InputView(input=d)
+                                   for d in oe.inputs_for_side(ct, "left")], {})
+        right.set_data(ct, "right", [oe.InputView(input=d)
+                                     for d in oe.inputs_for_side(ct, "right")[:2]], {})
+        # alte, versetzte Anordnung: nur rechts verschoben
+        right.set_layout({"image": [0, 80]})
+        pair.sync_mirror()
+        pair.relayout()
+        assert abs(left._img_rect.top() - right._img_rect.top()) < 0.5, ct
+        assert left._img_rect.size() == right._img_rect.size(), ct
+
+
+def _drag_card(view, idx, delta):
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    c = view.card_rect(idx).center()
+    for typ, pos, fn in ((QEvent.MouseButtonPress, c, view.mousePressEvent),
+                         (QEvent.MouseMove, c + QPointF(8, 0), view.mouseMoveEvent),
+                         (QEvent.MouseMove, c + delta, view.mouseMoveEvent),
+                         (QEvent.MouseButtonRelease, c + delta, view.mouseReleaseEvent)):
+        btns = Qt.NoButton if typ == QEvent.MouseButtonRelease else Qt.LeftButton
+        fn(QMouseEvent(typ, pos, pos, Qt.LeftButton, btns, Qt.NoModifier))
+
+
+def test_card_can_go_to_outer_column_and_back(qapp):
+    from PySide6.QtCore import QPointF
+    pair, left, right = _pair("oculus_touch")
+    first = left.card_order()[0]
+    _drag_card(left, 0, QPointF(-240, 0))            # nach aussen
+    assert left.is_outer(first)
+    order = left.card_order()
+    idx = order.index(first)
+    inner = next(i for i, p in enumerate(order) if not left.is_outer(p))
+    assert left.card_rect(idx).right() < left.card_rect(inner).left()  # links daneben
+    assert list(left.layout_state()["outer"]) == [first]
+    assert left.has_manual_layout()
+    # Anordnung merken und wiederherstellen
+    state = left.layout_state()
+    left.set_layout({})
+    assert not left.is_outer(first)
+    left.set_layout(state)
+    assert left.is_outer(first)
+    # zurueck in die innere Spalte
+    idx = left.card_order().index(first)
+    _drag_card(left, idx, QPointF(240, 0))
+    assert not left.is_outer(first)
+
+
+def test_combo_ignores_mouse_wheel(qapp):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication, QComboBox, QWidget
+    from ui import no_wheel
+    no_wheel.install(QApplication.instance())
+    host = QWidget()
+    combo = QComboBox(host)
+    combo.addItems(["a", "b", "c"])
+    combo.setCurrentIndex(0)
+    host.show()
+    ev = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, -120),
+                     Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+    QApplication.sendEvent(combo, ev)
+    assert combo.currentIndex() == 0
+
+
+def test_outer_column_free_height_without_overlap(qapp):
+    """Aussen stehen Karten frei in der Hoehe — nicht nach oben gezwungen."""
+    from PySide6.QtCore import QPointF
+    pair, left, right = _pair("oculus_touch")
+
+    def rect(path):
+        return left.card_rect(left.card_order().index(path))
+
+    grip_inner = rect("/input/grip")
+    _drag_card(left, left.card_order().index("/input/grip"), QPointF(-240, 0))
+    assert left.is_outer("/input/grip")
+    assert abs(rect("/input/grip").top() - grip_inner.top()) < 2     # bleibt unten
+    # zweite Karte knapp darueber: rutscht darunter/darueber, ueberlappt nie
+    y = left.card_order().index("/input/y")
+    target = rect("/input/grip").top() - rect("/input/y").top() - 10
+    _drag_card(left, y, QPointF(-240, target))
+    a, b = rect("/input/grip"), rect("/input/y")
+    assert not a.intersects(b)
+    # gemerkt und wiederhergestellt
+    state = left.layout_state()
+    left.set_layout({})
+    left.set_layout(state)
+    assert abs(rect("/input/grip").top() - a.top()) < 0.5
+    assert abs(rect("/input/y").top() - b.top()) < 0.5
+    # aeltere Form (Liste) laedt weiter: von oben gestapelt
+    left.set_layout({"outer": ["/input/grip"]})
+    assert left.is_outer("/input/grip")

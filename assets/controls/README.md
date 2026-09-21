@@ -30,14 +30,38 @@ unter demselben Namen in
 ab. Dieser Ordner hat Vorrang vor `assets/controls` und bleibt bei Updates
 unangetastet.
 
-## Seitenverhaeltnis
+## Punkte auf dem Bild (`points.json`)
 
-Die Punkte der Eingaben (Trigger, Stick, Tasten) sitzen an festen Stellen der
-Zeichenflaeche des jeweiligen Profils. Damit sie auf dem Bild an der richtigen
-Stelle landen, sollte das Bild dasselbe Seitenverhaeltnis haben wie die
-mitgelieferte Datei. Das Bild wird ohne Verzerrung mittig eingepasst.
+Wo die Punkte der Eingaben (Trigger, Stick, Tasten) auf einem Bild sitzen,
+steht in `points.json` **im selben Ordner wie das Bild** — je Bild
+(Dateiname ohne Endung) die Pixel jeder Eingabe:
 
-| Controller | Groesse der mitgelieferten Datei |
+```json
+"knuckles_left": {
+  "size": [1108, 1419],
+  "points": { "/input/trigger": [935, 540], "/input/a": [798, 405] }
+}
+```
+
+* `size` = Groesse des Bildes, fuer das die Pixel gelten. Wird das Bild im
+  selben Seitenverhaeltnis vergroessert/verkleinert, rechnet die App um.
+  Passt das Seitenverhaeltnis nicht, werden die Punkte ignoriert.
+* Linke und rechte Bilder brauchen je einen eigenen Eintrag. Gibt es nur
+  ein Bild ohne Seite (`knuckles.png`), wird es rechts samt Punkten gespiegelt.
+* Die App schneidet nichts zu. Schneide das Bild knapp zu und gib linkem
+  und rechtem Bild **dieselbe Groesse** (Controller jeweils zur Mitte hin) —
+  dann sind beide auf dem Schirm exakt gleich gross und spiegelbildlich.
+* Fehlt eine Eingabe im Eintrag, wird ihr Profilpunkt anteilig aufs Bild gelegt.
+
+Fuer eigene Bilder in `~/.config/yakuda-connect/controls/` legst du dort
+eine eigene `points.json` dazu. Die Pixel liest man am einfachsten in GIMP
+o. Ae. ab (Mauszeiger ueber die Taste, Koordinaten unten links).
+
+**Ohne Eintrag** gilt das alte Verfahren: Das Bild wird in die
+Zeichenflaeche des Profils eingepasst, die Punkte kommen aus obahs Profil.
+Dann sollte das Bild dasselbe Seitenverhaeltnis haben wie die Zeichnung:
+
+| Controller | Seitenverhaeltnis der Zeichnung |
 |---|---|
 | `oculus_touch` | 1000 × 1280 |
 | `knuckles` | 528 × 864 |
@@ -46,6 +70,9 @@ mitgelieferte Datei. Das Bild wird ohne Verzerrung mittig eingepasst.
 | `svl_hand_interaction_augmented` | 560 × 656 |
 | `gamepad` | 1680 × 1136 |
 | `rift` | 1520 × 1008 |
+
+Mitgelieferte Punkte gibt es fuer `oculus_touch`, `knuckles`,
+`vive_controller`, `vive_focus3_controller` (je links/rechts) und `gamepad`.
 
 Transparenter Hintergrund sieht am besten aus — der Kasten scheint dann durch.
 

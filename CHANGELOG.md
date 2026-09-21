@@ -1,5 +1,75 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.3.2 — 2026-09-21
+
+#### 🇩🇪 Deutsch
+
+**Controls: Punkte sitzen auf den neuen Controller-Bildern**
+
+* **Neue Bilder für Touch, Index (Knuckles), Vive Wand, Vive Focus 3 und Gamepad.** Die Punkte (und damit die Linien) landeten bisher daneben: Sie kamen aus obahs Profilkoordinaten, und das Bild wurde in eine Fläche mit anderem Seitenverhältnis eingepasst.
+* **Neu: `assets/controls/points.json`.** Je Bild die Pixel jeder Eingabe (`"knuckles_left": {"size": [...], "points": {"/input/trigger": [x, y], ...}}`). Linke und rechte Bilder haben je eigene Punkte — die rechten sind keine exakten Spiegelungen.
+* **Bild mit Punkten = eigenes Seitenverhältnis.** Durchsichtige Ränder werden abgeschnitten, das Bild wird höchstens 330 × 380 px groß angezeigt. Die Karten stehen nach der Höhe der Bildpunkte sortiert, damit sich die Linien nicht kreuzen.
+* **Eigene Bilder funktionieren weiter.** `points.json` wird im selben Ordner wie das Bild gesucht, also auch in `~/.config/yakuda-connect/controls/`. Fehlt der Eintrag oder passt das Seitenverhältnis nicht zur Angabe, gilt das alte Verfahren (Profilpunkte, Einpassen in die Zeichenfläche).
+* **obahs Profilpunkte in `core/obah_editor.py` wieder im Original.** Sie wurden lokal auf das alte Touch-Bild umgerechnet und passten damit nicht mehr zur eingebauten Zeichnung.
+* **Bilder werden je Seite gepuffert.** Vorher leerte jedes Laden den Puffer — linke und rechte Seite luden sich bei jedem Neuzeichnen gegenseitig neu von der Platte.
+
+**Controls: Controller gleich groß, Linien obendrauf, Wand in der Mitte**
+
+* **Bilder paarweise zugeschnitten.** Touch, Focus 3, Index und Vive: durchsichtige Ränder entfernt, links und rechts auf dieselbe Leinwand gebracht, Controller jeweils zur Mitte hin ausgerichtet. `points.json` mitgerechnet. Die App schneidet nicht mehr selbst zu — dadurch sind beide Seiten auf dem Schirm immer exakt gleich groß.
+* **Linien laufen über den Controller** statt darunter zu verschwinden.
+* **Controller bleibt im Kasten.** Beim Ziehen hält er an der Mitte (und an den anderen Rändern) an, statt halb zu verschwinden — auch beim Laden einer alten Anordnung nach Verkleinern des Fensters.
+* **Beide Seiten bewegen sich gespiegelt.** Wer den linken Controller verschiebt, verschiebt den rechten spiegelbildlich mit (und umgekehrt); gemerkt werden beide.
+* **Beide Controller auf derselben Höhe.** Vorher stand jeder mittig zu seiner eigenen Kartenspalte — hatte eine Seite mehr oder längere Karten (andere Belegung), saß ihr Controller tiefer. Jetzt zählt nebeneinander die höhere Spalte für beide. Ältere Anordnungen mit eigenem Versatz je Seite werden beim Laden angeglichen (links gibt den Ton an).
+* **Zweite Kartenspalte zum Sortieren.** Eine Karte weit nach außen ziehen legt sie in eine äußere Spalte neben der inneren; zurückziehen holt sie wieder rein. **In der äußeren Spalte steht jede Karte frei in der Höhe** — dort, wo man sie loslässt, nicht von oben gestapelt. Überlappen kann nichts: ragt eine Karte in eine andere, rutscht die darunter liegende nach unten. Gemerkt wird die Höhe je Karte (`outer: {pfad: y}`; die ältere Listenform lädt weiter). Beim Ziehen springt nichts unter der Maus — Platz reserviert der Kasten erst nach dem Loslassen (bei schmalem Fenster stehen die Seiten dann untereinander). Gemerkt wird das in der Anordnung (`outer`), auch in Profilen; „Anordnung zurücksetzen“ holt alles zurück.
+* **Mausrad ändert keine Aufklapplisten mehr.** Beim Scrollen über eine Combo scrollt die Seite weiter, statt still Spiel, Controller oder Quelle umzustellen — gilt in der ganzen App (neu: `ui/no_wheel.py`). In der aufgeklappten Liste scrollt das Rad wie gewohnt.
+* **In der Mitte nur noch ein dünner Strich** statt 24 px Lücke; beide Controller haben 4 px Abstand zur Mitte.
+
+**Controls: alle Spiele aus dem Games-Tab in der Spielauswahl**
+
+* **① Spiel zeigt jetzt jedes Spiel aus dem Games-Tab** — getestete, ungetestete, Nicht-Steam-Spiele und eigene Einträge — zusätzlich zu allen Steam-Spielen mit Action-Datei (wie bisher).
+* **Ordner von Nicht-Steam-Spielen:** Startordner des Steam-Eintrags, sonst der Ordner der Programmdatei. Home, `/`, `/usr/bin` & Co. werden nicht durchsucht (Heroic-/Lutris-Starter), und die Suche bricht nach 4000 Ordnern ab.
+* **Spiele ohne Action-Datei stehen grau in der Liste** („keine Action-Datei“), Controller und Quelle sind dann gesperrt, und die Hinweiszeile sagt, wo gesucht wurde. Ohne `actions.json` gibt es keine Aktionen zum Belegen — bei Spielen, die OpenXR direkt nutzen, ist das normal.
+* **Gründlichere Suche nach der Action-Datei.** Zusätzlich zu obahs vier Namen zählt `steamvr_manifest.json` (Unreals SteamVR-Input-Plugin, liegt unter `Config/SteamVRBindings/`) — aber nur, wenn wirklich eine Liste `actions` drinsteht. Findet sich im Spielordner nichts, wird im Proton-Prefix gesucht (`compatdata/<AppID>/pfx/…/AppData/Local`, `LocalLow`, `Roaming`, `Documents`, `Saved Games`; höchstens 8000 Ordner).
+* **Action-Datei von Hand wählen:** Knopf „📂 Action-Datei …“ neben ① Spiel. Die Datei wird geprüft (Liste `actions` muss da sein), in `controls_manifests.json` gemerkt (`games: {"<art>:<appid>": pfad}`) und gewinnt danach immer. Hat das Spiel keinen Ordner, wird der Ordner der Datei genommen (für xrizer-/OpenComposite-Dateien). „✕“ vergisst die Wahl und sucht neu.
+* **Hinweis bei fehlender Datei** sagt jetzt, wo gesucht wurde, und dass Spiele mit OpenXR direkt keine Action-Datei haben — dort kommt die Belegung aus dem Spiel, obah/xrizer greifen nicht.
+* **Kennzeichnung:** „· Nicht-Steam“ bzw. „· ohne Steam“ hinter dem Namen; der Tooltip zeigt den Ordner.
+* **Neu: `games.games_tab_entries()`, `obah_bindings.library_folder()`, `ObahGame.kind` / `has_manifest` / `key`.** Das Dropdown merkt sich die Auswahl über `key` statt über den Ordner (Spiele ohne Ordner).
+* **Tests:** `test_obah_bindings.py` und `test_obah_aux.py` erweitert.
+
+#### 🇬🇧 English
+
+**Controls: points sit on the new controller images**
+
+* **New images for Touch, Index (Knuckles), Vive Wand, Vive Focus 3 and Gamepad.** The points (and lines) missed their buttons: they came from obah's profile coordinates while the image was fitted into an area with a different aspect ratio.
+* **New: `assets/controls/points.json`.** Pixel position of every input per image. Left and right images have their own points — the right ones aren't exact mirrors.
+* **An image with points keeps its own aspect ratio.** Transparent borders are cropped, the image is shown at most 330 × 380 px. Cards are sorted by the height of the image points so lines don't cross.
+* **Custom images still work.** `points.json` is looked up next to the image, so also in `~/.config/yakuda-connect/controls/`. Without an entry, or if the aspect ratio doesn't match, the old method applies.
+* **obah's profile points in `core/obah_editor.py` restored.** They had been converted to the old Touch image locally and no longer matched the built-in drawing.
+* **Images are cached per side.** Previously every load cleared the cache, so left and right reloaded each other from disk on every repaint.
+
+**Controls: controllers same size, lines on top, wall in the middle**
+
+* **Images cropped in pairs.** Touch, Focus 3, Index and Vive: transparent borders removed, left and right on the same canvas, controller aligned towards the middle; `points.json` recalculated. The app no longer crops by itself, so both sides are always exactly the same size.
+* **Lines run over the controller** instead of vanishing underneath.
+* **The controller stays inside its box** — dragging stops at the middle and the other edges.
+* **Both sides move mirrored.** Dragging one controller moves the other one mirror-wise; both are remembered.
+* **Both controllers at the same height.** Each used to be centred on its own card column, so the side with more or longer cards sat lower. Side by side, the taller column now counts for both; older per-side offsets are aligned on load (left leads).
+* **Second card column for sorting.** Drag a card far outwards to put it in an outer column; drag it back to return it. In the outer column every card stays at the height where you drop it — no stacking from the top, and nothing overlaps. Nothing jumps during the drag; the box makes room after release. Stored in the layout (`outer`), profiles included.
+* **The mouse wheel no longer changes dropdowns.** Scrolling over a combo keeps scrolling the page instead of silently switching game, controller or source — app-wide (new: `ui/no_wheel.py`).
+* **Just a thin line in the middle** instead of a 24 px gap.
+
+**Controls: every game from the Games tab in the game picker**
+
+* **① Game now lists every game from the Games tab** — tested, untested, non-Steam and your own entries — plus all Steam games with an action file (as before).
+* **Folder of non-Steam games:** the Steam entry's start folder, otherwise the program's folder. Home, `/`, `/usr/bin` etc. are never searched (Heroic/Lutris launchers), and the search stops after 4000 folders.
+* **Games without an action file are greyed out** ("no action file"); controller and source are locked and the hint says where it looked. Without `actions.json` there are no actions to bind — normal for games using OpenXR directly.
+* **More thorough action-file search.** Besides obah's four names, `steamvr_manifest.json` counts (Unreal's SteamVR Input plugin) — only if it really contains an `actions` list. If the game folder has nothing, the Proton prefix is searched too (AppData/Local, LocalLow, Roaming, Documents, Saved Games; at most 8000 folders).
+* **Pick the action file yourself:** "📂 Action file …" button next to ① Game. The file is validated, remembered in `controls_manifests.json` and always wins afterwards. "✕" forgets it and searches again.
+* **Missing-file hint** now says where it looked, and that games using OpenXR directly have no action file — their controls come from the game, obah/xrizer don't apply.
+* **Labels:** "· non-Steam" or "· without Steam" after the name; the tooltip shows the folder.
+* **New: `games.games_tab_entries()`, `obah_bindings.library_folder()`, `ObahGame.kind` / `has_manifest` / `key`.**
+* **Tests:** extended `test_obah_bindings.py` and `test_obah_aux.py`.
+
 ### 🚀 v1.3.1 — 2026-09-19
 
 #### 🇩🇪 Deutsch

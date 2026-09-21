@@ -197,6 +197,8 @@ class ControlsTabMixin:
         ui.combo_obah_profile.currentIndexChanged.connect(self._update_obah_profile_buttons)
         self._fill_obah_profiles()
         ui.btn_obah_refresh.clicked.connect(self.start_obah_game_scan)
+        ui.btn_obah_pick_manifest.clicked.connect(self.pick_obah_manifest)
+        ui.btn_obah_clear_manifest.clicked.connect(self.clear_obah_manifest)
         ui.combo_obah_game.currentIndexChanged.connect(self._on_obah_game_changed)
         ui.combo_obah_controller.currentIndexChanged.connect(self._on_obah_controller_changed)
         ui.combo_obah_source.currentIndexChanged.connect(self._on_obah_source_picked)
@@ -299,6 +301,7 @@ class ControlsTabMixin:
         combo.blockSignals(True)
         combo.clear()
         if not games:
+            self._update_manifest_buttons(None)
             combo.addItem(tr("obah_no_games"))
             combo.setEnabled(False)
             combo.blockSignals(False)
@@ -306,15 +309,23 @@ class ControlsTabMixin:
             self._obah_bindings = None
             self._fill_obah_controllers()
             return
-        for g in games:
-            combo.addItem(g.name, g.game_folder)
+        for i, g in enumerate(games):
+            combo.addItem(self._game_label(g), g.key)
+            tip = g.actions_json or g.game_folder or tr("obah_no_folder")
+            if not g.has_manifest:
+                # grau wie Controller ohne Bindings — waehlbar, aber mit Hinweis
+                combo.setItemData(i, QColor("#7b88a1"), Qt.ForegroundRole)
+            combo.setItemData(i, tip, Qt.ToolTipRole)
         combo.setEnabled(True)
         idx = combo.findData(previous) if previous else -1
         if idx < 0:
-            # Voreinstellung: VRChat, wenn installiert
+            # Voreinstellung: VRChat, wenn installiert — sonst das erste
+            # Spiel, das sich auch bearbeiten laesst
             idx = next((i for i, g in enumerate(games)
-                        if g.name.strip().lower() == PREFERRED_GAME), -1)
-        combo.setCurrentIndex(idx if idx >= 0 else 0)
+                        if g.name.strip().lower() == PREFERRED_GAME and g.has_manifest), -1)
+        if idx < 0:
+            idx = next((i for i, g in enumerate(games) if g.has_manifest), 0)
+        combo.setCurrentIndex(idx)
         combo.blockSignals(False)
         self._on_obah_game_changed(combo.currentIndex())
 
@@ -326,13 +337,109 @@ class ControlsTabMixin:
 
     def _on_obah_game_changed(self, _index):
         game = self._current_obah_game()
-        self._obah_last_game = game.game_folder if game else None
+        self._obah_last_game = game.key if game else None
+        self._update_manifest_buttons(game)
+        if game is not None and not game.has_manifest:
+            # Spiel aus dem Games-Tab ohne OpenVR-Action-Datei: steht in der
+            # Liste, aber ohne Aktionen gibt es nichts zu belegen.
+            self._obah_bindings = None
+            self._fill_obah_controllers()
+            self.ui.lbl_obah_hint.setText(
+                tr("obah_no_manifest_hint").format(
+                    folder=self._short_home(game.game_folder) if game.game_folder
+                    else tr("obah_no_folder")))
+            return
         try:
             self._obah_bindings = ob.scan_bindings(game) if game else None
         except Exception as exc:  # noqa: BLE001
             log.warning("obah-Bindings nicht lesbar (%s): %s", game and game.name, exc)
             self._obah_bindings = None
         self._fill_obah_controllers()
+
+    # ------------------------------------------------------------------ #
+    #  Action-Datei von Hand waehlen
+    # ------------------------------------------------------------------ #
+    def _update_manifest_buttons(self, game):
+        ui = self.ui
+        ui.btn_obah_pick_manifest.setEnabled(game is not None)
+        ui.btn_obah_clear_manifest.setVisible(bool(game and game.manual))
+        ui.btn_obah_clear_manifest.setEnabled(bool(game and game.manual))
+
+    def pick_obah_manifest(self, path=None):
+        """
+        Action-Datei fuer das gewaehlte Spiel selbst aussuchen. Gemerkt wird
+        sie in controls_manifests.json und gewinnt danach immer.
+        path: fuer Tests — sonst oeffnet sich ein Dateidialog.
+        """
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        game = self._current_obah_game()
+        if game is None:
+            return False
+        if not path:
+            start = ""
+            for cand in [os.path.dirname(game.actions_json) if game.actions_json else "",
+                         game.game_folder] + ob.prefix_dirs(game.appid):
+                if cand and os.path.isdir(cand):
+                    start = cand
+                    break
+            path, _flt = QFileDialog.getOpenFileName(
+                self, tr("obah_pick_manifest_title").format(name=game.name),
+                start or os.path.expanduser("~"), "JSON (*.json);;* (*)")
+            if not path:
+                return False
+        if not ob.is_action_manifest(path):
+            QMessageBox.warning(self, tr("obah_pick_manifest_title").format(name=game.name),
+                                tr("obah_pick_manifest_invalid").format(path=path))
+            return False
+        if not ob.set_manual_manifest(game.ident, path):
+            log.warning("Action-Datei nicht gemerkt: %s", path)
+        log.info("Action-Datei fuer %s von Hand gesetzt: %s", game.name, path)
+        game.actions_json = path
+        game.manual = True
+        if not game.game_folder:
+            game.game_folder = os.path.dirname(path)
+        self._refresh_game_item(game)
+        self._on_obah_game_changed(self.ui.combo_obah_game.currentIndex())
+        return True
+
+    def clear_obah_manifest(self):
+        """Von Hand gewaehlte Datei vergessen und neu suchen."""
+        game = self._current_obah_game()
+        if game is None:
+            return
+        ob.set_manual_manifest(game.ident, None)
+        self._obah_last_game = game.key
+        self.start_obah_game_scan()
+
+    def _refresh_game_item(self, game):
+        """Dropdown-Eintrag eines Spiels nach Aenderung neu beschriften."""
+        combo = self.ui.combo_obah_game
+        idx = combo.currentIndex()
+        if idx < 0:
+            return
+        combo.blockSignals(True)
+        combo.setItemText(idx, self._game_label(game))
+        combo.setItemData(idx, game.key)
+        combo.setItemData(idx, None, Qt.ForegroundRole)
+        combo.setItemData(idx, game.actions_json, Qt.ToolTipRole)
+        combo.blockSignals(False)
+
+    @staticmethod
+    def _game_label(game):
+        kind_keys = {ob.KIND_SHORTCUT: "obah_game_shortcut", ob.KIND_LOCAL: "obah_game_local"}
+        label = game.name
+        if game.kind in kind_keys:
+            label += "   · " + tr(kind_keys[game.kind])
+        if game.manual:
+            label += "   · " + tr("obah_manifest_manual")
+        elif not game.has_manifest:
+            label += "   — " + tr("obah_no_manifest_short")
+        return label
+
+    @staticmethod
+    def _short_home(path):
+        home = os.path.expanduser("~")
+        return "~" + path[len(home):] if path.startswith(home) else path
 
     def _fill_obah_controllers(self, keep_source=False):
         """Schritt 2: alle obah-Profile, mit Haekchen, was es schon gibt.
@@ -533,6 +640,8 @@ class ControlsTabMixin:
             view.set_data(ct, side, views, dict(base, title=tr(title_key),
                                                 hint=tr("obah_card_hint"),
                                                 hint_image=tr("obah_image_hint")))
+        if oe.is_handed(ct):
+            ui.obah_hands.sync_mirror()
         ui.obah_hands.relayout()
         self._sync_obah_tidy_button()
         ui.btn_obah_layout_reset.setEnabled(

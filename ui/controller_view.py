@@ -16,6 +16,8 @@ Bedienung:
   * Karte ziehen  -> sie rastet an der Stelle ein, an der man sie loslaesst;
                      die Karten darunter ruecken nach. Es ueberlappt nie
                      etwas, und man kann alles wieder zurueckschieben.
+  * Karte weit nach aussen ziehen -> sie kommt in eine zweite, aeussere
+                     Spalte (zum Sortieren); zurueckziehen holt sie wieder rein.
   * Zeichnung ziehen -> NUR der Controller wandert (mit seinen Punkten und
                      Linien); die Karten bleiben, wo sie sind.
   Nach dem Loslassen kommt layout_changed(dict) — der Controls-Tab merkt
@@ -32,12 +34,23 @@ in diesen Ordnern, in dieser Reihenfolge:
     1. ``<Config-Ordner>/controls``   — eigene Bilder des Nutzers
     2. ``assets/controls``            — die mitgelieferten Bilder
 
-Fehlt die Datei, wird wie bisher gezeichnet. Die Bilder haben genau das
-Seitenverhaeltnis der jeweiligen Zeichenflaeche (siehe DRAWINGS), damit die
-Punkte der Eingaben an der richtigen Stelle sitzen; sie werden ohne
-Verzerrung in die Flaeche eingepasst. Gibt es nur ein Bild ohne Seite, wird
-es fuer rechts gespiegelt — wie die Zeichnung.
+Fehlt die Datei, wird wie bisher gezeichnet. Gibt es nur ein Bild ohne
+Seite, wird es fuer rechts gespiegelt — wie die Zeichnung.
+
+Wo die Punkte auf dem Bild sitzen, steht in ``points.json`` im selben
+Ordner wie das Bild — je Bild (Dateiname ohne Endung) die Pixel jeder
+Eingabe::
+
+    "knuckles_left": {"size": [1108, 1419],
+                      "points": {"/input/trigger": [935, 540], ...}}
+
+Mit Eintrag bekommt das Bild sein eigenes Seitenverhaeltnis, und die Punkte
+sitzen genau auf den Tasten. Das Bild wird nicht zugeschnitten: links und
+rechts sollten dieselbe Groesse haben, dann sind beide gleich gross.
+Ohne Eintrag gilt das alte Verfahren: das Bild wird in die Zeichenflaeche
+aus DRAWINGS eingepasst und die Punkte kommen aus obahs Profil.
 """
+import json
 import os
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
@@ -66,7 +79,10 @@ C_DROP = QColor("#5e81ac")
 CARD_W = 220
 CARD_PAD = 8
 CARD_GAP = 8
+COL_GAP = 16             # Abstand zwischen innerer und aeusserer Kartenspalte
 IMG_MARGIN = 40          # Abstand Kartenspalte <-> Zeichnung (Platz fuer Linien)
+TEX_MAX_H = 330          # Bild mit eigenen Punkten: hoechstens so hoch ...
+TEX_MAX_W = 380          # ... und so breit (Pixel auf dem Schirm)
 DRAG_THRESHOLD = 5       # Pixel, ab denen aus einem Klick ein Ziehen wird
 
 
@@ -266,7 +282,10 @@ TEXTURE_EXTS = (".png", ".svg", ".webp", ".jpg", ".jpeg")
 ASSET_TEXTURE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "controls")
 
-_TEX_CACHE = {}          # (pfad, mtime) -> QPixmap
+POINTS_FILE = "points.json"
+
+_TEX_CACHE = {}          # (pfad, gespiegelt) -> (mtime, QPixmap)
+_POINTS_CACHE = {}       # pfad der points.json -> (mtime, dict)
 
 
 def texture_dirs():
@@ -304,27 +323,124 @@ def texture_file(controller_type, side):
     return None
 
 
-def load_texture(path):
-    """Bild laden und merken; aendert sich die Datei, wird neu geladen."""
+def _mirror_image(img):
+    """Seitenverkehrt. Ab Qt 6.9 heisst das flipped(), mirrored() ist dort
+    veraltet — aeltere PySide6-Versionen (>= 6.5) kennen nur mirrored()."""
+    if hasattr(img, "flipped"):
+        return img.flipped(Qt.Horizontal)
+    return img.mirrored(True, False)
+
+
+def load_texture(path, mirror=False):
+    """Bild laden und merken; aendert sich die Datei, wird neu geladen.
+
+    Gemerkt wird je Datei (links und rechts gleichzeitig) — sonst luden die
+    beiden Seiten sich bei jedem Neuzeichnen gegenseitig aus dem Cache.
+    """
     try:
         mtime = os.path.getmtime(path)
     except OSError:
         return None
-    key = (path, mtime)
+    key = (path, bool(mirror))
     hit = _TEX_CACHE.get(key)
-    if hit is None:
-        pix = QPixmap(path)
-        if pix.isNull():
-            return None
-        _TEX_CACHE.clear()          # nur der aktuelle Stand wird gebraucht
-        _TEX_CACHE[key] = pix
-        hit = pix
-    return hit
+    if hit is not None and hit[0] == mtime:
+        return hit[1]
+    pix = QPixmap(path)
+    if pix.isNull():
+        return None
+    if mirror:
+        pix = QPixmap.fromImage(_mirror_image(pix.toImage()))
+    if len(_TEX_CACHE) > 32:
+        _TEX_CACHE.clear()
+    _TEX_CACHE[key] = (mtime, pix)
+    return pix
 
 
 def clear_texture_cache():
     """Nach dem Austauschen von Bildern aufrufen (oder beim Sprachwechsel egal)."""
     _TEX_CACHE.clear()
+    _POINTS_CACHE.clear()
+
+
+def _load_points_file(path):
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return {}
+    hit = _POINTS_CACHE.get(path)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    _POINTS_CACHE[path] = (mtime, data)
+    return data
+
+
+def texture_points(path):
+    """
+    Punkte der Eingaben fuer dieses Bild aus ``points.json`` daneben.
+
+    Rueckgabe: (groesse | None, {eingabe: (x, y)}) in Pixeln des Bildes,
+    wie es auf der Platte liegt (ungespiegelt) — oder None ohne Eintrag.
+    """
+    data = _load_points_file(os.path.join(os.path.dirname(path), POINTS_FILE))
+    entry = data.get(os.path.splitext(os.path.basename(path))[0])
+    if not isinstance(entry, dict) or not isinstance(entry.get("points"), dict):
+        return None
+    pts = {}
+    for key, val in entry["points"].items():
+        try:
+            pts[str(key)] = (float(val[0]), float(val[1]))
+        except (TypeError, ValueError, IndexError):
+            continue
+    size = entry.get("size")
+    try:
+        size = (float(size[0]), float(size[1])) if size else None
+    except (TypeError, ValueError, IndexError):
+        size = None
+    return (size, pts) if pts else None
+
+
+def texture_layout(controller_type, side):
+    """
+    Bild mit eigenen Punkten: (pixmap, sichtbarer_teil, {eingabe: (x, y)})
+    in Pixeln der (ggf. gespiegelten) Pixmap — oder None.
+
+    None auch dann, wenn das Bild ein anderes Seitenverhaeltnis hat als in
+    points.json angegeben: dann passen die Punkte sicher nicht, und das alte
+    Verfahren (Profilpunkte) ist die bessere Wahl.
+    """
+    found = texture_file(controller_type, side)
+    if not found:
+        return None
+    path, mirror = found
+    info = texture_points(path)
+    if not info:
+        return None
+    pix = load_texture(path, mirror)
+    if pix is None:
+        return None
+    size, pts = info
+    sx = sy = 1.0
+    if size and size[0] > 0 and size[1] > 0:
+        sx, sy = pix.width() / size[0], pix.height() / size[1]
+        if abs(sx - sy) > 0.02 * max(sx, sy):
+            return None
+    out = {}
+    for key, (x, y) in pts.items():
+        x, y = x * sx, y * sy
+        if mirror:
+            x = pix.width() - x
+        out[key] = (x, y)
+    # Kein automatischer Zuschnitt: die mitgelieferten Bilder sind knapp
+    # zugeschnitten und je Paar (links/rechts) gleich gross — so sind beide
+    # Controller auf dem Schirm immer exakt gleich gross.
+    return pix, QRectF(pix.rect()), out
 
 
 class ControllerBindingView(QWidget):
@@ -340,6 +456,7 @@ class ControllerBindingView(QWidget):
     card_clicked = Signal(str)        # Profilpfad der Eingabe, z. B. /input/joystick
     layout_changed = Signal(dict)     # {"image": [dx, dy] | None, "order": [...], "compact": [...]}
     tidy_changed = Signal(bool)       # True, wenn ALLE Karten zugeklappt sind
+    image_moved = Signal(object, bool)  # [dx, dy], losgelassen? — fuer die Gegenseite
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -351,13 +468,20 @@ class ControllerBindingView(QWidget):
         self._texts = {}
         self._layout = []          # [(QRectF karte, QPointF punkt, InputView, zeilen)]
         self._img_rect = QRectF()
+        self._tex = None           # (pixmap, sichtbarer_teil, punkte) aus points.json
+        self._tex_k = 0.0          # Massstab Bildpixel -> Schirm
         self._hover = -1
         self._height = 200
         self._centered = False
+        self._center_h = None      # gemeinsame Spaltenhoehe beider Seiten (ControllerPair)
+        self._column_h = 0.0       # eigene Hoehe der Kartenspalte
 
         # Eigene Anordnung: Verschiebung der Zeichnung und Reihenfolge der Karten
         self._img_offset = None    # [dx, dy] oder None (automatisch)
         self._order = []           # [profilpfad, ...]
+        # Karten in der aeusseren Spalte: {pfad: y ueber der Spaltenoberkante
+        # oder None}. Dort stehen Karten frei in der Hoehe (nicht gestapelt).
+        self._outer = {}
 
         # Aufgeraeumter Modus: von diesen Karten steht nur der Name da, nicht
         # mehr, was auf der Taste liegt. Einzeln per Rechtsklick, alle
@@ -370,8 +494,12 @@ class ControllerBindingView(QWidget):
         self._drag_path = None     # Pfad der gezogenen Karte
         self._drag_pos = None      # QPointF: linke obere Ecke der schwebenden Karte
         self._drop_index = -1      # Einfuegestelle in der Spalte
+        self._drop_col = 0         # 0 = innere Spalte, 1 = aeussere
+        self._col_slots = {0: [0.0], 1: [0.0]}
+        self._col_x = {0: 0.0, 1: 0.0}
         self._gap_rect = None      # sichtbare Luecke an der Einfuegestelle
         self._slots = [0.0]        # Oberkanten der moeglichen Einfuegestellen
+        self._top = 0.0            # Oberkante der Kartenspalten
         self._card_left = 0.0
 
         self._f_title = QFont(self.font())
@@ -412,16 +540,42 @@ class ControllerBindingView(QWidget):
             order = [p for p, _ in sorted(layout["cards"].items(), key=lambda kv: kv[1][1])]
         self._order = order
         self._compact = set(layout.get("compact") or [])
+        outer = layout.get("outer") or {}
+        if isinstance(outer, list):          # aeltere Form: nur die Pfade
+            outer = {p: None for p in outer}
+        self._outer = {str(p): (float(y) if isinstance(y, (int, float)) else None)
+                       for p, y in outer.items()}
         self._relayout()
         self.update()
+
+    def set_center_height(self, height):
+        """Hoehe, zu der der Controller mittig steht (None = eigene Spalte)."""
+        if height != self._center_h:
+            self._center_h = height
+            self._relayout()
+            self.update()
+
+    def column_height(self):
+        return self._column_h
+
+    def mirror_image_offset(self, offset, notify=False):
+        """Versatz der anderen Seite gespiegelt uebernehmen (dx umgedreht)."""
+        new = [-offset[0], offset[1]] if offset and any(offset) else None
+        if new != self._img_offset:
+            self._img_offset = new
+            self._relayout()
+            self.update()
+        if notify:
+            self.layout_changed.emit(self.layout_state())
 
     def layout_state(self):
         return {"image": list(self._img_offset) if self._img_offset else None,
                 "order": list(self._order),
-                "compact": sorted(self._compact)}
+                "compact": sorted(self._compact),
+                "outer": dict(sorted(self._outer.items()))}
 
     def has_manual_layout(self):
-        return bool(self._img_offset or self._order or self._compact)
+        return bool(self._img_offset or self._order or self._compact or self._outer)
 
     # ------------------------------------------------------------------ #
     #  Aufgeraeumter Modus
@@ -486,6 +640,10 @@ class ControllerBindingView(QWidget):
         """Pfade der Karten in der Reihenfolge, in der sie stehen."""
         return [v.input.path for _r, _p, v, _l in self._layout]
 
+    def is_outer(self, path):
+        """Steht die Karte in der aeusseren Spalte?"""
+        return path in self._outer
+
     # ------------------------------------------------------------------ #
     #  Layout
     # ------------------------------------------------------------------ #
@@ -526,6 +684,39 @@ class ControllerBindingView(QWidget):
             x = box.width() * scale - x
         return QPointF(self._img_rect.left() + x, self._img_rect.top() + y)
 
+    def _image_size(self):
+        """
+        Groesse der Zeichenflaeche auf dem Schirm und das Bild mit Punkten
+        (oder None). Ein Bild mit Eintrag in points.json bringt sein eigenes
+        Seitenverhaeltnis mit; sonst gilt die Flaeche aus DRAWINGS.
+        """
+        tex = texture_layout(self._controller, self._side)
+        if tex is not None:
+            crop = tex[1]
+            if crop.width() > 0 and crop.height() > 0:
+                k = min(TEX_MAX_H / crop.height(), TEX_MAX_W / crop.width())
+                return crop.width() * k, crop.height() * k, tex, k
+        scale, box = self._scale_and_box()
+        return box.width() * scale, box.height() * scale, None, 0.0
+
+    def _point_for(self, view, scale, box):
+        """Bildschirmpunkt einer Eingabe: aus points.json, sonst aus dem Profil."""
+        tex = self._tex
+        if tex is not None:
+            _pix, crop, pts = tex
+            pt = pts.get(view.input.path)
+            if pt is not None:
+                return QPointF(self._img_rect.left() + (pt[0] - crop.left()) * self._tex_k,
+                               self._img_rect.top() + (pt[1] - crop.top()) * self._tex_k)
+            # Eingabe fehlt in points.json: Profilpunkt anteilig aufs Bild
+            fx = (view.input.point[0] - box.left()) / max(box.width(), 1)
+            fy = (view.input.point[1] - box.top()) / max(box.height(), 1)
+            if self._side == "right":
+                fx = 1 - fx
+            return QPointF(self._img_rect.left() + fx * self._img_rect.width(),
+                           self._img_rect.top() + fy * self._img_rect.height())
+        return self._map_point(view.input.point, scale, box)
+
     def _card_height(self, lines):
         return (CARD_PAD * 2 + QFontMetrics(self._f_title).height()
                 + len(lines) * (QFontMetrics(self._f_small).height() + 2))
@@ -540,8 +731,17 @@ class ControllerBindingView(QWidget):
         Karten durcheinanderbringen.
         """
         by_path = {v.input.path: v for v in self._views}
-        rest = sorted((v for v in self._views if v.input.path not in self._order),
-                      key=lambda v: (v.input.point[1], v.input.point[0], v.input.order))
+        # Mit Bildpunkten (points.json) nach deren Hoehe — sonst kreuzen sich
+        # die Linien, weil das Bild die Tasten anders anordnet als das Profil.
+        tex_pts = self._tex[2] if self._tex is not None else {}
+
+        def key(v):
+            pt = tex_pts.get(v.input.path)
+            if pt is not None:
+                return (pt[1], pt[0], v.input.order)
+            return (v.input.point[1], v.input.point[0], v.input.order)
+
+        rest = sorted((v for v in self._views if v.input.path not in self._order), key=key)
         ordered = [by_path[p] for p in self._order if p in by_path]
         ordered += rest
         return ordered
@@ -551,11 +751,23 @@ class ControllerBindingView(QWidget):
 
     def _relayout(self):
         scale, box = self._scale_and_box()
-        img_w, img_h = box.width() * scale, box.height() * scale
+        img_w, img_h, self._tex, self._tex_k = self._image_size()
         head_h = self._head_height()
         top = head_h + 6
 
-        content_w = CARD_W + IMG_MARGIN + img_w + 8
+        paths = {v.input.path for v in self._views}
+        drag_path = self._drag_path if self._dragging else None
+        # Aeussere Spalte: nur wenn Karten drinstehen — oder beim Ziehen,
+        # damit man eine Karte ueberhaupt dorthin legen kann.
+        has_outer = bool(set(self._outer) & paths)
+        use_outer = has_outer or drag_path is not None
+        # Platz wird nur fuer eine BELEGTE aeussere Spalte reserviert. Beim
+        # blossen Ziehen bleibt alles stehen (nichts springt unter der Maus);
+        # die Spalte liegt dann ggf. teils ausserhalb — nach dem Loslassen
+        # macht der Kasten Platz (bzw. stapelt die Seiten untereinander).
+        extra = CARD_W + COL_GAP if has_outer else 0
+
+        content_w = extra + CARD_W + IMG_MARGIN + img_w + 4   # 4 px zur Mitte
         width = max(self.width(), int(content_w) + 2)
         # Nebeneinander rueckt jede Seite zur Mitte (Controller innen, Karten
         # aussen); untereinander steht der Inhalt mittig.
@@ -568,9 +780,13 @@ class ControllerBindingView(QWidget):
         if self._side == "right":
             img_left = origin + 4
             card_left = img_left + img_w + IMG_MARGIN
+            outer_left = card_left + CARD_W + COL_GAP
         else:
-            card_left = origin
+            card_left = origin + extra
+            outer_left = card_left - CARD_W - COL_GAP
             img_left = card_left + CARD_W + IMG_MARGIN
+        self._col_x = {0: card_left, 1: outer_left if use_outer else card_left}
+
         ordered = self._ordered_views()
         # Zugeklappte Karten haben keine Zeilen — dadurch schrumpfen sie von
         # selbst auf die Kopfzeile zusammen, ohne Sonderfall im Zeichnen.
@@ -578,46 +794,70 @@ class ControllerBindingView(QWidget):
                    for v in ordered]
         heights = {v.input.path: self._card_height(lines) for v, lines in entries}
 
+        def col_of(path):
+            return 1 if (use_outer and path in self._outer) else 0
+
+        def col_height(c):
+            hs = [heights[v.input.path] for v, _l in entries if col_of(v.input.path) == c]
+            return sum(hs) + CARD_GAP * max(len(hs) - 1, 0)
+
         # Standardmaessig sitzt der Controller auf halber Hoehe des Kastens,
         # also mittig zur Kartenspalte — nicht oben. Beim Ziehen zaehlen
         # weiter alle Karten mit, damit die Zeichnung nicht mitwandert.
-        column_h = sum(heights.values()) + CARD_GAP * max(len(heights) - 1, 0)
-        img_top = top + max((column_h - img_h) / 2, 0)
+        # Die innere Spalte bestimmt die Mitte; die aeussere steht frei.
+        column_h = col_height(0) or col_height(1)
+        self._column_h = column_h
+        # Nebeneinander zaehlt die HOEHERE der beiden Spalten — sonst sitzt
+        # der Controller mit mehr/laengeren Karten tiefer als der andere.
+        center_h = self._center_h if self._center_h else column_h
+        img_top = top + max((center_h - img_h) / 2, 0)
         if self._img_offset:
             img_left += self._img_offset[0]
             img_top += self._img_offset[1]
+        # Nie ueber den Rand hinaus (die Mitte zum anderen Controller ist
+        # eine Wand) — sonst verschwindet er halb und ist schwer zu greifen.
+        img_left = min(max(img_left, 0), max(width - img_w, 0))
+        img_top = max(img_top, top)
         self._img_rect = QRectF(img_left, img_top, img_w, img_h)
 
-        drag_path = self._drag_path if self._dragging else None
-        column = [e for e in entries if e[0].input.path != drag_path]
-        gap_at = self._drop_index if drag_path else -1
         gap_h = heights.get(drag_path, 0) + CARD_GAP if drag_path else 0
-
         layout = []
-        y = top
-        self._slots = []           # Oberkanten der Einfuegestellen (fuer das Ziehen)
-        for i, (v, lines) in enumerate(column):
-            if gap_at == i:
-                self._gap_rect = QRectF(card_left, y, CARD_W, gap_h - CARD_GAP)
+        self._gap_rect = None
+        self._col_slots = {}
+        self._top = top
+        for c in (0, 1):
+            x = self._col_x[c]
+            column = [e for e in entries
+                      if e[0].input.path != drag_path and col_of(e[0].input.path) == c]
+            if c == 1:
+                self._layout_outer(column, heights, x, top, drag_path, gap_h,
+                                   layout, scale, box)
+                continue
+            gap_at = self._drop_index if (drag_path and self._drop_col == c) else -1
+            y = top
+            slots = []             # Oberkanten der Einfuegestellen (fuer das Ziehen)
+            for i, (v, lines) in enumerate(column):
+                if gap_at == i:
+                    self._gap_rect = QRectF(x, y, CARD_W, gap_h - CARD_GAP)
+                    y += gap_h
+                slots.append(y)
+                h = heights[v.input.path]
+                layout.append((QRectF(x, y, CARD_W, h),
+                               self._point_for(v, scale, box), v, lines))
+                y += h + CARD_GAP
+            if gap_at >= len(column):
+                self._gap_rect = QRectF(x, y, CARD_W, gap_h - CARD_GAP)
                 y += gap_h
-            self._slots.append(y)
-            h = heights[v.input.path]
-            layout.append((QRectF(card_left, y, CARD_W, h),
-                           self._map_point(v.input.point, scale, box), v, lines))
-            y += h + CARD_GAP
-        if gap_at >= len(column):
-            self._gap_rect = QRectF(card_left, y, CARD_W, gap_h - CARD_GAP)
-            y += gap_h
-        self._slots.append(y)
-        if drag_path is None:
-            self._gap_rect = None
+            slots.append(y)
+            self._col_slots[c] = slots
+        self._slots = self._col_slots.get(self._drop_col if drag_path else 0, [top])
 
         # gezogene Karte schwebend an ihrer Mausposition
         if drag_path is not None:
             v, lines = next(e for e in entries if e[0].input.path == drag_path)
             pos = self._drag_pos or QPointF(card_left, top)
             layout.append((QRectF(pos.x(), pos.y(), CARD_W, heights[drag_path]),
-                           self._map_point(v.input.point, scale, box), v, lines))
+                           self._point_for(v, scale, box), v, lines))
         self._layout = layout
         self._card_left = card_left
 
@@ -630,13 +870,46 @@ class ControllerBindingView(QWidget):
         if changed and parent is not None and hasattr(parent, "relayout"):
             parent.relayout()
 
+    def _layout_outer(self, column, heights, x, top, drag_path, gap_h, layout, scale, box):
+        """
+        Aeussere Spalte: jede Karte steht auf ihrer gemerkten Hoehe, nicht
+        von oben gestapelt. Ueberlappen darf nichts — eine Karte, die in eine
+        andere hineinragen wuerde, rutscht direkt darunter. Beim Ziehen in
+        diese Spalte ist die Luecke eine Karte mit der Hoehe der Maus.
+        """
+        items = []                  # (wunsch_y, reihenfolge, art, eintrag, hoehe)
+        for i, (v, lines) in enumerate(column):
+            want = self._outer.get(v.input.path)
+            items.append(((top + want) if want is not None else None, i, "card",
+                          (v, lines), heights[v.input.path]))
+        if drag_path and self._drop_col == 1:
+            want = self._drag_pos.y() if self._drag_pos is not None else top
+            items.append((want, -1, "gap", None, gap_h - CARD_GAP))
+        # Karten ohne Hoehe (aeltere Anordnung) zuerst, in ihrer Reihenfolge
+        items.sort(key=lambda it: (it[0] is not None, it[0] or 0.0, it[1]))
+        y_free = top
+        slots = [top]
+        for want, _i, kind, entry, h in items:
+            y = max(want if want is not None else y_free, y_free, top)
+            if kind == "gap":
+                self._gap_rect = QRectF(x, y, CARD_W, h)
+            else:
+                v, lines = entry
+                layout.append((QRectF(x, y, CARD_W, h), self._point_for(v, scale, box),
+                               v, lines))
+            y_free = y + h + CARD_GAP
+            slots.append(y_free)
+        self._col_slots[1] = slots
+
     def resizeEvent(self, event):
         self._relayout()
         super().resizeEvent(event)
 
     def sizeHint(self):
-        scale, box = self._scale_and_box()
-        return QSize(int(CARD_W + IMG_MARGIN + box.width() * scale + 10), self._height)
+        img_w = self._image_size()[0]
+        paths = {v.input.path for v in self._views}
+        extra = CARD_W + COL_GAP if (set(self._outer) & paths) else 0
+        return QSize(int(extra + CARD_W + IMG_MARGIN + img_w + 10), self._height)
 
     def minimumSizeHint(self):
         return self.sizeHint()
@@ -696,7 +969,10 @@ class ControllerBindingView(QWidget):
                     # Reihenfolge festhalten, damit sich beim Ziehen nur die
                     # eine Karte bewegt und der Rest stehen bleibt.
                     self._order = self.card_order()
-                    self._drop_index = self._order.index(self._drag_path)
+                    self._drop_col = 1 if self._drag_path in self._outer else 0
+                    same = [p for p in self._order
+                            if (p in self._outer) == (self._drop_col == 1)]
+                    self._drop_index = same.index(self._drag_path)
                 self.setCursor(Qt.ClosedHandCursor)
             if self._dragging:
                 self._drag_to(kind, idx, start_tl + delta)
@@ -731,13 +1007,17 @@ class ControllerBindingView(QWidget):
             x = min(max(top_left.x(), 0), max(self.width() - CARD_W, 0))
             y = max(top_left.y(), self._head_height())
             self._drag_pos = QPointF(x, y)
+            # Spalte: die, deren Mitte der Karte am naechsten ist
+            self._drop_col = min((0, 1), key=lambda c: abs(self._col_x[c] - x))
+            self._slots = self._col_slots.get(self._drop_col, [self._head_height()])
             self._drop_index = self._drop_index_for(y, height)
         else:
             base_left = self._img_rect.left() - (self._img_offset[0] if self._img_offset else 0)
             base_top = self._img_rect.top() - (self._img_offset[1] if self._img_offset else 0)
-            x = min(max(top_left.x(), -CARD_W), max(self.width() - 20, 0))
-            y = max(top_left.y(), self._head_height())
+            x = min(max(top_left.x(), 0), max(self.width() - self._img_rect.width(), 0))
+            y = max(top_left.y(), self._head_height() + 6)
             self._img_offset = [round(x - base_left, 1), round(y - base_top, 1)]
+            self.image_moved.emit(list(self._img_offset), False)
         self._relayout()
         self.updateGeometry()
         self.update()
@@ -751,16 +1031,43 @@ class ControllerBindingView(QWidget):
         kind, idx = press[0], press[1]
         if dragging:
             if kind == "card" and self._drag_path:
-                order = [p for p in self._order if p != self._drag_path]
-                order.insert(min(self._drop_index, len(order)), self._drag_path)
+                path = self._drag_path
+                order = [p for p in self._order if p != path]
+                to_outer = self._drop_col == 1
+                if to_outer:
+                    # dort bleiben, wo die Luecke war (frei in der Hoehe)
+                    y = self._gap_rect.top() if self._gap_rect is not None else self._top
+                    self._outer[path] = round(max(y - self._top, 0), 1)
+                else:
+                    self._outer.pop(path, None)
+                # Einfuegen VOR die Karte, die in der Zielspalte an der
+                # Einfuegestelle steht — sonst hinter die letzte der Spalte
+                col = [p for p in order if (p in self._outer) == to_outer]
+                if self._drop_index < len(col):
+                    order.insert(order.index(col[self._drop_index]), path)
+                elif col:
+                    order.insert(order.index(col[-1]) + 1, path)
+                else:
+                    order.append(path)
                 self._order = order
             self._drag_path = None
             self._drag_pos = None
             self._drop_index = -1
             self._relayout()
+            # Gemerkte Hoehen = das, was jetzt zu sehen ist (weggeschobene
+            # Karten bleiben an ihrer neuen Stelle, statt spaeter zu springen)
+            for rect, _pt, v, _l in self._layout:
+                if v.input.path in self._outer:
+                    self._outer[v.input.path] = round(rect.top() - self._top, 1)
+            self.updateGeometry()
+            parent = self.parentWidget()
+            if parent is not None and hasattr(parent, "relayout"):
+                parent.relayout()
             self.update()
             self.setCursor(Qt.OpenHandCursor if kind == "image" else Qt.PointingHandCursor)
             self.layout_changed.emit(self.layout_state())
+            if kind == "image":
+                self.image_moved.emit(list(self._img_offset or [0, 0]), True)
         elif kind in ("card", "point") and 0 <= idx < len(self._layout):
             self.card_clicked.emit(self._layout[idx][2].input.path)
 
@@ -824,11 +1131,11 @@ class ControllerBindingView(QWidget):
         p.drawText(title_rect.adjusted(6, 0, -6, 0), align | Qt.AlignVCenter,
                    self._texts.get("title", ""))
 
-        # Linien zuerst: sie laufen HINTER der Zeichnung durch, nur die Punkte
-        # liegen obendrauf — sonst kreuzen sie quer ueber den Controller.
+        # Erst der Controller, dann die Linien darueber — sonst verschwinden
+        # sie unter dem Bild und man sieht nicht, wo sie hinfuehren.
+        self._paint_body(p)
         for i, (rect, pt, v, _lines) in enumerate(self._layout):
             self._paint_line(p, rect, pt, v, i == self._hover)
-        self._paint_body(p)
 
         # Einfuegestelle beim Ziehen
         if self._gap_rect is not None:
@@ -871,6 +1178,10 @@ class ControllerBindingView(QWidget):
         p.restore()
 
     def _paint_body(self, p):
+        if self._tex is not None:
+            pix, crop, _pts = self._tex
+            p.drawPixmap(self._img_rect, pix, crop)
+            return
         tex = self._texture()
         if tex is not None:
             self._paint_texture(p, tex[0], tex[1])
@@ -990,7 +1301,7 @@ class ControllerPair(QWidget):
     das Fenster zu schmal ist. So wird nie etwas rechts abgeschnitten.
     """
 
-    SPACING = 24
+    SPACING = 9          # schmal: in der Mitte steht nur ein duenner Strich
 
     def __init__(self, left, right, parent=None):
         super().__init__(parent)
@@ -998,6 +1309,10 @@ class ControllerPair(QWidget):
         self.right = right
         left.setParent(self)
         right.setParent(self)
+        # Beide Controller bleiben gleich gross und spiegelbildlich: wer einen
+        # verschiebt, verschiebt den anderen gespiegelt mit.
+        left.image_moved.connect(lambda off, done: self._mirror(right, off, done))
+        right.image_moved.connect(lambda off, done: self._mirror(left, off, done))
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._stacked = False
 
@@ -1010,12 +1325,43 @@ class ControllerPair(QWidget):
     def is_stacked(self):
         return self._stacked
 
+    def _mirror(self, other, offset, done):
+        if other.isVisibleTo(self):
+            other.mirror_image_offset(offset, notify=done)
+
+    def paintEvent(self, _event):
+        """Nebeneinander: ein duenner Strich zwischen links und rechts."""
+        if self._stacked or not self.right.isVisibleTo(self):
+            return
+        p = QPainter(self)
+        x = self.left.geometry().right() + self.SPACING / 2 + 0.5
+        p.setPen(QPen(C_CARD_BORDER, 1))
+        p.drawLine(QPointF(x, 4), QPointF(x, self.height() - 4))
+        p.end()
+
+    def sync_mirror(self):
+        """Rechts uebernimmt den (gespiegelten) Versatz von links.
+
+        Aeltere Anordnungen haben je Seite einen eigenen Versatz — dann
+        stuenden die Controller versetzt. Links gibt den Ton an.
+        """
+        if self.right.isVisibleTo(self):
+            self.right.mirror_image_offset(self.left.layout_state()["image"])
+
     def relayout(self):
         width = max(self.width(), 1)
         both = self.right.isVisibleTo(self)
         self._stacked = both and width < self._needed_width()
         self.left.set_centered(self._stacked)
         self.right.set_centered(self._stacked)
+        # Beide Controller auf dieselbe Hoehe: mittig zur hoeheren Spalte
+        if both and not self._stacked:
+            common = max(self.left.column_height(), self.right.column_height())
+            self.left.set_center_height(common)
+            self.right.set_center_height(common)
+        else:
+            self.left.set_center_height(None)
+            self.right.set_center_height(None)
         if not both:
             h = self.left.minimumHeight()
             self.left.setGeometry(0, 0, width, h)
@@ -1033,6 +1379,37 @@ class ControllerPair(QWidget):
         if self.minimumHeight() != h:
             self.setMinimumHeight(h)
             self.updateGeometry()
+
+    def _layout_outer(self, column, heights, x, top, drag_path, gap_h, layout, scale, box):
+        """
+        Aeussere Spalte: jede Karte steht auf ihrer gemerkten Hoehe, nicht
+        von oben gestapelt. Ueberlappen darf nichts — eine Karte, die in eine
+        andere hineinragen wuerde, rutscht direkt darunter. Beim Ziehen in
+        diese Spalte ist die Luecke eine Karte mit der Hoehe der Maus.
+        """
+        items = []                  # (wunsch_y, reihenfolge, art, eintrag, hoehe)
+        for i, (v, lines) in enumerate(column):
+            want = self._outer.get(v.input.path)
+            items.append(((top + want) if want is not None else None, i, "card",
+                          (v, lines), heights[v.input.path]))
+        if drag_path and self._drop_col == 1:
+            want = self._drag_pos.y() if self._drag_pos is not None else top
+            items.append((want, -1, "gap", None, gap_h - CARD_GAP))
+        # Karten ohne Hoehe (aeltere Anordnung) zuerst, in ihrer Reihenfolge
+        items.sort(key=lambda it: (it[0] is not None, it[0] or 0.0, it[1]))
+        y_free = top
+        slots = [top]
+        for want, _i, kind, entry, h in items:
+            y = max(want if want is not None else y_free, y_free, top)
+            if kind == "gap":
+                self._gap_rect = QRectF(x, y, CARD_W, h)
+            else:
+                v, lines = entry
+                layout.append((QRectF(x, y, CARD_W, h), self._point_for(v, scale, box),
+                               v, lines))
+            y_free = y + h + CARD_GAP
+            slots.append(y_free)
+        self._col_slots[1] = slots
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

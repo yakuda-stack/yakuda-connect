@@ -197,3 +197,108 @@ def test_no_games(app, qapp, monkeypatch):
     assert not app.ui.combo_obah_controller.isEnabled()
     assert not app.ui.combo_obah_source.isEnabled()
     assert app.obah_selection() is None
+
+
+# --------------------------------------------------------------------------- #
+#  Spiele aus dem Games-Tab — auch Nicht-Steam (v1.3.2)
+# --------------------------------------------------------------------------- #
+def test_list_games_includes_games_tab(library, tmp_path):
+    # Nicht-Steam-Spiel mit Action-Datei im Startordner
+    heroic = tmp_path / "Games" / "Heroic"
+    _write(heroic / "Data" / "actions.json", {"default_bindings": []})
+    # eigenes Spiel ohne Action-Datei
+    local = tmp_path / "Games" / "Local"
+    local.mkdir(parents=True)
+    (local / "game.x86_64").write_text("")
+    library_entries = [
+        {"id": "2", "name": "Flat Game", "kind": "steam", "exe": ""},
+        {"id": "1", "name": "Space Game: Deluxe", "kind": "steam", "exe": ""},
+        {"id": "3000000001", "name": "Heroic VR", "kind": "shortcut", "exe": ""},
+        {"id": "local:1", "name": "Lokal", "kind": "local",
+         "exe": str(local / "game.x86_64")},
+    ]
+    shortcuts = {"3000000001": {"start_dir": f'"{heroic}"', "exe": '"/usr/bin/heroic"'}}
+    games = ob.list_games(apps=library, library=library_entries, shortcuts=shortcuts)
+    by_name = {g.name: g for g in games}
+    assert [g.name for g in games] == ["Aero", "Flat Game", "Heroic VR", "Lokal",
+                                       "Space Game: Deluxe"]
+    assert by_name["Heroic VR"].kind == ob.KIND_SHORTCUT
+    assert by_name["Heroic VR"].actions_json.endswith("actions.json")
+    assert not by_name["Lokal"].has_manifest and by_name["Lokal"].kind == ob.KIND_LOCAL
+    assert not by_name["Flat Game"].has_manifest
+    assert by_name["Space Game: Deluxe"].has_manifest       # nicht doppelt
+    assert len({g.key for g in games}) == len(games)
+    # ohne Manifest: keine Bindings, auch kein Blick ins Arbeitsverzeichnis
+    assert not any(a.any() for a in ob.scan_bindings(by_name["Lokal"]).controllers.values())
+
+
+def test_library_folder_skips_home_and_system(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert ob.library_folder(str(tmp_path), "") == ""
+    assert ob.library_folder("/usr/bin", "") == ""
+    game = tmp_path / "g"
+    game.mkdir()
+    assert ob.library_folder("", str(game / "run.sh")) == str(game.resolve())
+
+
+def test_panel_lists_games_without_manifest(app, qapp, monkeypatch, tmp_path):
+    games = [ob.ObahGame(name="Beat", appid="local:1", game_folder=str(tmp_path),
+                         actions_json="", kind=ob.KIND_LOCAL)]
+    monkeypatch.setattr(ob, "list_games", lambda cancelled=None: games)
+    app.start_obah_game_scan()
+    _wait_scan(app, qapp)
+    ui = app.ui
+    assert ui.combo_obah_game.isEnabled() and ui.combo_obah_game.count() == 1
+    assert not ui.combo_obah_controller.isEnabled()
+    assert app.obah_selection() is None
+    assert "⚠" in ui.lbl_obah_hint.text()
+
+
+def test_unreal_manifest_name_and_prefix(tmp_path):
+    """steamvr_manifest.json (Unreal) zaehlt — aber nur mit echten Aktionen."""
+    game = tmp_path / "Thief"
+    _write(game / "Config" / "SteamVRBindings" / "steamvr_manifest.json",
+           {"actions": [{"name": "/actions/main/in/grab", "type": "boolean"}]})
+    assert ob.find_actions_json(str(game)).endswith("steamvr_manifest.json")
+    fake = tmp_path / "Fake"
+    _write(fake / "steamvr_manifest.json", {"irgendwas": 1})
+    assert ob.find_actions_json(str(fake)) is None
+    # Proton-Prefix
+    pref = tmp_path / "pfx" / "AppData" / "Local"
+    _write(pref / "Wanderer" / "Saved" / "Config" / "steamvr_manifest.json",
+           {"actions": []})
+    assert ob.find_prefix_manifest("1", dirs=[str(pref)]).endswith("steamvr_manifest.json")
+
+
+def test_manual_manifest_wins(library, tmp_path):
+    mf = tmp_path / "eigene" / "actions.json"
+    _write(mf, {"actions": []})
+    entries = [{"id": "local:1", "name": "Beat Saber", "kind": "local", "exe": ""}]
+    games = ob.list_games(apps=library, library=entries, search_prefix=False,
+                          manual={"local:local:1": str(mf)})
+    beat = next(g for g in games if g.name == "Beat Saber")
+    assert beat.has_manifest and beat.manual
+    assert beat.game_folder == str(mf.parent)
+    assert beat.ident == "local:local:1"
+
+
+def test_panel_pick_manifest(app, qapp, monkeypatch, tmp_path):
+    mf = tmp_path / "picked" / "actions.json"
+    _write(mf, {"actions": [], "default_bindings": []})
+    bad = tmp_path / "bad.json"
+    _write(bad, {"nope": 1})
+    games = [ob.ObahGame(name="Golf It", appid="571740", game_folder="",
+                         actions_json="", kind=ob.KIND_STEAM)]
+    monkeypatch.setattr(ob, "list_games", lambda cancelled=None: games)
+    saved = {}
+    monkeypatch.setattr(ob, "set_manual_manifest", lambda i, p: saved.update({i: p}) or True)
+    app.start_obah_game_scan()
+    _wait_scan(app, qapp)
+    ui = app.ui
+    assert ui.btn_obah_pick_manifest.isEnabled()
+    assert not ui.combo_obah_controller.isEnabled()
+    assert app.pick_obah_manifest(str(bad)) is False
+    assert app.pick_obah_manifest(str(mf)) is True
+    assert saved == {"steam:571740": str(mf)}
+    assert ui.combo_obah_controller.isEnabled()
+    assert app.obah_selection() is not None

@@ -1,5 +1,25 @@
 # Highlights - Yakuda Connect
 
+### 🚀 v1.3.2 — 2026-09-21
+
+#### 🇩🇪 Deutsch
+
+* **Neue Controller-Bilder, Linien treffen die Tasten.** Touch, Index, Vive, Focus 3 und Gamepad haben neue Bilder, und jeder Punkt sitzt jetzt genau auf seiner Taste.
+* **Action-Datei selbst wählen.** Findet die App keine, suchst du sie mit „📂 Action-Datei …“ aus – sie wird gemerkt. Gesucht wird jetzt auch nach Unreal-Dateien und im Proton-Prefix.
+* **Controller sauber nebeneinander.** Links und rechts sind gleich groß und bewegen sich gespiegelt, die Linien liegen obendrauf, und in der Mitte hält eine dünne Linie die Controller auf ihrer Seite.
+* **Karten in zwei Spalten.** Zieh eine Karte weit nach außen, und sie bekommt ihre eigene Spalte – auf jeder Höhe, die du willst.
+* **Scrollen stellt nichts mehr um.** Das Mausrad über einer Aufklappliste scrollt die Seite statt die Auswahl zu ändern.
+* **Alle deine Spiele im Controls-Tab.** Die Spielauswahl zeigt jedes Spiel aus dem Games-Tab – auch Nicht-Steam-Spiele und eigene Einträge. Hat ein Spiel keine OpenVR-Action-Datei, steht es grau da und die App sagt dir, warum.
+
+#### 🇬🇧 English
+
+* **New controller images, lines hit the buttons.** Touch, Index, Vive, Focus 3 and Gamepad have new images, and every point now sits right on its button.
+* **Pick the action file yourself.** If the app finds none, choose it with "📂 Action file …" — it's remembered. The search now also covers Unreal files and the Proton prefix.
+* **Controllers neatly side by side.** Left and right are the same size and move mirror-wise, lines sit on top, and a thin line in the middle keeps each controller on its side.
+* **Cards in two columns.** Drag a card far outwards and it gets its own column — at any height you like.
+* **Scrolling changes nothing.** The mouse wheel over a dropdown scrolls the page instead of changing the selection.
+* **All your games in the Controls tab.** The game picker lists every game from the Games tab — non-Steam games and your own entries included. If a game has no OpenVR action file, it's greyed out and the app tells you why.
+
 ### 🚀 v1.3.1 — 2026-09-19
 
 #### 🇩🇪 Deutsch
