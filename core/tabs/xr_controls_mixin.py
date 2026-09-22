@@ -62,7 +62,7 @@ class XrControlsMixin:
         return [n for n in self.ui.xrbinder_session.games() if xb.valid_app_name(n)]
 
     def _xr_label(self, name):
-        label = f"{name}   · OpenXR"
+        label = f"{xb.display_app_name(name)}   · OpenXR"
         if self.ui.xrbinder_session.pid_of(name):
             label += "   ● " + tr("xrb_running")
         return label
@@ -75,7 +75,7 @@ class XrControlsMixin:
         i = min(sum(1 for g in self._obah_games if g.has_manifest), combo.count())
         for name in self.xr_game_names():
             combo.insertItem(i, self._xr_label(name), XR_PREFIX + name)
-            combo.setItemData(i, tr("xrb_game_tip"), Qt.ToolTipRole)
+            combo.setItemData(i, f"{tr('xrb_game_tip')}\n{name}", Qt.ToolTipRole)
             if not self.ui.xrbinder_session.pid_of(name):
                 combo.setItemData(i, QColor("#a6b2c0"), Qt.ForegroundRole)
             i += 1
@@ -111,6 +111,11 @@ class XrControlsMixin:
         elif self._xr_mode:
             self._xr_update_hint()
             self.xr_render_views()
+        else:
+            # graues Spiel gewaehlt: Hinweis nennt laufende OpenXR-Spiele
+            game = self._current_obah_game()
+            if game is not None and not game.has_manifest:
+                self._on_obah_game_changed(combo.currentIndex())
 
     # ------------------------------------------------------------------ #
     #  Umschalten obah <-> XR
@@ -171,8 +176,18 @@ class XrControlsMixin:
         # Laeuft das Spiel: Aktionen frisch holen (Profil kann gewechselt haben)
         self.ui.xrbinder_session.request_dump(name)
 
+    @staticmethod
+    def _xr_read_state(name):
+        """Gespeicherten Stand lesen — fehlen die Tasten (xrizer unter WiVRn),
+        xrizers Standardbelegung ergaenzen. IMMER ueber diese Funktion lesen,
+        sonst stehen die Karten nach dem Speichern wieder leer da."""
+        state = xb.load_state(name)
+        if xb.fill_known_bindings(state):
+            state["bindings_guessed"] = True
+        return state
+
     def _xr_load_state(self):
-        self._xr_state = xb.load_state(self._xr_game)
+        self._xr_state = self._xr_read_state(self._xr_game)
         self._xr_mappings = xr.mappings_from_list(self._xr_state.get("mappings"))
 
     def _xr_update_hint(self):
@@ -219,7 +234,9 @@ class XrControlsMixin:
         ui.obah_view_left.setVisible(True)
         for side, view, title_key in (("left", ui.obah_view_left, "obah_left"),
                                       ("right", ui.obah_view_right, "obah_right")):
-            views = xr.build_views(ct, side, self._xr_state, self._xr_mappings)
+            views = xr.build_views(ct, side, self._xr_state, self._xr_mappings,
+                                   tilt_label=tr("xrd_tilt_short"),
+                                   deadzone_label=tr("xrd_deadzone_short"))
             view.set_layout(self._load_obah_layout(ct, side))
             view.set_data(ct, side, views, dict(base, title=tr(title_key),
                                                 hint=tr("xrb_card_hint"),
@@ -234,6 +251,8 @@ class XrControlsMixin:
         bound, total = xr.counts(ct, self._xr_state, self._xr_mappings)
         changed = len(self._xr_mappings)
         text = tr("xrb_editor_status").format(bound=bound, total=total, changed=changed)
+        if self._xr_state.get("bindings_guessed"):
+            text += "  ·  " + tr("xrb_bindings_guessed")
         if self._obah_dirty:
             text = "● " + tr("obah_unsaved") + "  ·  " + text
         ui.lbl_obah_editor_status.setText(text)
@@ -259,7 +278,7 @@ class XrControlsMixin:
             return
         dlg = XrButtonDialog(self, controller_type=ct, side=side, input_def=d,
                              state=self._xr_state, mappings=self._xr_mappings,
-                             game=self._xr_game)
+                             game=xb.display_app_name(self._xr_game))
         self._obah_open_dialog = dlg            # fuer Tests erreichbar
         accepted = dlg.exec() == XrButtonDialog.Accepted
         self._obah_open_dialog = None
@@ -273,7 +292,7 @@ class XrControlsMixin:
         if not self._xr_mappings:
             return
         reply = QMessageBox.question(self, tr("xrb_reset_all_title"),
-                                     tr("xrb_reset_all_text").format(game=self._xr_game),
+                                     tr("xrb_reset_all_text").format(game=xb.display_app_name(self._xr_game)),
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
@@ -297,7 +316,7 @@ class XrControlsMixin:
             QMessageBox.warning(self, tr("obah_save_failed_title"),
                                 tr("obah_save_failed_text").format(error=exc))
             return False
-        self._xr_state = xb.load_state(name)
+        self._xr_state = self._xr_read_state(name)
         self._set_obah_dirty(False)
         self.xr_render_views()
         if live:
@@ -310,10 +329,11 @@ class XrControlsMixin:
     def _xr_apply_result(self, name, result):
         if not self._xr_mode or name != self._xr_game:
             return
-        key = {"live": "xrb_result_live", "restart": "xrb_result_restart"}.get(
+        key = {"live": "xrb_result_live", "restart": "xrb_result_restart",
+               "restart_axis": "xrb_result_restart_axis"}.get(
             result, "xrb_result_next_start")
         ok = result == "live"
-        self.ui.lbl_obah_editor_status.setText(("✔ " if ok else "") + tr(key).format(game=name))
+        self.ui.lbl_obah_editor_status.setText(("✔ " if ok else "") + tr(key).format(game=xb.display_app_name(name)))
         self.ui.lbl_obah_editor_status.setStyleSheet(
             f"color:{'#a3be8c' if ok else '#ebcb8b'}; font-size:11px;")
 
@@ -321,9 +341,10 @@ class XrControlsMixin:
         """Frische Aktionen vom laufenden Spiel."""
         if not self._xr_mode or name != self._xr_game:
             return
-        fresh = xb.load_state(name)
+        fresh = self._xr_read_state(name)
         self._xr_state.update(actions=fresh.get("actions"), bindings=fresh.get("bindings"),
-                              sources=fresh.get("sources"))
+                              sources=fresh.get("sources"),
+                              bindings_guessed=fresh.get("bindings_guessed", False))
         if not self._obah_dirty:
             self._xr_mappings = xr.mappings_from_list(fresh.get("mappings"))
         ct = xr.detect_controller(self._xr_state)

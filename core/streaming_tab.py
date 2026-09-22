@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QComboBox, QSlider, QGroupBox, QFormLayout,
                                QPushButton, QFileDialog, QMessageBox)
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt, Signal
 
 # Importiert aus dem selben Verzeichnis (core)
 from config_manager import save_all_settings, load_saved_settings
@@ -15,6 +15,11 @@ from logging_setup import get_logger
 log = get_logger("streaming_tab")
 
 
+
+
+class _GpuScanBridge(QObject):
+    """Bringt das Ergebnis aus dem Hintergrund-Thread in den Qt-Thread."""
+    done = Signal(object)
 
 
 class StreamingTab(QWidget):
@@ -240,7 +245,7 @@ class StreamingTab(QWidget):
             "QPushButton { background-color:#434c5e; color:#eceff4; border:none;"
             " font-weight:bold; border-radius:4px; padding:4px; }"
             " QPushButton:hover { background-color:#5e81ac; }")
-        self.btn_gpu_rescan.clicked.connect(lambda: self.reload_gpu_options())
+        self.btn_gpu_rescan.clicked.connect(lambda: self.reload_gpu_options(rescan=True))
         gpu_row_layout.addWidget(self.btn_gpu_rescan)
 
         self.lbl_gpu_hint = QLabel("")
@@ -374,7 +379,7 @@ class StreamingTab(QWidget):
                 "integrated": tr("streaming_gpu_integrated"),
                 "cpu": tr("streaming_gpu_software")}
 
-    def reload_gpu_options(self, select=None):
+    def reload_gpu_options(self, select=None, rescan=False):
         """
         Liste neu aufbauen. ``select`` ist die gemerkte Kennung; fehlt sie,
         bleibt die bisherige Auswahl stehen.
@@ -383,15 +388,72 @@ class StreamingTab(QWidget):
         verschwindet nicht stillschweigend: sie steht weiter in der Liste
         und der Hinweis daneben sagt, dass sie fehlt. Sonst waere die
         Auswahl beim naechsten Speichern still auf "Automatisch" zurueck.
+
+        Die Erkennung (vulkaninfo) laeuft im Hintergrund und wird fuer die
+        Sitzung gemerkt. Solange sie laeuft, bleibt die gemerkte Auswahl als
+        Eintrag „… wird erkannt“ stehen — gespeichert wird also nichts Falsches.
         """
         import gpu_select
 
         if select is None:
             select = self.current_gpu_id()
+        gpus = None if rescan else gpu_select.cached_gpus()
+        if gpus is None:
+            self._show_gpu_detecting(select)
+            self._start_gpu_scan(refresh=rescan)
+            return
+        self._fill_gpu_combo(select, gpus)
+
+    def _show_gpu_detecting(self, select):
+        import gpu_select
+        self._gpus = None
         self.combo_gpu.blockSignals(True)
         self.combo_gpu.clear()
         self.combo_gpu.addItem(tr("streaming_gpu_auto"), gpu_select.AUTO)
-        self._gpus = gpu_select.list_gpus()
+        if select:
+            self.combo_gpu.addItem(f"{select}  …", select)
+            self.combo_gpu.setCurrentIndex(1)
+        self.combo_gpu.blockSignals(False)
+        self.btn_gpu_rescan.setEnabled(False)
+        self.lbl_gpu_hint.setText(tr("streaming_gpu_detecting"))
+
+    def _start_gpu_scan(self, refresh=False):
+        """list_gpus() in einem Daemon-Thread (haelt das Beenden nicht auf)."""
+        import threading
+
+        import gpu_select
+        if getattr(self, "_gpu_scan_running", False):
+            return
+        self._gpu_scan_running = True
+        if getattr(self, "_gpu_bridge", None) is None:
+            self._gpu_bridge = _GpuScanBridge(self)
+            self._gpu_bridge.done.connect(self._on_gpu_scan_done)
+        bridge = self._gpu_bridge
+
+        def work():
+            try:
+                gpus = gpu_select.list_gpus(refresh=refresh)
+            except Exception as exc:          # nie den Thread sterben lassen
+                log.warning("Grafikkarten-Erkennung fehlgeschlagen: %s", exc)
+                gpus = []
+            try:
+                bridge.done.emit(gpus)
+            except RuntimeError:
+                pass                          # Fenster schon geschlossen
+
+        threading.Thread(target=work, name="gpu-scan", daemon=True).start()
+
+    def _on_gpu_scan_done(self, gpus):
+        self._gpu_scan_running = False
+        self.btn_gpu_rescan.setEnabled(True)
+        self._fill_gpu_combo(self.current_gpu_id(), gpus)
+
+    def _fill_gpu_combo(self, select, gpus):
+        import gpu_select
+        self.combo_gpu.blockSignals(True)
+        self.combo_gpu.clear()
+        self.combo_gpu.addItem(tr("streaming_gpu_auto"), gpu_select.AUTO)
+        self._gpus = gpus
         kinds = self._gpu_kind_names()
         for gpu in self._gpus:
             self.combo_gpu.addItem(gpu_select.label_for(gpu, kinds), gpu["id"])
@@ -419,11 +481,17 @@ class StreamingTab(QWidget):
         """Text neben der Auswahl: fehlende Karte, fehlender Mesa-Layer."""
         import gpu_select
 
+        if getattr(self, "_gpu_scan_running", False):
+            self.lbl_gpu_hint.setText(tr("streaming_gpu_detecting"))
+            return
         gpu_id = self.current_gpu_id()
         if not gpu_id:
             self.lbl_gpu_hint.setText(tr("streaming_gpu_auto_hint"))
             return
-        gpu = gpu_select.find_gpu(gpu_id, getattr(self, "_gpus", None))
+        gpus = getattr(self, "_gpus", None)
+        if gpus is None:
+            gpus = gpu_select.cached_gpus() or []    # nie im Haupt-Thread erkennen
+        gpu = gpu_select.find_gpu(gpu_id, gpus)
         if gpu is None:
             self.lbl_gpu_hint.setText("⚠ " + tr("streaming_gpu_gone"))
             return

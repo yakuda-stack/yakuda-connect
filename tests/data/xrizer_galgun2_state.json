@@ -1,0 +1,167 @@
+{
+    "actions": [
+        {
+            "name": "trigger-click",
+            "set": "xrizer-legacy-set",
+            "type": 1,
+            "description": "Trigger Click",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "trigger",
+            "set": "xrizer-legacy-set",
+            "type": 2,
+            "description": "Trigger",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "squeeze",
+            "set": "xrizer-legacy-set",
+            "type": 2,
+            "description": "Squeeze",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "app-menu",
+            "set": "xrizer-legacy-set",
+            "type": 1,
+            "description": "Application Menu",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "a",
+            "set": "xrizer-legacy-set",
+            "type": 1,
+            "description": "A Button",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "grip-click",
+            "set": "xrizer-legacy-set",
+            "type": 1,
+            "description": "Grip Click",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "main-joystick",
+            "set": "xrizer-legacy-set",
+            "type": 3,
+            "description": "Main Joystick/Trackpad",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "main-joystick-click",
+            "set": "xrizer-legacy-set",
+            "type": 1,
+            "description": "Main Joystick Click",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "main-joystick-touch",
+            "set": "xrizer-legacy-set",
+            "type": 1,
+            "description": "Main Joystick Touch",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "haptic",
+            "set": "xrizer-legacy-set",
+            "type": 100,
+            "description": "Haptic",
+            "hands": [
+                "left",
+                "right"
+            ]
+        },
+        {
+            "name": "grip-pose",
+            "set": "xrizer-pose-data",
+            "type": 4,
+            "description": "Grip Pose",
+            "hands": [
+                "left",
+                "right"
+            ]
+        }
+    ],
+    "bindings": {},
+    "sources": {
+        "select_click": [],
+        "b_click": [],
+        "squeeze_value_b": [],
+        "trackpad_x": [],
+        "squeeze_click": [],
+        "trackpad_click": [],
+        "yc_off_bool": [],
+        "x_click_f": [],
+        "x_touch": [],
+        "squeeze_value": [],
+        "trigger_touch": [],
+        "thumbstick": [],
+        "thumbstick_click_f": [],
+        "thumbstick_touch": [],
+        "trigger_click_f": [],
+        "trackpad_y": [],
+        "yc_off_vector2": [],
+        "menu_click_f": [],
+        "x_click": [],
+        "y_click_f": [],
+        "y_touch": [],
+        "a_click_f": [],
+        "a_touch": [],
+        "system_click_f": [],
+        "trigger_value_b": [],
+        "thumbstick_x": [],
+        "thumbstick_click": [],
+        "system_touch": [],
+        "squeeze_force_b": [],
+        "trigger_click": [],
+        "trackpad_force_b": [],
+        "yc_off_float": [],
+        "select_click_f": [],
+        "menu_click": [],
+        "y_click": [],
+        "a_click": [],
+        "b_click_f": [],
+        "b_touch": [],
+        "system_click": [],
+        "trigger_value": [],
+        "thumbstick_y": [],
+        "thumbrest_touch": [],
+        "squeeze_force": [],
+        "trackpad": [],
+        "trackpad_force": [],
+        "trackpad_touch": [],
+        "squeeze_click_f": [],
+        "trackpad_click_f": []
+    },
+    "mappings": [],
+    "app": "GalGun2/Binaries/Win64/GalGun2-Win64-Shipping"
+}

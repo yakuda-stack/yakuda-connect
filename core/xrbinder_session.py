@@ -13,7 +13,7 @@ Ein Objekt fuer die ganze App (VRApp._xrbinder). Es
 Die Oberflaeche (Karte oben im Controls-Tab, Controller-Ansicht im Bereich
 „obah & xrBinder“) haengt sich nur an die Signale.
 """
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 import xrbinder as xb
 import xrbinder_ipc as xipc
@@ -105,9 +105,12 @@ class XrBinderSession(QObject):
         name = self.running.get(pid)
         if not name or not xb.valid_app_name(name) or not data.get("actions"):
             return
+        # xrizer unter WiVRn: Runtime nennt keine Tasten -> xrizers feste Belegung
+        guessed = xb.fill_known_bindings(data)
         state = xb.load_state(name)
         is_new = not state.get("actions")
-        state.update(actions=data["actions"], bindings=data["bindings"], sources=data["sources"])
+        state.update(actions=data["actions"], bindings=data["bindings"], sources=data["sources"],
+                     bindings_guessed=guessed)
         state.setdefault("mappings", [])
         xb.save_state(name, state)
         if is_new:
@@ -129,9 +132,15 @@ class XrBinderSession(QObject):
         """
         xb.write_app_config(name, mappings)
         state = xb.load_state(name)
+        axis_changed = xb.axis_changed(state.get("mappings") or [], mappings)
         state["mappings"] = list(mappings)
         xb.save_state(name, state)
         pid = self.pid_of(name)
+        if pid and self._ipc is not None and axis_changed:
+            # Achs-Ausdruecke (Kippen, Deadzone) live aendern stuerzt in
+            # xrBinder das Spiel ab (siehe core/xrbinder.py, Grenze 3).
+            QTimer.singleShot(0, lambda: self.apply_result.emit(name, "restart_axis"))
+            return True
         if pid and self._ipc is not None:
             keys = {(m["action"], m.get("hand", "")) for m in mappings}
             keys |= {(m["action"], "") for m in mappings}     # Fach "ohne Hand" (.any)

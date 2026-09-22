@@ -38,6 +38,8 @@ import socket
 import struct
 import time
 
+import xrbinder as xb
+
 from logging_setup import get_logger
 
 log = get_logger("xrbinder_ipc")
@@ -265,8 +267,10 @@ def _make_thread_class():
         # -- intern ------------------------------------------------------ #
         def _note_app(self, pkt):
             pid = pkt["pid"]
-            if pkt.get("name"):
-                self._full_names[pid] = pkt["name"]
+            if pkt.get("name") and pid not in self._full_names:
+                # AppReg traegt hoechstens 31 Zeichen — lange Namen (xrizer:
+                # Pfad des Spiels) aus der Befehlszeile vervollstaendigen
+                self._full_names[pid] = xb.expand_app_name(pkt["name"], pid)
             name = self._full_names.get(pid) or pkt["display_name"]
             self._last_seen[pid] = time.time()
             if name and self.apps.get(pid) != name:

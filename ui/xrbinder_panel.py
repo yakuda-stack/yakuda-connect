@@ -16,7 +16,10 @@ Bearbeitet werden die Tasten NICHT hier, sondern im Bereich
 Spieleliste und bekommen dieselbe Controller-Ansicht wie OpenVR-Spiele
 (core/tabs/xr_controls_mixin.py).
 """
-from PySide6.QtCore import Qt, Signal
+import os
+
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMessageBox,
                                QPushButton, QVBoxLayout, QWidget)
 
@@ -91,6 +94,14 @@ class XrBinderCard(QFrame):
         self.btn_build.setStyleSheet(_BTN_CSS)
         self.btn_build.clicked.connect(self.start_build)
         row.addWidget(self.btn_build, 0, Qt.AlignVCenter)
+
+        # Log des gepatchten Layers (Patch 3) — sichtbar, sobald xrBinder gebaut ist
+        self.btn_log = QPushButton()
+        self.btn_log.setCursor(Qt.PointingHandCursor)
+        self.btn_log.setFixedHeight(28)
+        self.btn_log.setStyleSheet(_BTN_CSS)
+        self.btn_log.clicked.connect(self._open_debug_log)
+        row.addWidget(self.btn_log, 0, Qt.AlignVCenter)
         outer.addLayout(row)
 
         # Warnung: von Hand kopierte zweite Installation
@@ -119,6 +130,8 @@ class XrBinderCard(QFrame):
         self.lbl_title.setText(tr("xrb_card_title"))
         self.lbl_desc.setText(tr("xrb_card_desc"))
         self.btn_cleanup.setText(tr("xrb_cleanup"))
+        self.btn_log.setText(tr("xrb_debug_log"))
+        self.btn_log.setToolTip(tr("xrb_debug_log_tip"))
         self.render()
 
     def is_enabled(self):
@@ -127,6 +140,11 @@ class XrBinderCard(QFrame):
     def activate(self):
         """Beim Start der App: Zustand lesen, ggf. Dienst + Sitzung starten."""
         enabled = xb.layer_enabled() and xb.is_built()
+        xb.rotate_debug_log()
+        try:
+            xb.repair_configs()
+        except Exception as exc:  # noqa: BLE001 — der Start darf nie daran scheitern
+            log.warning("xrBinder-Dateien nicht reparierbar: %s", exc)
         self._set_toggle(enabled)
         if enabled:
             try:
@@ -160,6 +178,7 @@ class XrBinderCard(QFrame):
         self.btn_build.setText(tr("xrb_rebuild") if xb.is_built() else tr("xrb_install"))
         self.btn_build.setStyleSheet(_PRIMARY_CSS if rebuild else _BTN_CSS)
         self.btn_build.setEnabled(not building)
+        self.btn_log.setVisible(xb.is_built() and not building)
         foreign = xb.foreign_manifests()
         self.foreign_row.setVisible(bool(foreign))
         if foreign:
@@ -256,3 +275,11 @@ class XrBinderCard(QFrame):
                                 tr("xrb_cleanup_done").format(path=moved[0]) if moved
                                 else tr("xrb_cleanup_system"))
         self.render()
+
+    def _open_debug_log(self):
+        path = xb.debug_log_path()
+        if os.path.isfile(path):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        else:
+            QMessageBox.information(self, tr("xrb_card_title"),
+                                    tr("xrb_debug_log_missing").format(path=path))

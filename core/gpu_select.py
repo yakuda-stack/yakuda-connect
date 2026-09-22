@@ -41,6 +41,7 @@ Listen und Umgebungsvariablen.
 import glob
 import os
 import re
+import threading
 
 import proc
 from logging_setup import get_logger
@@ -157,7 +158,40 @@ def _vulkan_devices():
     return found
 
 
-def list_gpus():
+# Ergebnis von list_gpus() fuer die ganze Sitzung. 'vulkaninfo --summary'
+# kann auf echten Systemen spuerbar dauern (Treiber laden) und lief beim
+# Start bis zu dreimal im Haupt-Thread. Grafikkarten wechseln nicht im
+# laufenden Betrieb — neu erkannt wird nur ueber den ↻-Knopf (refresh=True).
+_cache = None
+_cache_lock = threading.Lock()
+
+
+def cached_gpus():
+    """Gemerkte Liste (Kopie) oder None, wenn noch nie erkannt wurde."""
+    with _cache_lock:
+        return None if _cache is None else [dict(g) for g in _cache]
+
+
+def clear_cache():
+    global _cache
+    with _cache_lock:
+        _cache = None
+
+
+def list_gpus(refresh=False):
+    """Wie _detect_gpus(), aber einmal pro Sitzung (refresh=True: neu erkennen)."""
+    global _cache
+    if not refresh:
+        cached = cached_gpus()
+        if cached is not None:
+            return cached
+    gpus = _detect_gpus()
+    with _cache_lock:
+        _cache = [dict(g) for g in gpus]
+    return gpus
+
+
+def _detect_gpus():
     """
     Alle Grafikeinheiten des Systems.
 

@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.3.3"
+APP_VERSION = "v1.3.4"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -272,6 +272,10 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         # Mausrad aendert keine Aufklapplisten mehr (scrollt die Seite)
         from ui import no_wheel
         no_wheel.install(QApplication.instance())
+        # Gespeichertes Design VOR dem Aufbau lesen: dann setzt ui_main das
+        # Anwendungs-Stylesheet gleich gefaerbt (und es kommt nach einem
+        # Neustart ueberhaupt zurueck — theme.load() wurde bisher nie gerufen).
+        theme.load()
         #loading initliserung
         self.is_loading = True
         # UI Instanziieren und anwenden
@@ -1152,7 +1156,19 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         self.streaming_settings = StreamingTab(self)
         stream_layout.addWidget(self.streaming_settings)
 
-        # Tools Tab — Buttons verknüpfen (Dispatcher: Installieren/Aktualisieren/Löschen)
+        # Tools-Tab wird erst beim ersten Oeffnen gebaut (_ensure_tools_ui).
+        # Controls-Tab braucht beim Start nur die Tool-Daten, nicht die Karten.
+        self.setup_controls_tab_logic()
+
+    def _ensure_tools_ui(self):
+        """Tools-Tab bauen und verdrahten, falls noch nicht geschehen.
+
+        Aufrufen vor JEDEM Zugriff auf self.ui.tool_cards & Co. — beim Oeffnen
+        des Tabs und wenn der Controls-Tab etwas installiert.
+        """
+        if not self.ui.ensure_tools_tab():
+            return
+        # Buttons verknüpfen (Dispatcher: Installieren/Aktualisieren/Löschen)
         for key, card in self.ui.tool_cards.items():
             card["btn_install"].clicked.connect(
                 lambda checked=False, k=key: self.on_tool_action(k)
@@ -1165,8 +1181,8 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         # Filterleiste erst hier aufbauen: sie liest die Kategorien aus den
         # fertig angelegten Karten.
         self.setup_tools_filter()
-        # Controls-Tab nutzt die Tool-Karten zum Installieren -> danach.
-        self.setup_controls_tab_logic()
+        # Frisch gebaute Widgets ins aktive Design faerben
+        theme.apply_to_tree(self.ui.tab_tools)
 
         # Settings Tab
         # HINWEIS: btn_vrchat_symlink wird NICHT mehr hier verbunden — der
@@ -1232,7 +1248,9 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         # Die OpenVR-Auswahl kann sich ausserhalb dieses Tabs geaendert haben
         # (Runtime-Umschaltung, xrizer-Automatik, WiVRn-Dashboard).
         if index == 2: self.refresh_openvr_ui()
-        if index == 3: self.check_tools_status()
+        if index == 3:
+            self._ensure_tools_ui()
+            self.check_tools_status()
         if index == 4: self.on_games_tab_opened()
         if index == self.ui.pages.indexOf(self.ui.tab_controls):
             self.refresh_controls_status()
@@ -1342,6 +1360,7 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
                     lbl.setText(tr("pkg_incomplete"))
 
         # Tool-Karten: Beschreibung neu setzen, Status/Buttons aus dem Cache rendern
+        # (leer, solange der Tools-Tab noch nicht gebaut ist)
         for key, card in self.ui.tool_cards.items():
             tool = all_tools.get(key, {})
             if "lbl_desc" in card:
@@ -1369,7 +1388,8 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
                 idx = combo.findData(prev)
                 if idx >= 0:
                     combo.setCurrentIndex(idx)
-        self.check_tools_status()
+        if self.ui.tool_cards:
+            self.check_tools_status()
 
     def _get_pictures_dir(self):
         """Ermittelt den lokalisierten Bilder-Ordner.
@@ -1559,19 +1579,17 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
 
             # Auch das Stylesheet der Anwendung: dort steht die Flaeche hinter
             # den Karten (QStackedWidget) sowie Dialoge, Menues und Tooltips.
+            # Mit Bild kommen ein paar Regeln dazu, damit nichts mehr
+            # undurchsichtig davorliegt. apply_to_app baut jedes Mal vom
+            # Original aus neu auf (kein Aufsummieren) und setzt nur, wenn
+            # sich etwas aendert — EIN Aufruf statt zwei.
             app = QApplication.instance()
-            theme.apply_to_app(app)
-            if visible and app is not None:
-                # Mit Bild kommen ein paar Regeln dazu, damit nichts mehr
-                # undurchsichtig davorliegt. apply_to_app baut jedes Mal vom
-                # Original aus neu auf — Anhaengen kann sich also nicht
-                # aufsummieren.
-                app.setStyleSheet(app.styleSheet() + "\n" + theme.IMAGE_SURFACES_CSS)
+            theme.apply_to_app(app, theme.IMAGE_SURFACES_CSS if visible else "")
 
             # Der Seitenstapel ist deckend eingefaerbt und laege sonst UEBER
             # dem Bild. Nur mit Bild durchsichtig schalten, damit ohne Bild
             # alles bleibt, wie es war.
-            self.ui.pages.setStyleSheet(theme.stack_tint_css() if visible else "")
+            theme.set_style_if_changed(self.ui.pages, theme.stack_tint_css() if visible else "")
             self._apply_column_tint(visible)
 
             log.debug("[Theme] %s Stylesheets eingefaerbt (%s, Bild: %s)", count,
@@ -1612,7 +1630,7 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
             css = theme.tint(base, allow_opacity=False)
             if with_image:
                 css = theme.make_translucent(css, theme.COLUMN_TINT)
-            widget.setStyleSheet(css)
+            theme.set_style_if_changed(widget, css)
 
     def _package_groups_for(self, method):
         """Welche Status-Zeilen je Methode?"""
@@ -1748,13 +1766,30 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         # Laeuft bereits eine Pruefung, diese zuerst beenden — sonst schreiben
         # zwei Threads in dieselben Labels (z. B. bei schnellem Wechsel der
         # Installationsmethode).
+        # Frueher: worker.wait(2000) — das fror beim Start die Oberflaeche
+        # bis zu 2 s ein (die Pruefung lief direkt zweimal: __init__ und
+        # Wechsel auf Tab 0). Jetzt: vormerken und nach dem Ende neu starten.
         worker = getattr(self, "_pkgcheck_worker", None)
         if worker is not None and worker.isRunning():
-            worker.wait(2000)
+            self._pkgcheck_again = True
+            return
 
+        self._pkgcheck_again = False
         self._pkgcheck_worker = PackageCheckWorker(method, groups)
         self._pkgcheck_worker.result_signal.connect(self._on_package_check_done)
+        self._pkgcheck_worker.finished.connect(self._on_package_check_finished)
         self._pkgcheck_worker.start()
+
+    def _on_package_check_finished(self):
+        """Thread ist fertig — lag inzwischen eine neue Anfrage vor, jetzt pruefen.
+        Nicht mehr beim Beenden: closeEvent hat schon auf die Worker gewartet,
+        ein frisch gestarteter Thread wuerde den Prozess abbrechen (SIGABRT)."""
+        if getattr(self, "_exit_cleanup_done", False):
+            self._pkgcheck_again = False
+            return
+        if getattr(self, "_pkgcheck_again", False):
+            self._pkgcheck_again = False
+            self.check_system_packages()
 
     def _on_package_check_done(self, results, updates_available):
         """Ergebnis des Hintergrund-Threads in die Oberflaeche uebertragen."""

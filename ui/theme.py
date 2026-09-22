@@ -336,7 +336,31 @@ def tint(css, allow_opacity=True):
 _app_base_qss = None
 
 
-def apply_to_app(app):
+def set_style_if_changed(widget, css):
+    """setStyleSheet nur, wenn sich wirklich etwas aendert.
+
+    Qt poliert bei JEDEM Aufruf neu — auch mit identischem Text. Bei ueber
+    tausend Widgets kostete das beim Start rund eine Sekunde, obwohl im
+    Standardthema gar nichts umzufaerben ist. Rueckgabe: True, wenn gesetzt.
+    """
+    if widget.styleSheet() == css:
+        return False
+    widget.setStyleSheet(css)
+    return True
+
+
+def remember_app_base(css):
+    """Ungefaerbtes Anwendungs-Stylesheet hinterlegen (vor dem ersten Setzen).
+
+    So kann ui_main gleich die GEFAERBTE Fassung setzen, und apply_to_app
+    findet spaeter nichts mehr zu tun — ein zweites app.setStyleSheet mit
+    allen Widgets im Fenster ist die teuerste Einzelaktion beim Start.
+    """
+    global _app_base_qss
+    _app_base_qss = css
+
+
+def apply_to_app(app, extra=""):
     """
     Das Stylesheet der QApplication umfaerben.
 
@@ -354,8 +378,10 @@ def apply_to_app(app):
         _app_base_qss = app.styleSheet()
     # Ohne Deckkraft: in diesem Stylesheet stehen Dialoge, Menues und
     # Tooltips. Die duerfen nie durchscheinen (siehe tint()).
-    app.setStyleSheet(tint(_app_base_qss, allow_opacity=False))
-    return True
+    css = tint(_app_base_qss, allow_opacity=False)
+    if extra:
+        css += "\n" + extra
+    return set_style_if_changed(app, css)
 
 
 def background_path():
@@ -494,6 +520,6 @@ def apply_to_tree(root):
             widget.setProperty(_BASE_PROPERTY, base)
         if not base:
             continue
-        widget.setStyleSheet(tint(base))
-        count += 1
+        if set_style_if_changed(widget, tint(base)):
+            count += 1
     return count

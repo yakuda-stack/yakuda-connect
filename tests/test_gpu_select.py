@@ -180,6 +180,7 @@ def tab(qapp, tmp_path, monkeypatch, two_gpus):
     os.environ["HOME"] = str(tmp_path / "home")
     os.makedirs(os.environ["HOME"], exist_ok=True)
     from streaming_tab import StreamingTab
+    gpu_select.list_gpus(refresh=True)        # vorab erkennen: Liste steht sofort
     widget = StreamingTab()
     widget.main_app = _FakeMain(widget)
     yield widget
@@ -233,3 +234,62 @@ def test_vaapi_encoder_gets_the_render_node(two_gpus, tmp_path, monkeypatch):
     cm.sync_with_wivrn({"encoder": "nvenc", "codec": "Automatic",
                         "gpu_device": "1002:73df"})
     assert "device" not in json.loads(wivrn.read_text())["encoder"]
+
+
+# --------------------------------------------------------------------------- #
+#  Erkennung nur einmal und nie im Haupt-Thread
+# --------------------------------------------------------------------------- #
+def test_detection_runs_once_per_session(tmp_path, monkeypatch):
+    calls = []
+    fake_glob = _fake_sysfs(tmp_path, [("card0", "0x1002", "0x73df", "0000:03:00.0", "renderD128")])
+    monkeypatch.setattr(gpu_select.glob, "glob", fake_glob)
+    monkeypatch.setattr(gpu_select, "_vulkan_devices", lambda: calls.append(1) or {})
+    monkeypatch.setattr(gpu_select, "_lspci_names", lambda: {})
+    assert gpu_select.cached_gpus() is None
+    first = gpu_select.list_gpus()
+    first[0]["name"] = "veraendert"               # Kopie — Cache bleibt heil
+    assert gpu_select.list_gpus()[0]["name"] != "veraendert"
+    assert calls == [1]
+    gpu_select.list_gpus(refresh=True)
+    assert calls == [1, 1]
+
+
+def test_tab_detects_in_background(qapp, tmp_path, monkeypatch, two_gpus):
+    """Ohne gemerkte Liste: sofort 'wird erkannt', Auswahl bleibt, Liste kommt nach."""
+    import threading
+    import time
+
+    os.environ["HOME"] = str(tmp_path / "home")
+    os.makedirs(os.environ["HOME"], exist_ok=True)
+    gate = threading.Event()
+    real = gpu_select._detect_gpus
+    main_thread = threading.current_thread()
+    seen = []
+
+    def slow():
+        seen.append(threading.current_thread() is main_thread)
+        gate.wait(5)
+        return real()
+    monkeypatch.setattr(gpu_select, "_detect_gpus", slow)
+
+    from streaming_tab import StreamingTab
+    widget = StreamingTab()
+    widget.main_app = _FakeMain(widget)
+    widget.reload_gpu_options(select="1002:73df")
+    assert widget.current_gpu_id() == "1002:73df"          # gemerkte Auswahl steht
+    assert not widget.btn_gpu_rescan.isEnabled()
+    gate.set()
+    for _ in range(200):
+        qapp.processEvents()
+        if widget.combo_gpu.count() == 3:
+            break
+        time.sleep(0.01)
+    data = [widget.combo_gpu.itemData(i) for i in range(widget.combo_gpu.count())]
+    assert data == ["", "1002:73df", "8086:9bc4"]
+    assert widget.current_gpu_id() == "1002:73df"
+    assert widget.btn_gpu_rescan.isEnabled()
+    assert seen and not any(seen)                          # nie im Haupt-Thread
+    import shiboken6
+    widget.close()
+    shiboken6.delete(widget)
+    qapp.processEvents()

@@ -1,5 +1,61 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.3.4 — 2026-09-22
+
+#### 🇩🇪 Deutsch
+
+**Performance (wichtig unter VR)**
+
+* **Start rund 3 s schneller** (gemessen: `VRApp.__init__` 3,9 s → 0,5–0,6 s). Das Theme setzt Stylesheets nur noch, wenn sich wirklich etwas ändert. Qt poliert sonst bei jedem Aufruf neu, auch bei gleichem Text, und das bei über 1000 Widgets. Das Anwendungs-Stylesheet wird einmal gleich gefärbt gesetzt statt zweimal (`theme.remember_app_base`, `set_style_if_changed`).
+* **Kein Einfrieren mehr beim Start:** Die Paketprüfung lief direkt zweimal, und die zweite wartete per `QThread.wait()` im Haupt-Thread bis zu 2 s. Jetzt wird sie vorgemerkt und nach dem Ende des ersten Durchlaufs gestartet (beim Schließen nicht mehr).
+* **Weniger Dauerlast:** Der Mausrad-Schutz für Aufklapplisten hing als Event-Filter an der ganzen App. Damit lief jedes Ereignis (Mausbewegung, Neuzeichnen, Timer) durch Python, allein beim Start über 100.000 Mal. Jetzt wird nur `QComboBox.wheelEvent` ersetzt.
+* **Tools-Tab erst beim ersten Öffnen bauen:** Das sind rund 430 Widgets und etwa 10 MB, die die meisten Sitzungen nie brauchen. RAM beim Start etwa 115 → 106 MB. Der Controls-Tab liest die Tool-Daten direkt aus `tools.json` und baut die Karten nur, wenn er etwas installiert (`_ensure_tools_ui`). Im Leerlauf gemessen: 0,06 s CPU in 10 s. Der Autostart-Timer stoppt sich weiterhin selbst, sobald das Headset verbunden ist.
+* **Grafikkarten-Erkennung im Hintergrund:** `vulkaninfo --summary` lief beim Start bis zu dreimal im Haupt-Thread, und das kann auf echten Systemen spürbar dauern. Jetzt läuft die Erkennung einmal pro Sitzung in einem Hintergrund-Thread und wird gemerkt. Solange zeigt die Auswahl „Grafikkarten werden erkannt …“, die gespeicherte Karte bleibt ausgewählt. ↻ erkennt neu. Auch der Server-Start nutzt die gemerkte Liste.
+* **Behoben: Design kam nach Neustart nicht zurück.** `theme.load()` wurde nie aufgerufen, das gespeicherte Theme galt nur bis zum Schließen.
+* **Aufklapplisten bleiben deckend:** Qt setzt die Liste beim ersten Anzeigen der Combo zurück. Das hat bisher nur das ständige Neu-Setzen der Stylesheets überdeckt. Der Wächter beobachtet jetzt auch die Combo und merkt sich nichts mehr in Python-Attributen.
+
+**Controls: Stick-Drift, Kippen und alte Spiele (xrBinder)**
+
+* **Neu: „⇄ Kippen“ beim Stick-Drücken.** Im Tasten-Dialog lässt sich für jede Funktion auf „Stick drücken“ einschalten, dass sie auch beim bloßen Kippen des Sticks auslöst (ab halbem Weg, auch schräg) — wie die beliebten Community-Bindings älterer Spiele unter SteamVR („dpad im Touch-Modus“). Geschrieben als Achs-Ausdruck für xrBinder (`axis1 = step(…)`), bewusst ohne `max()`/`min()`: die sind in xrBinder vertauscht.
+* **Neu: Schwelle fürs Kippen (gegen Stick-Drift).** Ist „⇄ Kippen“ an, steht daneben ein Regler (20–95 %, Standard 50 %): ab wie viel Ausschlag das Kippen als Drücken zählt. Ein driftender Stick bekommt einfach eine höhere Schwelle, pro Spiel und Hand. Getestet von Ketsu mit Gal*Gun 2: Menüs lassen sich jetzt ganz ohne Tastatur bedienen.
+* **Neu: „◎ Deadzone“ gegen Stick-Drift.** Klick auf den Stick öffnet den Dialog mit Tabs „Belegung | ◎ Deadzone“. Im Deadzone-Tab: Regler für Links, Rechts und Beide (0 = aus, 5–50 %), je mit ↺, dazu welche Funktionen betroffen sind. Gilt pro Spiel für alle Stick-Richtungen auf diesem Stick (z. B. Laufen, Drehen). Kleine Ausschläge um die Mitte kommen beim Spiel als 0 an. Geschrieben als Achs-Ausdrücke für xrBinder (`axis1/axis2 = x/y * step(T, √(x²+y²))`). Funktionen ohne Hand, die auf beiden Sticks liegen, bekommen keine Deadzone (sonst würde der andere Stick mit umgelegt). Ändern sich Deadzone oder Kippen, lädt YC nicht mehr live neu (stürzt in xrBinder ab), sondern meldet „gilt nach Neustart“. Klappt auch für OpenVR-Spiele, die über xrizer oder OpenComposite laufen – xrizer selbst ignoriert SteamVRs `deadzone_pct`. **Noch nicht im Spiel getestet.**
+* **Alte OpenVR-Spiele über xrizer:** xrizer meldet Unreal-Spiele unter ihrem Startpfad (z. B. `GalGun2/Binaries/Win64/GalGun2-Win64-Shipping`). Solche Namen wurden bisher aussortiert — jetzt werden sie unterstützt (Konfiguration in Unterordnern, abgesichert gegen `..`), der auf 31 Zeichen gekürzte Name wird aus der Befehlszeile des Spiels vervollständigt, und in der Liste steht nur der letzte Teil. Damit lassen sich auch OpenVR-Spiele ohne Action-Datei umbelegen, solange sie über xrizer laufen.
+* **xrizer unter WiVRn:** Die Runtime meldet für xrizers Tasten keine Zuordnung (nur Vibration und Handposition), obwohl sie im Spiel funktionieren. Dann trägt Yakuda Connect xrizers feste Standardbelegung ein (aus dessen Quellcode, Touch/Index/Vive) und sagt das in der Statuszeile. Gesperrt wird nichts mehr, wenn die Runtime gar keine Quellen nennt.
+* **Behoben: Verschieben/Kippen wirkte nie.** Yakuda Connect schrieb die Tasten für beide Hände als `/user/hand/both/…` (ein interner Name wurde doppelt vergeben). Den Pfad gibt es nicht, deshalb lehnte die Runtime bei jedem Profil alle Layer-Tasten ab (`XR_ERROR_PATH_UNSUPPORTED`). „Aus“ ging trotzdem, weil es keine Taste braucht. Gefunden über das neue Diagnose-Log (Gal*Gun 2). Betroffene Dateien repariert YC beim Start selbst, die Umbelegungen bleiben erhalten.
+* **xrBinder-Patch 2:** Achs-Umbelegungen meldeten dem Spiel jedes Bild eine Änderung (für manche Spiele ein Dauer-Tastendruck). Beim Bauen wird das korrigiert — ältere Builds zeigen „bitte Neu bauen“.
+* **xrBinder-Patch 3 (bitte „Neu bauen“):** Diagnose-Log `~/.config/xrBinder/yakuda-debug.log` (Ergebnis von Suggest/Attach/Sync und jede Zustandsänderung der Layer-Tasten), erreichbar über den Knopf „Diagnose-Log“ auf der Karte (immer sichtbar, sobald xrBinder gebaut ist). Scheitert der zusammengeführte Suggest, schlägt das Layer die Belegung des Spiels allein erneut vor — sonst hätte das Spiel für dieses Profil gar keine Tasten. Zwei Korrekturen für ältere xrBinder-Stände (Sync-Kopie `count + sizeof`, Vector2-Typ) greifen nur, wo der Fehler noch drin ist; die aktuelle Version hat sie schon behoben. Passt der Log-Teil nicht zur xrBinder-Version, wird ohne ihn gebaut.
+* **xrBinder-Patch 4 (Diagnose):** Das Diagnose-Log schreibt jetzt auch Stick- und Achswerte der Layer-Quellen und was das Spiel für umgelegte Sticks bekommt (nur bei Änderung, gerundet). Grundlage für ein späteres „Stick auf 4 Richtungen einrasten“.
+* **Hinweis bei grauen Spielen:** Läuft gerade ein OpenXR-Spiel, nennt der Hinweis unter einem Spiel „ohne Action-Datei“ dessen eigenen Eintrag in der Liste.
+* **Neue Dateien:** `tests/test_performance.py`, `tests/test_xr_button_dialog.py`.
+
+#### 🇬🇧 English
+
+**Performance (matters in VR)**
+
+* **Startup about 3 s faster** (measured: `VRApp.__init__` 3.9 s → 0.5–0.6 s). The theme only sets stylesheets when something actually changes. Otherwise Qt re-polishes on every call, even with identical text, across more than 1000 widgets. The application stylesheet is set once, already tinted, instead of twice (`theme.remember_app_base`, `set_style_if_changed`).
+* **No more freeze at startup:** the package check ran twice right away, and the second one waited up to 2 s via `QThread.wait()` on the main thread. It is now queued and started when the first one ends (not while closing).
+* **Less constant load:** the mouse-wheel guard for dropdowns was an event filter on the whole app, so every event (mouse move, repaint, timer) went through Python, over 100,000 times at startup alone. Now only `QComboBox.wheelEvent` is replaced.
+* **Tools tab is built on first open:** that is about 430 widgets and roughly 10 MB that most sessions never need. RAM at startup about 115 → 106 MB. The Controls tab reads tool data straight from `tools.json` and only builds the cards when it installs something (`_ensure_tools_ui`). Measured at idle: 0.06 s CPU in 10 s. The autostart timer still stops itself once the headset is connected.
+* **Graphics card detection in the background:** `vulkaninfo --summary` ran up to three times on the main thread at startup, which can take noticeably long on real systems. Detection now runs once per session in a background thread and is remembered. Meanwhile the dropdown shows “Detecting graphics cards …” and the saved card stays selected. ↻ detects again. Server start uses the remembered list too.
+* **Fixed: design didn't come back after restart.** `theme.load()` was never called, so the saved theme only lasted until closing.
+* **Dropdowns stay opaque:** Qt resets the list the first time the combo is shown. Until now only the constant re-setting of stylesheets hid this. The guard now also watches the combo and no longer keeps state in Python attributes.
+
+**Controls: stick drift, tilt and old games (xrBinder)**
+
+* **New: “⇄ Tilt” for stick presses.** In the button dialog, any function on “stick press” can be set to also trigger when the stick is merely tilted (past halfway, diagonals included) — like the popular community bindings for older games under SteamVR (“dpad in touch mode”). Written as an axis expression for xrBinder (`axis1 = step(…)`), deliberately without `max()`/`min()`: those are swapped in xrBinder.
+* **New: tilt threshold (against stick drift).** With “⇄ Tilt” on, a control next to it (20–95 %, default 50 %) sets how far the stick must be tilted to count as a press. A drifting stick simply gets a higher threshold, per game and hand. Tested by Ketsu with Gal*Gun 2: menus now work without the keyboard.
+* **New: “◎ Deadzone” against stick drift.** Clicking the stick opens the dialog with tabs “Bindings | ◎ Deadzone”. The deadzone tab has sliders for left, right and both (0 = off, 5–50 %), each with ↺, plus which functions are affected. Applies per game to all stick directions on that stick (e.g. move, turn). Small movements around the center reach the game as 0. Written as axis expressions for xrBinder (`axis1/axis2 = x/y * step(T, √(x²+y²))`). Functions without a hand that sit on both sticks get no deadzone (the other stick would be remapped too). If deadzone or tilt change, YC no longer reloads live (crashes in xrBinder) but reports “takes effect after restart”. Also works for OpenVR games running via xrizer or OpenComposite – xrizer itself ignores SteamVR's `deadzone_pct`. **Not tested in game yet.**
+* **Old OpenVR games via xrizer:** xrizer reports Unreal games by their launch path (e.g. `GalGun2/Binaries/Win64/GalGun2-Win64-Shipping`). Such names used to be filtered out — they are supported now (config in subfolders, guarded against `..`), the name cut to 31 characters is completed from the game's command line, and the list shows only the last part. This makes OpenVR games without an action file remappable too, as long as they run through xrizer.
+* **xrizer under WiVRn:** the runtime reports no bindings for xrizer's buttons (only haptics and hand pose), although they work in game. Yakuda Connect then fills in xrizer's fixed default layout (from its source code, Touch/Index/Vive) and says so in the status line. Nothing gets locked any more when the runtime names no sources at all.
+* **Fixed: moving/tilt never worked.** Yakuda Connect wrote buttons for both hands as `/user/hand/both/…` (an internal name was defined twice). That path doesn't exist, so the runtime rejected all layer buttons for every profile (`XR_ERROR_PATH_UNSUPPORTED`). “Off” still worked because it needs no button. Found via the new diagnostic log (Gal*Gun 2). Yakuda Connect repairs affected files on start, remappings are kept.
+* **xrBinder patch 2:** axis remappings reported a change to the game every frame (a constant button press for some games). The build now fixes this — older builds show “please Rebuild”.
+* **xrBinder patch 3 (please “Rebuild”):** diagnostic log `~/.config/xrBinder/yakuda-debug.log` (result of suggest/attach/sync and every state change of the layer buttons), reachable via the “Diagnostic log” button on the card (always visible once xrBinder is built). If the merged suggestion fails, the layer re-suggests the game's own bindings alone — otherwise the game had no buttons at all for that profile. Two fixes for older xrBinder versions (sync copy `count + sizeof`, vector2 type) only apply where the bug still exists; the current version already fixed them. If the log part doesn't fit the xrBinder version, it builds without it.
+* **xrBinder patch 4 (diagnostics):** the diagnostic log now also records stick/axis values of the layer sources and what the game receives for remapped sticks (only on change, rounded). Groundwork for a later “snap stick to 4 directions”.
+* **Hint for greyed-out games:** while an OpenXR game is running, the hint under a game “without action file” names its separate entry in the list.
+* **New files:** `tests/test_performance.py`, `tests/test_xr_button_dialog.py`.
+
+---
+
 ### 🚀 v1.3.3 — 2026-09-21
 
 #### 🇩🇪 Deutsch
@@ -35,7 +91,6 @@
 * **New files:** `core/xrbinder.py` (files, service, build), `core/xrbinder_ipc.py` (UDP protocol, offsets taken via `offsetof` from xrBinder's headers), `core/xrbinder_session.py`, `core/xr_bindings.py` (binding rules), `core/tabs/xr_controls_mixin.py`, `ui/xrbinder_panel.py` (card), `ui/xr_button_dialog.py`, `tests/test_xrbinder.py`, `tests/test_xr_bindings.py`.
 
 ---
-
 ### 🚀 v1.3.2 — 2026-09-21
 
 #### 🇩🇪 Deutsch

@@ -33,6 +33,7 @@ import obah_editor as oe
 from translations import get_language
 
 import appimage_installer as appimg
+import programs
 import paths
 import xrbinder as xb
 from jsonio import read_json, update_json
@@ -347,6 +348,16 @@ class ControlsTabMixin:
         combo.blockSignals(False)
         self._on_obah_game_changed(combo.currentIndex())
 
+    def _xr_hint_for_grey_game(self):
+        """Hinweis unter einem Spiel ohne Action-Datei. Laeuft gerade ein
+        OpenXR-Spiel, steht es als EIGENER Eintrag in der Liste — sagen, welcher."""
+        session = self.ui.xrbinder_session
+        running = [xb.display_app_name(n) for n in session.running_names()
+                   if xb.valid_app_name(n)]
+        if running:
+            return tr("xrb_obah_hint_running").format(games=", ".join(running))
+        return tr("xrb_obah_hint_xr")
+
     def _current_obah_game(self):
         combo = self.ui.combo_obah_game
         idx = combo.currentIndex()
@@ -385,7 +396,7 @@ class ControlsTabMixin:
             self.ui.lbl_obah_hint.setText(
                 tr("obah_no_manifest_hint").format(
                     folder=self._short_home(game.game_folder) if game.game_folder
-                    else tr("obah_no_folder")) + "\n" + tr("xrb_obah_hint_xr"))
+                    else tr("obah_no_folder")) + "\n" + self._xr_hint_for_grey_game())
             return
         try:
             self._obah_bindings = ob.scan_bindings(game) if game else None
@@ -1257,8 +1268,12 @@ class ControlsTabMixin:
     #  Hilfen
     # ------------------------------------------------------------------ #
     def _control_tool(self, key):
+        # Aus den Tool-Daten statt aus der Karte: der Tools-Tab wird erst
+        # beim ersten Oeffnen gebaut, der Controls-Tab braucht die Daten sofort.
         card = self.ui.tool_cards.get(key)
-        return card.get("tool", {}) if card else {}
+        if card:
+            return card.get("tool", {})
+        return next((t for t in programs.all_tools() if t.get("key") == key), {})
 
     def _control_installed(self, key):
         tool = self._control_tool(key)
@@ -1414,6 +1429,7 @@ class ControlsTabMixin:
             self._set_control_toggle(key, False)
             return
 
+        self._ensure_tools_ui()             # Installation laeuft ueber die Tool-Karte
         card = self.ui.tool_cards.get(key)
         if not card:
             self._set_control_toggle(key, False)

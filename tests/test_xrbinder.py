@@ -141,8 +141,37 @@ def test_foreign_config_backed_up_once(home):
 
 
 def test_reject_path_like_app_names(home):
-    with pytest.raises(ValueError):
-        xb.write_app_config("../evil", [])
+    for bad in ("../evil", "a/../../evil", "/etc/evil", "a//b", "", "x\0y"):
+        assert not xb.valid_app_name(bad), bad
+        with pytest.raises(ValueError):
+            xb.write_app_config(bad, [])
+
+
+def test_xrizer_path_names_write_subfolders(home):
+    """xrizer meldet Unreal-Spiele als Pfad — der Layer sucht dann in Unterordnern."""
+    name = "GalGun2/Binaries/Win64/GalGun2-Win64-Shipping"
+    assert xb.valid_app_name(name)
+    assert xb.display_app_name(name) == "GalGun2-Win64-Shipping"
+    written = xb.write_app_config(name, [])
+    cfg = xb.config_dir()
+    assert written == [os.path.join(cfg, "app_GalGun2/Binaries/Win64/GalGun2-Win64-Shipping.ini"),
+                       os.path.join(cfg, "app_GalGun2/Bina.ini")]
+    assert all(os.path.isfile(p) for p in written)
+    # eigener Stand bleibt eine flache Datei
+    assert os.path.dirname(xb.state_path(name)) == xb.state_dir()
+
+
+def test_expand_truncated_app_name(monkeypatch):
+    full = "GalGun2/Binaries/Win64/GalGun2-Win64-Shipping"
+    short = full[:xb.APPREG_NAME_MAX]
+    argv0 = "Z:\\home\\max\\GalGun 2\\" + full + ".exe"
+    monkeypatch.setattr(xb, "_proc_cmdline", lambda pid: [argv0, "-vr"] if pid == 4242 else [])
+    monkeypatch.setattr(xb.os, "listdir", lambda p: ["1", "4242"])
+    assert xb.expand_app_name(short, 4242) == full
+    assert xb.expand_app_name(short, 0) == full           # auch ohne passende pid
+    assert xb.expand_app_name("Wanderer", 4242) == "Wanderer"   # kurz: unveraendert
+    monkeypatch.setattr(xb, "_proc_cmdline", lambda pid: [])
+    assert xb.expand_app_name(short, 4242) == short       # nichts gefunden
 
 
 def test_manifest_points_to_build(home):
@@ -203,6 +232,93 @@ def test_build_script_patch_applies(home, tmp_path):
     assert "a.subactionMask |= 1U << USER_INVALID;" in text
     assert "if(a.subactionMask == 0)" not in text
     assert "act.subactionMask = 1U << FindPath(sub);" in text      # Rest unberuehrt
+
+
+# Ausschnitte aus xrBinder (layer_shims.cpp), genau die Stellen, die Patch 3 trifft
+_P3_SNIPPET = """#include "layer_shims.hpp"
+#include <string.h>
+\tXrResult thisLayer_xrSuggestInteractionProfileBindings(XrInstance instance, const XrInteractionProfileSuggestedBinding *suggestedBindings)
+\t{
+\t\tif(layerSuggest)
+\t\t{
+\t\t\tmfLayerActionSetSuggested = true;
+\t\t\tnextLayer_xrSuggestInteractionProfileBindings(instance, &newSuggestedBindings);
+\t\t}
+\t\telse
+\t\t\tnextLayer_xrSuggestInteractionProfileBindings(instance, suggestedBindings);
+\t\treturn XR_SUCCESS;
+\t}
+\t\tXrResult r = nextLayer_xrAttachSessionActionSets(session, &newInfo);
+\t\tmemcpy(as, syncInfo->activeActionSets, syncInfo->countActiveActionSets + sizeof(XrActiveActionSet));
+\t\tXrResult ret = nextLayer_xrSyncActions(session, &nsyncInfo);
+\t\t\t\tnextLayer_xrGetActionStateBoolean(session, &getInfo, &mpActiveSession->mLayerActionsBoolean[i].typedState[hand]);
+\t\t\t\tmpActiveSession->mLayerActionsFloat[i].typedState[hand].type = XR_TYPE_ACTION_STATE_VECTOR2F;
+\t\t\t\tnextLayer_xrGetActionStateFloat(session, &getInfo, &mpActiveSession->mLayerActionsFloat[i].typedState[hand]);
+\t\t\t\tnextLayer_xrGetActionStateVector2f(session, &getInfo, &mpActiveSession->mLayerActionsVec2[i].typedState[hand]);
+\t\t\tActionVec2 *a = mpActiveSession->mActionsVec2.GetPtr(getInfo->action);
+\t\t\tif(likely(a))
+\t\t\t{
+\t\t\t\t\t*state = a->typedState[handPath];
+\t\t\t}
+"""
+
+
+def _run_patch3(tmp_path, *args):
+    import shutil
+    import subprocess
+    if not shutil.which("perl"):
+        pytest.skip("perl fehlt")
+    script = tmp_path / xb.PATCH3_NAME
+    script.write_text(xb.PATCH3_PERL)
+    src = tmp_path / "layer_shims.cpp"
+    if not src.exists():
+        src.write_text(_P3_SNIPPET)
+    res = subprocess.run(["perl", str(script), *args, str(src)], capture_output=True,
+                         text=True, timeout=10, check=True)
+    return res.stdout, src.read_text()
+
+
+def test_patch3_applies_everything(tmp_path):
+    out, text = _run_patch3(tmp_path)
+    assert "miss" not in out, out
+    assert "countActiveActionSets * sizeof(XrActiveActionSet)" in text
+    assert "mLayerActionsVec2[i].typedState[hand].type = XR_TYPE_ACTION_STATE_VECTOR2F" in text
+    assert "yakuda-debug.log" in text
+    assert "retry without layer bindings" in text
+    assert text.count("XrResult yc_r = nextLayer_xrSuggestInteractionProfileBindings") == 2
+    assert "XrResult yc_g = nextLayer_xrGetActionStateBoolean" in text
+    # zweiter Lauf aendert nichts
+    out2, text2 = _run_patch3(tmp_path)
+    assert "already patched" in out2 and text2 == text
+
+
+def test_patch3_fixes_only(tmp_path):
+    out, text = _run_patch3(tmp_path, "--fixes-only")
+    assert "ok syncfix" in out and "off log" in out
+    assert "countActiveActionSets * sizeof(XrActiveActionSet)" in text
+    assert "yc_log" not in text
+
+
+def test_patch3_skip_when_upstream_fixed(tmp_path):
+    (tmp_path / "layer_shims.cpp").write_text(
+        _P3_SNIPPET.replace("countActiveActionSets + sizeof", "countActiveActionSets * sizeof"))
+    out, _text = _run_patch3(tmp_path, "--fixes-only")
+    assert "skip syncfix" in out
+
+
+def test_build_script_embeds_patch3(home):
+    s = xb.build_script("en")
+    body = s.split("<<'YC_PATCH3_EOF'\n", 1)[1].split("YC_PATCH3_EOF\n", 1)[0]
+    assert body == xb.PATCH3_PERL
+    assert '--fixes-only "$F"' in s
+
+
+def test_patch3_report_and_log_path(home):
+    os.makedirs(xb.tool_root(), exist_ok=True)
+    with open(os.path.join(xb.tool_root(), xb.PATCH3_REPORT), "w") as fh:
+        fh.write("ok syncfix\nskip vec2fix\noff log\n")
+    assert xb.patch3_report() == {"syncfix": "ok", "vec2fix": "skip", "log": "off"}
+    assert xb.debug_log_path() == os.path.join(xb.config_dir(), "yakuda-debug.log")
 
 
 def test_needs_rebuild(home):
@@ -342,3 +458,65 @@ def test_resolve_app_name():
     assert resolve_app_name("Thief VR Leg", ["Thief VR Legacy of Shadow"]) == \
         "Thief VR Legacy of Shadow"
     assert resolve_app_name("Wanderer", ["Wanderer 2"]) == "Wanderer"
+
+
+def test_sources_never_use_both_hand():
+    """Regression: /user/hand/both/... ist kein gueltiger Pfad (Gal*Gun-2-Log)."""
+    for src in xb.build_sources().values():
+        for b in src["bindings"]:
+            path = b.split(":", 1)[1]
+            assert path.startswith(("/user/hand/left/", "/user/hand/right/")), b
+    assert "/user/hand/both/" not in xb.render_config([])
+
+
+def test_repair_configs_keeps_mappings(home):
+    """Reparatur ersetzt nur die both-Pfade — Umbelegungen bleiben, auch wenn
+    der gemerkte Stand leer ist."""
+    name = "GalGun2/Binaries/Win64/GalGun2-Win64-Shipping"
+    maps = [{"action": "app-menu", "hand": "left", "source": "x_click", "source_hand": "left"}]
+    xb.save_state(name, {"actions": [{"name": "app-menu"}], "mappings": []})
+    written = xb.write_app_config(name, maps)
+    xb.write_base_config()
+    good = {p: open(p, encoding="utf-8").read() for p in written + [xb.base_config_path()]}
+    for p, text in good.items():                          # alten, kaputten Stand nachbauen
+        broken = text.replace(
+            "/interaction_profiles/oculus/touch_controller:/user/hand/left/input/trigger/value,"
+            "/interaction_profiles/oculus/touch_controller:/user/hand/right/input/trigger/value",
+            "/interaction_profiles/oculus/touch_controller:/user/hand/both/input/trigger/value")
+        assert broken != text
+        open(p, "w", encoding="utf-8").write(broken)
+    fixed = xb.repair_configs()
+    assert set(fixed) == set(good)
+    for p, text in good.items():
+        assert open(p, encoding="utf-8").read() == text   # exakt wie vorher, Umbelegung drin
+    assert "map = x_click.left" in good[written[0]]
+    assert xb.repair_configs() == []
+
+
+def test_session_does_not_reload_live_when_axis_changes(home, qapp):
+    """Deadzone/Kippen live aendern stuerzt in xrBinder das Spiel ab -> Neustart melden."""
+    from PySide6.QtCore import QCoreApplication
+
+    from xrbinder_session import XrBinderSession
+
+    class FakeIpc:
+        def __init__(self):
+            self.applied = []
+
+        def request_apply(self, pid, keys):
+            self.applied.append(keys)
+
+    s = XrBinderSession()
+    s._ipc = FakeIpc()
+    s.pid_of = lambda name: 42
+    results = []
+    s.apply_result.connect(lambda n, r: results.append(r))
+    plain = [{"action": "menu", "hand": "left", "source": "x_click", "source_hand": "left"}]
+    assert s.save("game", plain)
+    assert len(s._ipc.applied) == 1                     # normale Aenderung: live
+    dz = plain + [{"action": "move", "hand": "left", "source": "thumbstick",
+                   "source_hand": "left", "deadzone": 0.2}]
+    assert s.save("game", dz)
+    QCoreApplication.processEvents()
+    assert len(s._ipc.applied) == 1 and results == ["restart_axis"]
+    s._ipc = None

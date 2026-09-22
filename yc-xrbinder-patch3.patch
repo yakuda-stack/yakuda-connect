@@ -1,0 +1,477 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d2b7365..633aa15 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -14,6 +14,7 @@
+ * **xrBinder-Patch 2:** Achs-Umbelegungen meldeten dem Spiel jedes Bild eine Änderung (für manche Spiele ein Dauer-Tastendruck). Beim Bauen wird das korrigiert — ältere Builds zeigen „bitte Neu bauen“.
+ * **Alte OpenVR-Spiele über xrizer:** xrizer meldet Unreal-Spiele unter ihrem Startpfad (z. B. `GalGun2/Binaries/Win64/GalGun2-Win64-Shipping`). Solche Namen wurden bisher aussortiert — jetzt werden sie unterstützt (Konfiguration in Unterordnern, abgesichert gegen `..`), der auf 31 Zeichen gekürzte Name wird aus der Befehlszeile des Spiels vervollständigt, und in der Liste steht nur der letzte Teil. Damit lassen sich auch OpenVR-Spiele ohne Action-Datei umbelegen, solange sie über xrizer laufen.
+ * **xrizer unter WiVRn:** Die Runtime meldet für xrizers Tasten keine Zuordnung (nur Vibration und Handposition), obwohl sie im Spiel funktionieren. Dann trägt Yakuda Connect xrizers feste Standardbelegung ein (aus dessen Quellcode, Touch/Index/Vive) und sagt das in der Statuszeile. Gesperrt wird nichts mehr, wenn die Runtime gar keine Quellen nennt.
++* **xrBinder-Patch 3 (bitte „Neu bauen“):** xrBinder kopierte bei `xrSyncActions` die Action-Sets des Spiels falsch (`count + sizeof` statt `count * sizeof`) — ab dem zweiten Set kam Datenmüll an. Spiele mit nur einem Set (Testspiel unter Monado) merkten nichts, xrizer synct aber immer zwei (Legacy + Pose). Außerdem: Vector2-Quellen bekamen ihren Typ im falschen Feld; scheitert der zusammengeführte Suggest, schlägt das Layer jetzt die Belegung des Spiels allein erneut vor (sonst hätte das Spiel für dieses Profil gar keine Tasten). Dazu ein Diagnose-Log `~/.config/xrBinder/yakuda-debug.log` (Ergebnis von Suggest/Attach/Sync und jede Zustandsänderung der Layer-Tasten), erreichbar über den neuen Knopf „Diagnose-Log“ auf der Karte. Passt der Log-Teil nicht zur aktuellen xrBinder-Version, wird ohne ihn gebaut — die Korrekturen bleiben.
+ * **Hinweis bei grauen Spielen:** Läuft gerade ein OpenXR-Spiel, nennt der Hinweis unter einem Spiel „ohne Action-Datei“ dessen eigenen Eintrag in der Liste.
+ * **Zurücksetzen:** „↺ Standard für diese Taste“ im Dialog, „↺ Alles auf Standard“ über der Ansicht.
+ * **Spiel einmal starten reicht.** Laufende Spiele melden sich automatisch; ihre Aktionen werden gemerkt (`~/.config/yakuda-connect/xrbinder/<Spiel>.json`), danach geht das Bearbeiten auch ohne laufendes Spiel.
+@@ -35,6 +36,7 @@
+ * **xrBinder patch 2:** axis remappings reported a change to the game every frame (a constant button press for some games). The build now fixes this — older builds show “please Rebuild”.
+ * **Old OpenVR games via xrizer:** xrizer reports Unreal games by their launch path (e.g. `GalGun2/Binaries/Win64/GalGun2-Win64-Shipping`). Such names used to be filtered out — they are supported now (config in subfolders, guarded against `..`), the name cut to 31 characters is completed from the game's command line, and the list shows only the last part. This makes OpenVR games without an action file remappable too, as long as they run through xrizer.
+ * **xrizer under WiVRn:** the runtime reports no bindings for xrizer's buttons (only haptics and hand pose), although they work in game. Yakuda Connect then fills in xrizer's fixed default layout (from its source code, Touch/Index/Vive) and says so in the status line. Nothing gets locked any more when the runtime names no sources at all.
++* **xrBinder patch 3 (please “Rebuild”):** xrBinder copied the game's action sets wrongly in `xrSyncActions` (`count + sizeof` instead of `count * sizeof`) — from the second set on, garbage arrived. Games with a single set (test game on Monado) never noticed, but xrizer always syncs two (legacy + pose). Also: vector2 sources had their type set in the wrong field; if the merged suggestion fails, the layer now re-suggests the game's own bindings alone (otherwise the game had no buttons at all for that profile). Plus a diagnostic log `~/.config/xrBinder/yakuda-debug.log` (result of suggest/attach/sync and every state change of the layer buttons), reachable via the new “Diagnostic log” button on the card. If the log part doesn't fit the current xrBinder version, it builds without it — the fixes stay.
+ * **Hint for greyed-out games:** while an OpenXR game is running, the hint under a game “without action file” names its separate entry in the list.
+ * **Reset:** “↺ Default for this button” in the dialog, “↺ All to default” above the view.
+ * **Starting the game once is enough.** Running games register automatically; their actions are remembered (`~/.config/yakuda-connect/xrbinder/<game>.json`), so editing works without the game running afterwards.
+diff --git a/core/xrbinder.py b/core/xrbinder.py
+index 986e883..ff9e538 100644
+--- a/core/xrbinder.py
++++ b/core/xrbinder.py
+@@ -251,8 +251,12 @@ def is_built():
+ 
+ # Stand unserer kleinen Korrektur am xrBinder-Quellcode (siehe build_script).
+ # Erhoehen, wenn sich der Patch aendert — dann meldet die UI "neu bauen".
+-PATCH_LEVEL = "2"
++PATCH_LEVEL = "3"
+ PATCH_FILE = ".yakuda-patch"
++PATCH3_NAME = "yakuda-patch3.pl"
++PATCH3_REPORT = ".yakuda-patch3"
++DEBUG_LOG_NAME = "yakuda-debug.log"
++DEBUG_LOG_MAX = 2 * 1024 * 1024
+ 
+ 
+ def needs_rebuild():
+@@ -266,6 +270,37 @@ def needs_rebuild():
+         return True
+ 
+ 
++def debug_log_path():
++    """Diagnose-Log des gepatchten Layers (Patch 3) — liegt neben der Config."""
++    return os.path.join(config_dir(), DEBUG_LOG_NAME)
++
++
++def rotate_debug_log():
++    """Zu grosses Log nach .old verschieben (das Layer haengt nur an)."""
++    path = debug_log_path()
++    try:
++        if os.path.getsize(path) > DEBUG_LOG_MAX:
++            os.replace(path, path + ".old")
++            return True
++    except OSError:
++        pass
++    return False
++
++
++def patch3_report():
++    """Ergebnis von Patch 3 beim letzten Bau: {teil: "ok"|"skip"|"miss"|"off"}."""
++    out = {}
++    try:
++        with open(os.path.join(tool_root(), PATCH3_REPORT), encoding="utf-8") as fh:
++            for line in fh:
++                parts = line.split()
++                if len(parts) == 2:
++                    out[parts[1]] = parts[0]
++    except OSError:
++        pass
++    return out
++
++
+ def installed_revision():
+     try:
+         res = subprocess.run(["git", "-C", src_dir(), "rev-parse", "HEAD"],
+@@ -863,6 +898,8 @@ _TEXTS = {
+         "err_src": "Quellcode konnte nicht geladen werden (Internet?).",
+         "err_build": "Bauen fehlgeschlagen (Fehlermeldung siehe oben).",
+         "patch_warn": "Warnung: Patch passt nicht mehr (xrBinder geaendert) — Umbelegen klappt evtl. nicht bei allen Spielen.",
++        "patch3_ok": "Patch 3: Sync-Korrektur + Diagnose-Log",
++        "patch3_warn": "Hinweis: Patch 3 (Diagnose) passt nicht zu dieser xrBinder-Version — baue ohne ihn.",
+         "failed": "Installation fehlgeschlagen",
+         "logfile": "Komplettes Protokoll:",
+         "enter": "Enter druecken zum Schliessen ... ",
+@@ -881,6 +918,8 @@ _TEXTS = {
+         "err_src": "Could not fetch the source code (internet?).",
+         "err_build": "Build failed (see error above).",
+         "patch_warn": "Warning: patch no longer applies (xrBinder changed) — remapping may not work in every game.",
++        "patch3_ok": "Patch 3: sync fix + diagnostic log",
++        "patch3_warn": "Note: patch 3 (diagnostics) does not fit this xrBinder version — building without it.",
+         "failed": "Installation failed",
+         "logfile": "Full log:",
+         "enter": "Press Enter to close ... ",
+@@ -890,6 +929,163 @@ _TEXTS = {
+ }
+ 
+ 
++# Patch 3 (Perl, laeuft auf src/layer_shims.cpp) — siehe Kopf des Skripts.
++PATCH3_PERL = r'''#!/usr/bin/env perl
++# yakuda-connect Patch 3 fuer xrBinder (src/layer_shims.cpp)
++#  a) xrSyncActions: memcpy kopiert "count + sizeof" statt "count * sizeof"
++#     Bytes -> ab dem 2. Action-Set des Spiels Datenmuell (xrizer: 2 Sets).
++#  b) Vector2-Quellen: Typ wurde im Float-Feld gesetzt.
++#  c) Scheitert der zusammengefuehrte Suggest, Spiel-Belegung allein nochmal
++#     vorschlagen (sonst hat das Spiel fuer das Profil gar keine Tasten).
++#  d) Diagnose-Log: xrBinder/yakuda-debug.log (Suggest/Attach/Sync-Ergebnis,
++#     Zustandswechsel der Layer-Knoepfe).
++# Ausgabe je Teil: "ok <name>" / "skip <name>" (schon behoben) / "miss <name>".
++use strict;
++use warnings;
++
++my $fixes_only = (@ARGV && $ARGV[0] eq '--fixes-only') ? shift : 0;
++my $file = shift or die "usage: $0 [--fixes-only] layer_shims.cpp\n";
++open(my $in, '<', $file) or die "$file: $!\n";
++local $/;
++my $s = <$in>;
++close $in;
++
++if ($s =~ /yc_log\(/) { print "skip all (already patched)\n"; exit 0; }
++
++my @report;
++sub mark { my ($name, $n, $already) = @_;
++    push @report, ($n ? "ok" : ($already ? "skip" : "miss")) . " $name"; }
++
++# a) Sync-Kopie
++my $n = ($s =~ s/(countActiveActionSets)\s*\+\s*(sizeof\s*\(\s*XrActiveActionSet\s*\))/$1 * $2/g);
++mark("syncfix", $n, $s =~ /countActiveActionSets\s*\*\s*sizeof\s*\(\s*XrActiveActionSet\s*\)/);
++
++# b) Vector2-Typ
++$n = ($s =~ s/mLayerActionsFloat(\[i\]\.typedState\[hand\]\.type\s*=\s*XR_TYPE_ACTION_STATE_VECTOR2F)/mLayerActionsVec2$1/g);
++mark("vec2fix", $n, $s !~ /mLayerActionsFloat\[i\]\.typedState\[hand\]\.type\s*=\s*XR_TYPE_ACTION_STATE_VECTOR2F/);
++
++if ($fixes_only) {
++    open(my $out, '>', $file) or die "$file: $!\n";
++    print $out $s;
++    close $out;
++    print "$_\n" for @report;
++    print "off log\n";
++    exit 0;
++}
++
++# d) Log-Helfer nach dem ersten #include
++my $helper = <<'CPP';
++// ---- yakuda-connect: Diagnose-Log ----
++#include <stdio.h>
++#include <stdarg.h>
++#include <unistd.h>
++#include <stdlib.h>
++static int yc_log_lines = 0;
++static void yc_log(const char *fmt, ...)
++{
++	static FILE *f = nullptr;
++	if(yc_log_lines > 4000) return;
++	if(!f)
++	{
++		char p[1024];
++		const char *x = getenv("XDG_CONFIG_HOME");
++		const char *h = getenv("HOME");
++		if(x && *x) snprintf(p, sizeof(p), "%s/xrBinder/yakuda-debug.log", x);
++		else snprintf(p, sizeof(p), "%s/.config/xrBinder/yakuda-debug.log", h ? h : "/tmp");
++		f = fopen(p, "a");
++		if(!f) { yc_log_lines = 1 << 30; return; }
++		setvbuf(f, nullptr, _IOLBF, 0);
++		fprintf(f, "=== yakuda xrBinder log, pid %d ===\n", (int)getpid());
++	}
++	va_list ap;
++	va_start(ap, fmt);
++	vfprintf(f, fmt, ap);
++	va_end(ap);
++	if(++yc_log_lines > 4000) fprintf(f, "(log limit reached)\n");
++}
++// ---- /yakuda-connect ----
++CPP
++$n = ($s =~ s/^(#include\s*"layer_shims\.hpp"[^\n]*\n)/$1$helper/m);
++if (!$n) { $n = ($s =~ s/^(#include[^\n]*\n)/$1$helper/m); }
++mark("loghelper", $n, 0);
++my $have_log = $n;
++
++# c)+d) Suggest mit Layer-Bindings
++my $sug_merged = <<'CPP';
++{
++			XrResult yc_r = nextLayer_xrSuggestInteractionProfileBindings(instance, &newSuggestedBindings);
++			char yc_p[256] = "?"; uint32_t yc_len = 0;
++			nextLayer_xrPathToString(instance, suggestedBindings->interactionProfile, sizeof(yc_p), &yc_len, yc_p);
++			yc_log("suggest %s: game=%u layer=%u -> %d\n", yc_p, (unsigned)suggestedBindings->countSuggestedBindings,
++				(unsigned)(newSuggestedBindings.countSuggestedBindings - suggestedBindings->countSuggestedBindings), (int)yc_r);
++			if(yc_r != XR_SUCCESS)
++			{
++				for(uint32_t yc_i = suggestedBindings->countSuggestedBindings; yc_i < newSuggestedBindings.countSuggestedBindings; yc_i++)
++				{
++					char yc_b[256] = "?"; uint32_t yc_bl = 0;
++					nextLayer_xrPathToString(instance, bindings[yc_i].binding, sizeof(yc_b), &yc_bl, yc_b);
++					yc_log("  layer binding %s\n", yc_b);
++				}
++				XrResult yc_r2 = nextLayer_xrSuggestInteractionProfileBindings(instance, suggestedBindings);
++				yc_log("  retry without layer bindings -> %d\n", (int)yc_r2);
++			}
++		}
++CPP
++chomp $sug_merged;
++$n = $have_log && ($s =~ s/nextLayer_xrSuggestInteractionProfileBindings\(\s*instance\s*,\s*&newSuggestedBindings\s*\)\s*;/$sug_merged/);
++mark("log-suggest", $n, 0);
++
++my $sug_plain = <<'CPP';
++{
++			XrResult yc_r = nextLayer_xrSuggestInteractionProfileBindings(instance, suggestedBindings);
++			char yc_p[256] = "?"; uint32_t yc_len = 0;
++			nextLayer_xrPathToString(instance, suggestedBindings->interactionProfile, sizeof(yc_p), &yc_len, yc_p);
++			yc_log("suggest %s: game=%u layer=0 -> %d\n", yc_p, (unsigned)suggestedBindings->countSuggestedBindings, (int)yc_r);
++		}
++CPP
++chomp $sug_plain;
++$n = $have_log && ($s =~ s/(\belse\s*\n?\s*)nextLayer_xrSuggestInteractionProfileBindings\(\s*instance\s*,\s*suggestedBindings\s*\)\s*;/$1$sug_plain/);
++mark("log-suggest-plain", $n, 0);
++
++# d) Attach
++$n = $have_log && ($s =~ s/(XrResult\s+(\w+)\s*=\s*nextLayer_xrAttachSessionActionSets\(\s*session\s*,\s*&newInfo\s*\)\s*;)/$1\n\t\tyc_log("attach session=%llx sets=%u (incl. layer) -> %d\\n", (unsigned long long)session, (unsigned)newInfo.countActionSets, (int)$2);/);
++mark("log-attach", $n, 0);
++
++# d) Sync (nur erste Aufrufe und Wechsel des Ergebnisses)
++$n = $have_log && ($s =~ s/(XrResult\s+(\w+)\s*=\s*nextLayer_xrSyncActions\(\s*session\s*,\s*&nsyncInfo\s*\)\s*;)/$1\n\t\t{ static int yc_sn = 0; static int yc_last = 1; if(yc_sn < 3 || (int)$2 != yc_last) yc_log("sync #%d sets=%u+layer -> %d\\n", yc_sn, (unsigned)syncInfo->countActiveActionSets, (int)$2); yc_last = (int)$2; yc_sn++; }/);
++mark("log-sync", $n, 0);
++
++# d) Zustandswechsel der Layer-Knoepfe (active/state je Hand)
++my $bool_log = <<'CPP';
++XrResult yc_g = $1;
++				{
++					static int yc_prev[512][2];
++					XrActionStateBoolean &yc_s = mpActiveSession->mLayerActionsBoolean[i].typedState[hand];
++					int yc_v = 1 + (yc_g != XR_SUCCESS ? 4 : 0) + (yc_s.isActive ? 2 : 0) + (yc_s.currentState ? 1 : 0);
++					if(i < 512 && yc_prev[i][hand] != yc_v)
++					{
++						const char *yc_name = "?";
++						for(int yc_k = 0; yc_k < (int)mLayerActionSet.mActions.count; yc_k++)
++							if(mLayerActionSet.mActions[yc_k].action == mpActiveSession->mLayerActionsBoolean[i].action)
++								yc_name = mLayerActionSet.mActions[yc_k].info.actionName;
++						yc_log("source %s.%s: result=%d active=%d state=%d\n", yc_name, hand ? "right" : "left",
++							(int)yc_g, (int)yc_s.isActive, (int)yc_s.currentState);
++						yc_prev[i][hand] = yc_v;
++					}
++				}
++CPP
++chomp $bool_log;
++$n = $have_log && ($s =~ s/(nextLayer_xrGetActionStateBoolean\(\s*session\s*,\s*&getInfo\s*,\s*&mpActiveSession->mLayerActionsBoolean\[i\]\.typedState\[hand\]\s*\))\s*;/my $x = $bool_log; my $c = $1; $x =~ s|\$1|$c|; $x . ";"/e);
++# (das ";" landet hinter dem Block — harmlos)
++mark("log-sources", $n, 0);
++
++open(my $out, '>', $file) or die "$file: $!\n";
++print $out $s;
++close $out;
++print "$_\n" for @report;
++'''
++
++
+ def build_script(lang="de"):
+     t = _TEXTS.get(lang, _TEXTS["en"])
+     q = shlex.quote
+@@ -981,10 +1177,35 @@ if grep -q 'hand.yakudaLast\\[0\\] = yx' "$F"; then
+ else
+     PATCHED=0; echo {q(t["patch_warn"])}
+ fi
++# yakuda-connect-Patch 3: Sync-Korrektur (memcpy ab dem 2. Action-Set) und
++# Diagnose-Log {DEBUG_LOG_NAME} neben der Config. Passt er nicht (neuere
++# xrBinder-Version), wird ohne ihn gebaut — Patch 1+2 bleiben.
++P3="$ROOT/{PATCH3_NAME}"
++P3REP="$ROOT/{PATCH3_REPORT}"
++cat > "$P3" <<'YC_PATCH3_EOF'
++{PATCH3_PERL}YC_PATCH3_EOF
++cp "$F" "$F.yc-p2"
++if perl "$P3" "$F" > "$P3REP"; then
++    ok {q(t["patch3_ok"])}; sed 's/^/    /' "$P3REP"
++else
++    cp "$F.yc-p2" "$F"; echo "off all" > "$P3REP"; echo {q(t["patch3_warn"])}
++fi
+ 
+ step {q("3/3  " + t["step_build"])}
++JOBS="$(nproc 2>/dev/null || echo 2)"
+ cmake -S "$SRC" -B "$BUILD" -DENABLE_GUI=OFF -DCMAKE_BUILD_TYPE=Release || fail {q(t["err_build"])}
+-cmake --build "$BUILD" -j"$(nproc 2>/dev/null || echo 2)" || fail {q(t["err_build"])}
++if ! cmake --build "$BUILD" -j"$JOBS"; then
++    cmp -s "$F" "$F.yc-p2" && fail {q(t["err_build"])}
++    echo; echo {q(t["patch3_warn"])}
++    # erst nur die Korrekturen (ohne Log), dann ganz ohne Patch 3
++    cp "$F.yc-p2" "$F"
++    if perl "$P3" --fixes-only "$F" > "$P3REP" && cmake --build "$BUILD" -j"$JOBS"; then
++        sed 's/^/    /' "$P3REP"
++    else
++        cp "$F.yc-p2" "$F"; echo "off all" > "$P3REP"
++        cmake --build "$BUILD" -j"$JOBS" || fail {q(t["err_build"])}
++    fi
++fi
+ [ -f "$LIB" ] || fail {q(t["err_build"])}" $LIB"
+ 
+ [ "$PATCHED" = 1 ] && echo {PATCH_LEVEL} > "$ROOT/{PATCH_FILE}"
+diff --git a/locales/de.json b/locales/de.json
+index 4034aa6..bbfdaa7 100644
+--- a/locales/de.json
++++ b/locales/de.json
+@@ -1034,6 +1034,8 @@
+   "xrb_enable_failed": "xrBinder konnte nicht aktiviert werden.",
+   "xrb_service_failed": "Der xrBinder-Dienst (ipc_server) ließ sich nicht starten. Umlegen funktioniert trotzdem, aber laufende Spiele werden hier nicht angezeigt.",
+   "xrb_foreign": "Eine zweite xrBinder-Installation wurde gefunden (von Hand kopiert?). Das Layer würde doppelt geladen:\n{paths}",
++  "xrb_debug_log": "Diagnose-Log",
++  "xrb_debug_log_tip": "Protokoll des xrBinder-Layers aus dem letzten Spielstart öffnen (für Fehlerberichte).",
+   "xrb_cleanup": "Aufräumen",
+   "xrb_cleanup_done": "Die von Hand kopierten xrBinder-Dateien liegen jetzt hier:\n{path}",
+   "xrb_cleanup_system": "Diese Datei liegt außerhalb deines Benutzerordners und wird nicht angefasst. Bitte von Hand entfernen.",
+diff --git a/locales/en.json b/locales/en.json
+index c61af96..72350dd 100644
+--- a/locales/en.json
++++ b/locales/en.json
+@@ -1034,6 +1034,8 @@
+   "xrb_enable_failed": "xrBinder could not be enabled.",
+   "xrb_service_failed": "The xrBinder service (ipc_server) could not be started. Remapping still works, but running games will not show up here.",
+   "xrb_foreign": "A second xrBinder installation was found (copied by hand?). The layer would be loaded twice:\n{paths}",
++  "xrb_debug_log": "Diagnostic log",
++  "xrb_debug_log_tip": "Open the xrBinder layer log from the last game start (for bug reports).",
+   "xrb_cleanup": "Clean up",
+   "xrb_cleanup_done": "The hand-copied xrBinder files are now here:\n{path}",
+   "xrb_cleanup_system": "This file is outside your home folder and is left alone. Please remove it manually.",
+diff --git a/tests/test_xrbinder.py b/tests/test_xrbinder.py
+index 16248be..5c09162 100644
+--- a/tests/test_xrbinder.py
++++ b/tests/test_xrbinder.py
+@@ -234,6 +234,86 @@ def test_build_script_patch_applies(home, tmp_path):
+     assert "act.subactionMask = 1U << FindPath(sub);" in text      # Rest unberuehrt
+ 
+ 
++# Ausschnitte aus xrBinder (layer_shims.cpp), genau die Stellen, die Patch 3 trifft
++_P3_SNIPPET = """#include "layer_shims.hpp"
++#include <string.h>
++\tXrResult thisLayer_xrSuggestInteractionProfileBindings(XrInstance instance, const XrInteractionProfileSuggestedBinding *suggestedBindings)
++\t{
++\t\tif(layerSuggest)
++\t\t{
++\t\t\tmfLayerActionSetSuggested = true;
++\t\t\tnextLayer_xrSuggestInteractionProfileBindings(instance, &newSuggestedBindings);
++\t\t}
++\t\telse
++\t\t\tnextLayer_xrSuggestInteractionProfileBindings(instance, suggestedBindings);
++\t\treturn XR_SUCCESS;
++\t}
++\t\tXrResult r = nextLayer_xrAttachSessionActionSets(session, &newInfo);
++\t\tmemcpy(as, syncInfo->activeActionSets, syncInfo->countActiveActionSets + sizeof(XrActiveActionSet));
++\t\tXrResult ret = nextLayer_xrSyncActions(session, &nsyncInfo);
++\t\t\t\tnextLayer_xrGetActionStateBoolean(session, &getInfo, &mpActiveSession->mLayerActionsBoolean[i].typedState[hand]);
++\t\t\t\tmpActiveSession->mLayerActionsFloat[i].typedState[hand].type = XR_TYPE_ACTION_STATE_VECTOR2F;
++"""
++
++
++def _run_patch3(tmp_path, *args):
++    import shutil
++    import subprocess
++    if not shutil.which("perl"):
++        pytest.skip("perl fehlt")
++    script = tmp_path / xb.PATCH3_NAME
++    script.write_text(xb.PATCH3_PERL)
++    src = tmp_path / "layer_shims.cpp"
++    if not src.exists():
++        src.write_text(_P3_SNIPPET)
++    res = subprocess.run(["perl", str(script), *args, str(src)], capture_output=True,
++                         text=True, timeout=10, check=True)
++    return res.stdout, src.read_text()
++
++
++def test_patch3_applies_everything(tmp_path):
++    out, text = _run_patch3(tmp_path)
++    assert "miss" not in out, out
++    assert "countActiveActionSets * sizeof(XrActiveActionSet)" in text
++    assert "mLayerActionsVec2[i].typedState[hand].type = XR_TYPE_ACTION_STATE_VECTOR2F" in text
++    assert "yakuda-debug.log" in text
++    assert "retry without layer bindings" in text
++    assert text.count("XrResult yc_r = nextLayer_xrSuggestInteractionProfileBindings") == 2
++    assert "XrResult yc_g = nextLayer_xrGetActionStateBoolean" in text
++    # zweiter Lauf aendert nichts
++    out2, text2 = _run_patch3(tmp_path)
++    assert "already patched" in out2 and text2 == text
++
++
++def test_patch3_fixes_only(tmp_path):
++    out, text = _run_patch3(tmp_path, "--fixes-only")
++    assert "ok syncfix" in out and "off log" in out
++    assert "countActiveActionSets * sizeof(XrActiveActionSet)" in text
++    assert "yc_log" not in text
++
++
++def test_patch3_skip_when_upstream_fixed(tmp_path):
++    (tmp_path / "layer_shims.cpp").write_text(
++        _P3_SNIPPET.replace("countActiveActionSets + sizeof", "countActiveActionSets * sizeof"))
++    out, _text = _run_patch3(tmp_path, "--fixes-only")
++    assert "skip syncfix" in out
++
++
++def test_build_script_embeds_patch3(home):
++    s = xb.build_script("en")
++    body = s.split("<<'YC_PATCH3_EOF'\n", 1)[1].split("YC_PATCH3_EOF\n", 1)[0]
++    assert body == xb.PATCH3_PERL
++    assert '--fixes-only "$F"' in s
++
++
++def test_patch3_report_and_log_path(home):
++    os.makedirs(xb.tool_root(), exist_ok=True)
++    with open(os.path.join(xb.tool_root(), xb.PATCH3_REPORT), "w") as fh:
++        fh.write("ok syncfix\nskip vec2fix\noff log\n")
++    assert xb.patch3_report() == {"syncfix": "ok", "vec2fix": "skip", "log": "off"}
++    assert xb.debug_log_path() == os.path.join(xb.config_dir(), "yakuda-debug.log")
++
++
+ def test_needs_rebuild(home):
+     os.makedirs(xb.out_dir())
+     open(xb.library_path(), "w").close()
+diff --git a/ui/xrbinder_panel.py b/ui/xrbinder_panel.py
+index 7fda6fe..fe39f68 100644
+--- a/ui/xrbinder_panel.py
++++ b/ui/xrbinder_panel.py
+@@ -16,7 +16,10 @@ Bearbeitet werden die Tasten NICHT hier, sondern im Bereich
+ Spieleliste und bekommen dieselbe Controller-Ansicht wie OpenVR-Spiele
+ (core/tabs/xr_controls_mixin.py).
+ """
+-from PySide6.QtCore import Qt, Signal
++import os
++
++from PySide6.QtCore import Qt, QUrl, Signal
++from PySide6.QtGui import QDesktopServices
+ from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMessageBox,
+                                QPushButton, QVBoxLayout, QWidget)
+ 
+@@ -91,6 +94,14 @@ class XrBinderCard(QFrame):
+         self.btn_build.setStyleSheet(_BTN_CSS)
+         self.btn_build.clicked.connect(self.start_build)
+         row.addWidget(self.btn_build, 0, Qt.AlignVCenter)
++
++        # Log des gepatchten Layers (Patch 3) — nur sichtbar, wenn es eins gibt
++        self.btn_log = QPushButton()
++        self.btn_log.setCursor(Qt.PointingHandCursor)
++        self.btn_log.setFixedHeight(28)
++        self.btn_log.setStyleSheet(_BTN_CSS)
++        self.btn_log.clicked.connect(self._open_debug_log)
++        row.addWidget(self.btn_log, 0, Qt.AlignVCenter)
+         outer.addLayout(row)
+ 
+         # Warnung: von Hand kopierte zweite Installation
+@@ -119,6 +130,8 @@ class XrBinderCard(QFrame):
+         self.lbl_title.setText(tr("xrb_card_title"))
+         self.lbl_desc.setText(tr("xrb_card_desc"))
+         self.btn_cleanup.setText(tr("xrb_cleanup"))
++        self.btn_log.setText(tr("xrb_debug_log"))
++        self.btn_log.setToolTip(tr("xrb_debug_log_tip"))
+         self.render()
+ 
+     def is_enabled(self):
+@@ -127,6 +140,7 @@ class XrBinderCard(QFrame):
+     def activate(self):
+         """Beim Start der App: Zustand lesen, ggf. Dienst + Sitzung starten."""
+         enabled = xb.layer_enabled() and xb.is_built()
++        xb.rotate_debug_log()
+         self._set_toggle(enabled)
+         if enabled:
+             try:
+@@ -160,6 +174,7 @@ class XrBinderCard(QFrame):
+         self.btn_build.setText(tr("xrb_rebuild") if xb.is_built() else tr("xrb_install"))
+         self.btn_build.setStyleSheet(_PRIMARY_CSS if rebuild else _BTN_CSS)
+         self.btn_build.setEnabled(not building)
++        self.btn_log.setVisible(os.path.isfile(xb.debug_log_path()))
+         foreign = xb.foreign_manifests()
+         self.foreign_row.setVisible(bool(foreign))
+         if foreign:
+@@ -256,3 +271,8 @@ class XrBinderCard(QFrame):
+                                 tr("xrb_cleanup_done").format(path=moved[0]) if moved
+                                 else tr("xrb_cleanup_system"))
+         self.render()
++
++    def _open_debug_log(self):
++        path = xb.debug_log_path()
++        if os.path.isfile(path):
++            QDesktopServices.openUrl(QUrl.fromLocalFile(path))

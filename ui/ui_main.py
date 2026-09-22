@@ -316,7 +316,9 @@ class Ui_MainWindow:
         # Eltern-Fenster dieselben Farben.
         _app = QApplication.instance()
         if _app is not None:
-            _app.setStyleSheet(_stylesheet)
+            from ui import theme
+            theme.remember_app_base(_stylesheet)
+            _app.setStyleSheet(theme.tint(_stylesheet, allow_opacity=False))
         else:
             main_window.setStyleSheet(_stylesheet)
 
@@ -436,7 +438,10 @@ class Ui_MainWindow:
         # Initialisiere die einzelnen Bereiche
         self.setup_installation_tab()
         self.setup_dashboard_tab()
-        self.setup_tools_tab()
+        # Tools-Tab erst beim ersten Oeffnen bauen (ensure_tools_tab): gut
+        # 430 Widgets / ~10 MB, die die meisten Sitzungen nie brauchen.
+        self.tool_cards = {}
+        self._tools_built = False
         self.setup_games_tab()
         self.setup_controls_tab()
         self.setup_settings_tab()
@@ -644,7 +649,11 @@ class Ui_MainWindow:
             self.btn_obah_profile_save.setText(tr("obah_profile_save"))
             self.btn_obah_profile_delete.setText(tr("obah_profile_delete"))
 
-        # --- Tools-Tab ---
+        # --- Tools-Tab (nur, wenn schon gebaut) ---
+        if self._tools_built:
+            self._retranslate_tools_tab()
+
+    def _retranslate_tools_tab(self):
         self.lbl_tools_title.setText(tr("tools_title"))
         self.lbl_tools_subtitle.setText(tr("tools_subtitle"))
         self.btn_tools_check.setText(tr("tools_check_btn"))
@@ -2353,6 +2362,14 @@ class Ui_MainWindow:
         ev.addWidget(self.obah_aux_body)
         v.addWidget(self.obah_editor)
         return panel
+
+    def ensure_tools_tab(self):
+        """Tools-Tab beim ersten Bedarf bauen. True = gerade eben gebaut."""
+        if self._tools_built:
+            return False
+        self._tools_built = True
+        self.setup_tools_tab()
+        return True
 
     def setup_tools_tab(self):
         outer = QVBoxLayout(self.tab_tools)

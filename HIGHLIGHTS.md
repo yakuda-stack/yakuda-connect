@@ -1,5 +1,25 @@
 # Highlights - Yakuda Connect
 
+### 🚀 v1.3.4 — 2026-09-22
+
+#### 🇩🇪 Deutsch
+
+* **Schneller und leichter.** Yakuda Connect startet rund 3 Sekunden schneller, friert beim Start nicht mehr ein und belastet das System im Betrieb weniger – wichtig, wenn nebenbei VR läuft. Dein gewähltes Design bleibt jetzt auch nach einem Neustart erhalten.
+* **Alte SteamVR-Spiele ohne Action-Datei umbelegen.** Spiele wie Gal*Gun 2, bei denen es nichts zum Bearbeiten gibt, lassen sich jetzt über xrizer und xrBinder umbelegen – ohne Community-Bindings.
+* **Stick kippen statt drücken.** Für Funktionen auf „Stick drücken“ gibt es im Dialog „⇄ Kippen“: dann reicht schon das Kippen – praktisch für Menüs und Snap-Turn in älteren Spielen.
+* **Deadzone gegen Stick-Drift.** Stick anklicken → Tab „◎ Deadzone“ mit Reglern für Links, Rechts und Beide: Läuft oder dreht sich deine Figur von selbst, einfach hochdrehen.
+* **Stick-Drücken funktioniert wirklich.** Verschieben und Kippen kamen im Spiel bisher nie an (falscher Pfad für beide Hände) – behoben, deine Belegungen werden beim Start automatisch repariert.
+
+#### 🇬🇧 English
+
+* **Faster and lighter.** Yakuda Connect starts about 3 seconds faster, no longer freezes at startup and puts less load on your system while running – important with VR going on. Your chosen design now also survives a restart.
+* **Remap old SteamVR games without an action file.** Games like Gal*Gun 2, which have nothing to edit, can now be remapped via xrizer and xrBinder – no community bindings needed.
+* **Tilt the stick instead of clicking.** Functions on “stick press” get a “⇄ Tilt” option in the dialog: just tilting is enough – handy for menus and snap turn in older games.
+* **Deadzone against stick drift.** Click the stick → “◎ Deadzone” tab with sliders for left, right and both: if your character walks or turns on its own, just turn it up.
+* **Stick remaps actually work.** Moving and tilt never reached the game (wrong path for both hands) – fixed, your bindings are repaired automatically at startup.
+
+---
+
 ### 🚀 v1.3.3 — 2026-09-21
 
 #### 🇩🇪 Deutsch

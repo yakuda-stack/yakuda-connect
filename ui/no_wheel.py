@@ -4,37 +4,33 @@ ui/no_wheel.py — Aufklapplisten reagieren nicht aufs Mausrad
 ============================================================
 Wer mit dem Mausrad durch einen Tab scrollt und dabei ueber eine QComboBox
 faehrt, aendert sonst still deren Auswahl (im Controls-Tab: Spiel,
-Controller, Quelle — und damit die ganze Ansicht). Dieser Filter nimmt der
-geschlossenen Combo das Rad weg und gibt es an das Elternfenster weiter,
-damit die Seite ganz normal weiterscrollt. In der AUFGEKLAPPTEN Liste
-scrollt das Rad wie gewohnt — die ist ein eigenes Fenster und wird hier
-nicht angefasst.
+Controller, Quelle — und damit die ganze Ansicht). Hier bekommt die
+GESCHLOSSENE Combo das Rad nicht: das Ereignis wird ignoriert, Qt reicht es
+von selbst ans Elternfenster weiter, und die Seite scrollt normal. In der
+AUFGEKLAPPTEN Liste scrollt das Rad wie gewohnt — die ist ein eigenes Fenster.
 
-install(app) einmal aufrufen; wirkt fuer alle Combos der App.
+Performance: Frueher hing dafuer ein Event-Filter an der ganzen
+QApplication. Dann laeuft JEDES Ereignis der App (Mausbewegung, Neuzeichnen,
+Timer …) durch Python — beim Start allein ueber 100.000 Mal. Jetzt wird nur
+QComboBox.wheelEvent ersetzt: kostet nichts, solange niemand ueber einer
+Combo scrollt. Gilt fuer alle Combos, die aus Python erzeugt werden (auch
+schon vorhandene); Combos in reinen Qt-Dialogen bleiben unberuehrt.
+
+install(app) einmal aufrufen; mehrfacher Aufruf ist harmlos.
 """
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
 from PySide6.QtWidgets import QComboBox
 
-
-class _NoWheel(QObject):
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Wheel and isinstance(obj, QComboBox):
-            parent = obj.parentWidget()
-            if parent is not None:
-                # an die Seite weiterreichen: dort scrollt die ScrollArea
-                QCoreApplication.sendEvent(parent, event)
-            return True
-        return False
+_INSTALLED = False
 
 
-_FILTER = None
+def _wheel_ignored(self, event):
+    event.ignore()          # -> Qt gibt das Rad an das Elternfenster weiter
 
 
-def install(app):
-    """Filter an der Anwendung anbringen (mehrfacher Aufruf ist harmlos)."""
-    global _FILTER
-    if app is None or _FILTER is not None:
-        return _FILTER
-    _FILTER = _NoWheel(app)
-    app.installEventFilter(_FILTER)
-    return _FILTER
+def install(app=None):
+    """Mausrad fuer geschlossene Aufklapplisten abschalten."""
+    global _INSTALLED
+    if not _INSTALLED:
+        QComboBox.wheelEvent = _wheel_ignored
+        _INSTALLED = True
+    return _INSTALLED

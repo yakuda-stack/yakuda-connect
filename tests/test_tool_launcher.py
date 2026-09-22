@@ -138,7 +138,23 @@ def app(qapp, tmp_path_factory):
     window.close()
 
 
+def test_tools_tab_is_built_on_first_open(app, monkeypatch):
+    """Tools-Tab kostet ~10 MB — erst beim ersten Oeffnen bauen, genau einmal."""
+    if not app.ui._tools_built:
+        assert app.ui.tool_cards == {}
+        # Controls-Tab kennt die Tools trotzdem (aus tools.json)
+        assert app._control_tool("obah").get("key") == "obah"
+    # Ohne installierte Pakete sperrt die App alle Tabs ausser Installation
+    monkeypatch.setattr(app, "are_critical_packages_missing", lambda: False)
+    app.on_tab_changed(3)                       # Tools
+    assert app.ui._tools_built and app.ui.tool_cards
+    cards = dict(app.ui.tool_cards)
+    app._ensure_tools_ui()                      # zweiter Aufruf baut nichts neu
+    assert app.ui.tool_cards == cards
+
+
 def test_every_card_has_a_start_button_next_to_the_command(app):
+    app._ensure_tools_ui()
     cards = app.ui.tool_cards
     assert cards
     for key, card in cards.items():
@@ -153,6 +169,7 @@ def test_button_starts_the_tool_of_that_card(app, monkeypatch):
     import tool_launcher
     monkeypatch.setattr(tool_launcher, "start",
                         lambda tool, status=None, **kw: started.append(tool["key"]))
+    app._ensure_tools_ui()
     key = next(iter(app.ui.tool_cards))
     app.ui.tool_cards[key]["btn_start"].click()
     assert started == [key]

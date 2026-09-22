@@ -31,6 +31,7 @@ tests/smoke.py macht dasselbe (dort mit einem ausdruecklichen ``noqa``), ist
 aber ein eigenstaendiges Skript und braucht diese Datei nicht.
 """
 import os
+import sys
 
 import pytest
 
@@ -51,3 +52,13 @@ def qapp():
     from PySide6.QtWidgets import QApplication
     _app = QApplication.instance() or QApplication([])
     return _app
+
+
+@pytest.fixture(autouse=True)
+def _fresh_gpu_cache():
+    """gpu_select merkt sich die Grafikkarten fuer die Sitzung — in Tests
+    wuerde ein Test sonst die (gefaelschten) Karten des vorigen sehen."""
+    mod = sys.modules.get("gpu_select")
+    if mod is not None and hasattr(mod, "clear_cache"):
+        mod.clear_cache()
+    yield

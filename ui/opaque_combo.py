@@ -11,9 +11,10 @@ make_opaque(combo) schaltet die Durchsicht fuer diese eine Liste ab und gibt
 ihr einen festen Hintergrund. Der Stil kann das Attribut beim Anzeigen erneut
 setzen (Polish), deshalb wacht ein Ereignisfilter darueber.
 """
-from PySide6.QtCore import QEvent, QObject, Qt
+import shiboken6
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QListView
+from PySide6.QtWidgets import QComboBox, QListView
 
 BG = "#1c1f26"
 FG = "#d8dee9"
@@ -30,12 +31,35 @@ QListView::item:selected {{ background:{SEL_BG}; color:{SEL_FG}; }}
 
 
 class _KeepOpaque(QObject):
-    """Setzt die Deckkraft bei jedem Anzeigen/Polish erneut."""
+    """Setzt die Deckkraft bei jedem Anzeigen/Polish erneut.
+
+    Haengt an der Liste UND an der Combo selbst: Qt stellt beim Polieren der
+    Combo (erstes Anzeigen, Stilwechsel) die Liste wieder auf „nicht
+    fuellen“. Frueher hat das zufaellig das wiederholte Setzen aller
+    Stylesheets beim Themen-Faerben ueberdeckt.
+
+    Bewusst OHNE eigene Python-Attribute: das Objekt gehoert Qt, seine
+    Python-Huelle kann zwischendurch neu entstehen — gespeicherte Attribute
+    waeren dann weg. Die Liste wird deshalb jedes Mal aus ``obj`` ermittelt.
+    """
 
     def eventFilter(self, obj, event):
-        if event.type() in (QEvent.Show, QEvent.Polish, QEvent.StyleChange):
-            _apply(obj)
+        if event.type() in (QEvent.Show, QEvent.Polish, QEvent.StyleChange,
+                            QEvent.PaletteChange):
+            if isinstance(obj, QComboBox):
+                container = obj.view().parentWidget() if obj.view() else None
+                if container is not None:
+                    _apply(container)
+                    # Der Filter laeuft VOR Qts eigener Behandlung — danach nochmal
+                    QTimer.singleShot(0, lambda c=container: _apply_if_alive(c))
+            else:
+                _apply(obj)
         return False
+
+
+def _apply_if_alive(container):
+    if shiboken6.isValid(container):
+        _apply(container)
 
 
 def _apply(container):
@@ -61,6 +85,7 @@ def make_opaque(combo):
         _apply(container)
         guard = _KeepOpaque(container)
         container.installEventFilter(guard)
+        combo.installEventFilter(guard)
         container._opaque_guard = guard      # am Leben halten
     return combo
 
