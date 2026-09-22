@@ -545,6 +545,10 @@ class Ui_MainWindow:
         self.chk_games_autoscan.setToolTip(tr("games_autoscan_tip"))
         self.chk_stop_server_with_app.setText(tr("exit_stop_server_label"))
         self.chk_stop_server_with_app.setToolTip(tr("exit_stop_server_tip"))
+        self.btn_cli_setup.setText(tr("cli_setup_btn"))
+        self.btn_cli_setup.setToolTip(tr("cli_setup_tip"))
+        self.btn_cli_open.setText(tr("cli_open_btn"))
+        self.btn_cli_open.setToolTip(tr("cli_open_tip"))
         self.btn_games_reset.setText(tr("games_reset_btn"))
         self.btn_games_reset.setToolTip(tr("games_reset_tip"))
         self.btn_games_scan.setText(tr("games_scan_btn"))
@@ -1843,6 +1847,24 @@ class Ui_MainWindow:
         self.chk_stop_server_with_app.setToolTip(tr("exit_stop_server_tip"))
         self.chk_stop_server_with_app.setStyleSheet("color:#d8dee9; font-size:12px;")
         cv.addWidget(self.chk_stop_server_with_app)
+        adv_v.addWidget(card)
+
+        # -- Terminal-Modus --
+        # Direkt unter "App beenden": beides betrifft, wie die App laeuft.
+        # Der Terminal-Modus (core/cli.py) laedt kein Qt und spart so RAM.
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("cli_group", lambda: tr("cli_group_desc"))
+        self.btn_cli_setup = QPushButton(tr("cli_setup_btn"))
+        self.btn_cli_setup.setCursor(Qt.PointingHandCursor)
+        self.btn_cli_setup.setToolTip(tr("cli_setup_tip"))
+        self.btn_cli_setup.setStyleSheet(self._CSS_SECONDARY)
+        head.addWidget(self.btn_cli_setup)
+        self.btn_cli_open = QPushButton(tr("cli_open_btn"))
+        self.btn_cli_open.setCursor(Qt.PointingHandCursor)
+        self.btn_cli_open.setToolTip(tr("cli_open_tip"))
+        self.btn_cli_open.setStyleSheet(self._CSS_PRIMARY)
+        head.addWidget(self.btn_cli_open)
+        cv.addLayout(head)
         adv_v.addWidget(card)
 
         # -- Spiele --

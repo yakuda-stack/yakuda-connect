@@ -73,6 +73,7 @@ All screenshots: [assets/README.md](assets/README.md)
 * **Backup & Restore:** Instantly save or recover your entire VR environment configuration.
 * **Customizable Interface:** Eight built-in themes plus per-role colour pickers, an optional background image and adjustable card opacity — under Settings → **Design**.
 * **Light on resources:** starts in well under a second, builds the Tools tab only when you open it, no app-wide event filter, no UI freeze while checking packages and next to no CPU at idle — stays out of the way while you're in VR.
+* **Terminal mode (no GUI, no Qt):** saves RAM in VR. Commands: `YC-help`, `YC-status`, `YC-wivrn-toggle` (server on/off), `YC-openvr`, `YC-encoder`, `YC-GPU`, `YC-killapps` (close autostart programs), `YC-autostart-reset` (reset start timer), `YC-pairing` (shows the PIN) — pick by number, or directly (`YC-encoder vaapi`, `YC-GPU 1`). Included with AUR and the curl installer; for AppImage/source use Settings → Advanced → **Set up commands**. **Start in terminal** opens the menu and closes the GUI (the server keeps running). Autostart programs work here too: they start once the headset connects.
 * **Desktop Compatibility:** Runs smoothly across various desktop environments including KDE Plasma, GNOME, and Hyprland.
 
 ---

@@ -20,3 +20,7 @@ src/
 # Linter-/Test-Caches
 .ruff_cache/
 .pytest_cache/
+
+# Release-Ausgaben (build_appimage.sh)
+build/
+*.zsync

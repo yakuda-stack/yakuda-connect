@@ -286,6 +286,16 @@ exec "$PY_BIN" starter.py "\$@"
 LAUNCH
 sudo chmod 755 "$BIN_LINK"
 
+# --- Terminal-Modus: Kurzbefehle YC-* (ohne Qt, spart RAM) ---
+# Markierungszeile: daran erkennt core/cli_install.py die eigenen Skripte.
+for shim in YC-help:help YC-status:status YC-wivrn-toggle:wivrn-toggle \
+            YC-openvr:openvr YC-encoder:encoder YC-GPU:gpu \
+            YC-killapps:killapps YC-autostart-reset:autostart-reset YC-pairing:pairing; do
+    printf '#!/bin/sh\n# yakuda-connect cli shim\nexec %s --cli %s "$@"\n' \
+        "$BIN_LINK" "${shim#*:}" | sudo tee "/usr/local/bin/${shim%%:*}" >/dev/null
+    sudo chmod 755 "/usr/local/bin/${shim%%:*}"
+done
+
 # --- Desktop-Eintrag + Icon ---
 echo "[3/4] Aktualisiere Menue-Eintrag & Icon..."
 SVG_ICON_DIR="/usr/share/icons/hicolor/scalable/apps"
@@ -324,3 +334,4 @@ echo ""
 echo "Starten:"
 echo "  - Im Anwendungsmenue: nach 'yakuda-connect' suchen"
 echo "  - Im Terminal: yakuda-connect"
+echo "  - Ohne Oberflaeche (spart RAM): YC-help"

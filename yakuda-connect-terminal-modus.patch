@@ -1,0 +1,1098 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 4088938..94a2172 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,15 @@
+ # Changelog - Yakuda Connect
+ 
++### 🚧 Unveröffentlicht / Unreleased
++
++#### 🇩🇪 Deutsch
++
++* **Neu: Terminal-Modus ohne Oberfläche** (kein Qt, spart RAM unter VR). Befehle `YC-help`, `YC-status`, `YC-wivrn-toggle`, `YC-openvr`, `YC-encoder`, `YC-GPU`; Auswahl per Nummer oder direkt (`YC-encoder vaapi`). AUR-Paket und `install.sh` legen die Befehle systemweit an, für AppImage/Quellcode gibt es Einstellungen → Erweitert → „Befehle einrichten“ (`~/.local/bin`). „Im Terminal starten“ öffnet das Menü und schließt die Oberfläche, der Server läuft weiter. Neue Dateien: `core/cli.py`, `core/cli_install.py`, `tests/test_cli.py`.
++
++#### 🇬🇧 English
++
++* **New: terminal mode without GUI** (no Qt, saves RAM in VR). Commands `YC-help`, `YC-status`, `YC-wivrn-toggle`, `YC-openvr`, `YC-encoder`, `YC-GPU`; pick by number or directly (`YC-encoder vaapi`). The AUR package and `install.sh` install the commands system-wide; for AppImage/source use Settings → Advanced → “Set up commands” (`~/.local/bin`). “Start in terminal” opens the menu and closes the GUI, the server keeps running. New files: `core/cli.py`, `core/cli_install.py`, `tests/test_cli.py`.
++
+ ### 🚀 v1.3.4 — 2026-09-22
+ 
+ #### 🇩🇪 Deutsch
+diff --git a/README.md b/README.md
+index 56de18f..e522996 100644
+--- a/README.md
++++ b/README.md
+@@ -73,6 +73,7 @@ All screenshots: [assets/README.md](assets/README.md)
+ * **Backup & Restore:** Instantly save or recover your entire VR environment configuration.
+ * **Customizable Interface:** Eight built-in themes plus per-role colour pickers, an optional background image and adjustable card opacity — under Settings → **Design**.
+ * **Light on resources:** starts in well under a second, builds the Tools tab only when you open it, no app-wide event filter, no UI freeze while checking packages and next to no CPU at idle — stays out of the way while you're in VR.
++* **Terminal mode (no GUI, no Qt):** saves RAM in VR. Commands: `YC-help`, `YC-status`, `YC-wivrn-toggle` (server on/off), `YC-openvr`, `YC-encoder`, `YC-GPU` — pick by number, or directly (`YC-encoder vaapi`, `YC-GPU 1`). Included with AUR and the curl installer; for AppImage/source use Settings → Advanced → **Set up commands**. **Start in terminal** opens the menu and closes the GUI (the server keeps running).
+ * **Desktop Compatibility:** Runs smoothly across various desktop environments including KDE Plasma, GNOME, and Hyprland.
+ 
+ ---
+diff --git a/core/cli.py b/core/cli.py
+new file mode 100644
+index 0000000..020bd17
+--- /dev/null
++++ b/core/cli.py
+@@ -0,0 +1,438 @@
++#!/usr/bin/env python3
++"""
++core/cli.py — Terminal-Modus (ohne Oberflaeche)
++==============================================
++Fuer alle, die unter VR jedes MB RAM brauchen: die wichtigsten Schalter
++ohne Qt. Dieses Modul (und alles, was es importiert) darf PySide6 NIE
++laden — sonst ist der ganze Sinn weg. tests/test_cli.py prueft das.
++
++Aufruf:
++    yakuda-connect --cli                 interaktives Menue
++    yakuda-connect --cli <befehl> [wert] einzelner Befehl
++
++Kurzbefehle (legt core/cli_install.py an, bzw. AUR/install.sh):
++    YC-help, YC-status, YC-wivrn-toggle, YC-openvr, YC-encoder, YC-GPU
++
++Mit Wert laeuft ein Befehl ohne Rueckfrage (gut fuer Skripte):
++    YC-encoder vaapi     YC-GPU 2     YC-openvr 0
++"""
++import os
++import subprocess
++import sys
++import time
++
++import config_manager
++import gpu_select
++import paths
++import vr_environment as venv
++import wivrn_server
++from jsonio import update_json
++from logging_setup import get_logger
++from translations import set_language, tr
++from version import APP_VERSION
++
++log = get_logger("cli")
++
++SERVER_LOG = paths.cache_file("wivrn-server.log")
++
++# Gleiche Liste wie im Streaming-Tab. Der Text ist zugleich der Wert, der
++# gespeichert wird (config_manager.sync_with_wivrn macht .lower() daraus).
++ENCODERS = ["Auto", "nvenc", "vaapi", "Vulkan", "x264"]
++ENCODER_HINTS = {
++    "Auto": "streaming_enc_auto",
++    "nvenc": "streaming_enc_nvenc",
++    "vaapi": "streaming_enc_vaapi",
++    "Vulkan": "streaming_enc_vulkan",
++    "x264": "streaming_enc_x264",
++}
++
++
++# --------------------------------------------------------------------------- #
++#  Ausgabe-Helfer
++# --------------------------------------------------------------------------- #
++def _color(code, text):
++    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
++        return text
++    return f"\033[{code}m{text}\033[0m"
++
++
++def green(t): return _color("32", t)
++def red(t): return _color("31", t)
++def yellow(t): return _color("33", t)
++def bold(t): return _color("1", t)
++def dim(t): return _color("2", t)
++
++
++def _interactive():
++    return sys.stdin.isatty()
++
++
++def _ask(prompt):
++    """Eingabe lesen. Strg+C / Strg+D = abbrechen (None)."""
++    try:
++        return input(prompt).strip()
++    except (EOFError, KeyboardInterrupt):
++        print()
++        return None
++
++
++def _yes(prompt):
++    answer = _ask(f"{prompt} [{tr('cli_yes_key')}/N] ")
++    return bool(answer) and answer.lower()[0] in ("y", "j")
++
++
++def _pick(entries, current_index, value=None):
++    """
++    Nummerierte Liste zeigen und eine Nummer abfragen.
++
++    ``entries``: Liste von (text, hinweis). ``value``: bereits mitgegebene
++    Auswahl (Nummer) — dann wird nicht gefragt. Gibt den Index oder None
++    zurueck.
++    """
++    if value is not None:
++        # Direkt mitgegeben: ohne Liste, ausser die Nummer passt nicht.
++        if value.isdigit() and 0 <= int(value) < len(entries):
++            print(f"→ {entries[int(value)][0]}")
++            return int(value)
++        print(red(tr("cli_bad_choice").format(value=value)))
++        value = None
++    for i, (text, hint) in enumerate(entries):
++        mark = green("●") if i == current_index else " "
++        print(f"  {mark} {bold(str(i))}  {text}")
++        if hint:
++            print(f"        {dim(hint)}")
++    if value is None:
++        if not _interactive():
++            return None
++        value = _ask(f"\n{tr('cli_pick_prompt')} ")
++        if not value:
++            return None
++    try:
++        index = int(value)
++    except ValueError:
++        return None
++    return index if 0 <= index < len(entries) else None
++
++
++def _settings():
++    return config_manager.load_saved_settings()
++
++
++def _save(changes):
++    """Eigene Config aktualisieren und WiVRns config.json nachziehen."""
++    if not update_json(config_manager.CONFIG_FILE, changes):
++        print(red(tr("cli_save_failed")))
++        return False
++    config_manager.sync_with_wivrn(_settings())
++    return True
++
++
++def _offer_restart():
++    """Aenderungen wirken erst beim naechsten Serverstart — anbieten."""
++    if not wivrn_server.is_running():
++        print(dim(tr("streaming_openvr_restart_hint")))
++        return
++    if _interactive() and _yes(tr("cli_restart_ask")):
++        if _stop_server():
++            _start_server()
++    else:
++        print(yellow(tr("cli_restart_hint")))
++
++
++# --------------------------------------------------------------------------- #
++#  Server
++# --------------------------------------------------------------------------- #
++def _start_server():
++    """
++    Server starten wie der Dashboard-Schalter — aber abgekoppelt.
++
++    start_new_session: der Server gehoert danach nicht mehr zu diesem
++    Terminal. Schliesst man das Fenster, laeuft VR weiter (sonst wuerde das
++    SIGHUP beim Schliessen den Server mitreissen).
++    """
++    if not venv.wivrn_server_binary():
++        print(red(tr("cli_no_server_binary")))
++        return False
++    env = gpu_select.apply_to(os.environ, _settings().get("gpu_device", ""))
++    try:
++        os.makedirs(os.path.dirname(SERVER_LOG), exist_ok=True)
++        out = open(SERVER_LOG, "w")
++    except OSError as exc:
++        log.warning("Server-Log nicht anlegbar (%s) — starte ohne Log.", exc)
++        out = subprocess.DEVNULL
++    try:
++        proc = subprocess.Popen(["wivrn-server"], stdin=subprocess.DEVNULL,
++                                stdout=out, stderr=subprocess.STDOUT,
++                                env=env, start_new_session=True)
++    except OSError as exc:
++        print(red(f"{tr('cli_start_failed')} ({exc})"))
++        return False
++    finally:
++        if out is not subprocess.DEVNULL:
++            out.close()              # das Kind hat seine eigene Kopie
++
++    # Kurz warten: ein falscher Encoder laesst den Server sofort abstuerzen.
++    time.sleep(1.5)
++    if proc.poll() is not None:
++        print(red(tr("cli_start_failed")))
++        print(dim(tr("cli_see_log").format(path=SERVER_LOG)))
++        return False
++    log.info("[CLI] Server gestartet (PID %s).", proc.pid)
++    print(green("● " + tr("cli_server_started")))
++    print(dim(tr("cli_autostart_note")))
++    return True
++
++
++def _stop_server():
++    print(tr("cli_server_stopping"))
++    if wivrn_server.stop_blocking():
++        print(red("○ ") + tr("cli_server_stopped"))
++        return True
++    print(red(tr("dashboard_stop_failed_text")))
++    return False
++
++
++# --------------------------------------------------------------------------- #
++#  Befehle
++# --------------------------------------------------------------------------- #
++def cmd_help(_arg=None):
++    print(bold(f"Yakuda Connect {APP_VERSION} — {tr('cli_title')}"))
++    print()
++    rows = [
++        ("YC-help", tr("cli_help_help")),
++        ("YC-status", tr("cli_help_status")),
++        ("YC-wivrn-toggle", tr("cli_help_toggle")),
++        ("YC-openvr [nr]", tr("cli_help_openvr")),
++        ("YC-encoder [nr|name]", tr("cli_help_encoder")),
++        ("YC-GPU [nr]", tr("cli_help_gpu")),
++    ]
++    for name, text in rows:
++        print(f"  {bold(name.ljust(22))} {text}")
++    print()
++    print(dim(tr("cli_help_footer")))
++    return 0
++
++
++def cmd_status(_arg=None):
++    data = _settings()
++    running = wivrn_server.is_running()
++    state = green("● " + tr("dashboard_active")) if running else red("○ " + tr("dashboard_inactive"))
++    print(f"{bold('WiVRn'.ljust(14))} {state}")
++
++    mode, path = venv.current_openvr_compat()
++    if mode == venv.OPENVR_DISABLED:
++        ovr = tr("streaming_openvr_off")
++    elif mode == venv.OPENVR_PATH:
++        ovr = path
++    else:
++        ovr = tr("streaming_openvr_default")
++    print(f"{bold('OpenVR'.ljust(14))} {ovr}")
++    print(f"{bold('Encoder'.ljust(14))} {data.get('encoder', 'Auto')}")
++
++    gpu_id = data.get("gpu_device", "")
++    if not gpu_id:
++        gpu = tr("streaming_gpu_auto")
++    else:
++        found = gpu_select.find_gpu(gpu_id)
++        gpu = gpu_select.label_for(found, _kind_names()) if found else \
++            tr("streaming_gpu_missing").format(id=gpu_id)
++    print(f"{bold(tr('streaming_gpu').ljust(14))} {gpu}")
++    return 0
++
++
++def cmd_toggle(_arg=None):
++    if wivrn_server.is_running():
++        return 0 if _stop_server() else 1
++    return 0 if _start_server() else 1
++
++
++def cmd_openvr(arg=None):
++    mode, path = venv.current_openvr_compat()
++    found = venv.openvr_compat_candidates()
++
++    auto = venv.wivrn_autodetect_path() or tr("streaming_openvr_default_none")
++    entries = [(tr("streaming_openvr_default"), auto)]
++    keys = [("default", "")]
++    for e in found:
++        text = f"{e['label']}  ({e['path']})"
++        if not e["complete"]:
++            text += "  " + yellow("⚠ " + tr("streaming_openvr_incomplete"))
++        entries.append((text, ""))
++        keys.append(("path", e["path"]))
++    entries.append((tr("streaming_openvr_custom"), ""))
++    keys.append(("custom", ""))
++    entries.append((tr("streaming_openvr_off"), ""))
++    keys.append(("disabled", ""))
++
++    current = 0
++    if mode == venv.OPENVR_DISABLED:
++        current = len(keys) - 1
++    elif mode == venv.OPENVR_PATH:
++        current = next((i for i, k in enumerate(keys) if k == ("path", path)), len(keys) - 2)
++
++    print(bold(tr("cli_openvr_title")))
++    index = _pick(entries, current, arg)
++    if index is None:
++        print(dim(tr("cli_unchanged")))
++        return 0
++
++    kind, chosen = keys[index]
++    if kind == "custom":
++        folder = _ask(tr("cli_openvr_custom_prompt") + " ") if _interactive() else None
++        if not folder:
++            print(dim(tr("cli_unchanged")))
++            return 0
++        folder = venv.normalize_compat_path(os.path.expanduser(folder))
++        if not venv.looks_like_openvr_compat(folder):
++            print(yellow(tr("streaming_openvr_custom_invalid").format(
++                path=folder, file=venv.openvr_lib_file(folder))))
++            if not _yes(""):
++                print(dim(tr("cli_unchanged")))
++                return 0
++        ok = venv.set_openvr_compat(venv.OPENVR_PATH, folder)
++        saved = {"openvr_compat": f"path:{folder}", "openvr_compat_custom": folder}
++    elif kind == "disabled":
++        ok = venv.set_openvr_compat(venv.OPENVR_DISABLED)
++        saved = {"openvr_compat": "disabled"}
++    elif kind == "path":
++        ok = venv.set_openvr_compat(venv.OPENVR_PATH, chosen)
++        saved = {"openvr_compat": f"path:{chosen}"}
++    else:
++        ok = venv.set_openvr_compat(venv.OPENVR_DEFAULT)
++        saved = {"openvr_compat": "default"}
++
++    if not ok:
++        print(red(tr("streaming_openvr_write_failed").format(path=venv.wivrn_config_file())))
++        return 1
++    # Nur unsere Config — WiVRns Datei hat set_openvr_compat schon geschrieben.
++    update_json(config_manager.CONFIG_FILE, saved)
++    print(green("✓ " + tr("cli_saved")))
++    _offer_restart()
++    return 0
++
++
++def cmd_encoder(arg=None):
++    current_name = _settings().get("encoder", "Auto")
++    current = next((i for i, n in enumerate(ENCODERS)
++                    if n.lower() == str(current_name).lower()), 0)
++    # Name statt Nummer erlaubt: "YC-encoder vaapi"
++    if arg is not None and not arg.isdigit():
++        match = [i for i, n in enumerate(ENCODERS) if n.lower() == arg.lower()]
++        arg = str(match[0]) if match else "-1"
++
++    print(bold(tr("cli_encoder_title")))
++    entries = [(name, tr(ENCODER_HINTS[name])) for name in ENCODERS]
++    index = _pick(entries, current, arg)
++    if index is None:
++        print(dim(tr("cli_unchanged")))
++        return 0
++    if not _save({"encoder": ENCODERS[index]}):
++        return 1
++    print(green("✓ " + tr("cli_saved")))
++    _offer_restart()
++    return 0
++
++
++def _kind_names():
++    return {"discrete": tr("streaming_gpu_discrete"),
++            "integrated": tr("streaming_gpu_integrated"),
++            "cpu": tr("streaming_gpu_software")}
++
++
++def cmd_gpu(arg=None):
++    print(dim(tr("streaming_gpu_detecting")))
++    gpus = gpu_select.list_gpus()
++    current_id = _settings().get("gpu_device", "")
++
++    entries = [(tr("streaming_gpu_auto"), tr("streaming_gpu_auto_hint"))]
++    ids = [""]
++    for g in gpus:
++        entries.append((gpu_select.label_for(g, _kind_names()), g.get("render_node", "")))
++        ids.append(g["id"])
++    if current_id and current_id not in ids:
++        entries.append((tr("streaming_gpu_missing").format(id=current_id), ""))
++        ids.append(current_id)
++    current = ids.index(current_id) if current_id in ids else 0
++
++    print(bold(tr("cli_gpu_title")))
++    index = _pick(entries, current, arg)
++    if index is None:
++        print(dim(tr("cli_unchanged")))
++        return 0
++    if not _save({"gpu_device": ids[index]}):
++        return 1
++    if ids[index] and not gpu_select.device_select_layer_available():
++        print(yellow("⚠ " + tr("streaming_gpu_no_layer")))
++    print(green("✓ " + tr("cli_saved")))
++    _offer_restart()
++    return 0
++
++
++# Befehlsname -> Funktion. Gross-/Kleinschreibung egal ("GPU" == "gpu").
++COMMANDS = {
++    "help": cmd_help,
++    "status": cmd_status,
++    "wivrn-toggle": cmd_toggle,
++    "toggle": cmd_toggle,
++    "openvr": cmd_openvr,
++    "openvrcomp": cmd_openvr,
++    "encoder": cmd_encoder,
++    "gpu": cmd_gpu,
++}
++
++
++# --------------------------------------------------------------------------- #
++#  Interaktives Menue (Knopf "Im Terminal starten")
++# --------------------------------------------------------------------------- #
++MENU = [
++    ("1", "status"), ("2", "wivrn-toggle"), ("3", "openvr"),
++    ("4", "encoder"), ("5", "gpu"), ("h", "help"),
++]
++
++
++def menu():
++    print(bold(f"Yakuda Connect {APP_VERSION} — {tr('cli_title')}"))
++    while True:
++        print()
++        cmd_status()
++        print()
++        labels = {"status": tr("cli_help_status"), "wivrn-toggle": tr("cli_help_toggle"),
++                  "openvr": tr("cli_help_openvr"), "encoder": tr("cli_help_encoder"),
++                  "gpu": tr("cli_help_gpu"), "help": tr("cli_help_help")}
++        for key, name in MENU:
++            print(f"  {bold(key)}  {labels[name]}")
++        print(f"  {bold('q')}  {tr('cli_quit')}")
++        choice = _ask(f"\n{tr('cli_pick_prompt')} ")
++        if choice is None or choice.lower() in ("q", "quit", "exit"):
++            return 0
++        name = dict(MENU).get(choice.lower())
++        if name:
++            print()
++            COMMANDS[name]()
++
++
++# --------------------------------------------------------------------------- #
++#  Einstieg
++# --------------------------------------------------------------------------- #
++def main(argv):
++    """argv: alles nach '--cli', z. B. ['encoder', 'vaapi']."""
++    set_language(_settings().get("language", "en"))
++    if not argv:
++        return menu()
++    name = argv[0].lower()
++    if name.startswith("yc-"):                  # "YC-GPU" direkt uebergeben
++        name = name[3:]
++    func = COMMANDS.get(name)
++    if func is None:
++        print(red(tr("cli_unknown").format(name=argv[0])))
++        cmd_help()
++        return 2
++    try:
++        return func(argv[1] if len(argv) > 1 else None)
++    except KeyboardInterrupt:
++        print()
++        return 130
++    except BrokenPipeError:
++        # Ausgabe in "| head" o. ae. umgeleitet und vorzeitig geschlossen.
++        sys.stdout = open(os.devnull, "w")
++        return 0
+diff --git a/core/cli_install.py b/core/cli_install.py
+new file mode 100644
+index 0000000..042d3a8
+--- /dev/null
++++ b/core/cli_install.py
+@@ -0,0 +1,216 @@
++#!/usr/bin/env python3
++"""
++core/cli_install.py — Kurzbefehle (YC-*) einrichten, Terminal oeffnen
++====================================================================
++Ohne Qt, damit auch der Terminal-Modus es nutzen kann.
++
++Die Kurzbefehle sind winzige Shell-Skripte, die den richtigen Startbefehl
++mit ``--cli <befehl>`` aufrufen. Welcher das ist, haengt an der
++Installationsart:
++
++    AUR       /usr/bin/yakuda-connect        (Kurzbefehle liefert das Paket mit)
++    curl      /usr/local/bin/yakuda-connect  (Kurzbefehle legt install.sh an)
++    AppImage  $APPIMAGE                      (Pfad der .AppImage-Datei)
++    Quellcode python3 <ordner>/starter.py
++
++Fuer AppImage und Quellcode legt der Knopf in den Einstellungen die Skripte
++in ~/.local/bin an — ohne root. Beim AppImage steht der Pfad der Datei fest
++im Skript; wird sie verschoben oder aktualisiert (neuer Dateiname), einfach
++den Knopf noch einmal druecken.
++"""
++import os
++import shlex
++import shutil
++import subprocess
++import sys
++
++from logging_setup import get_logger
++
++log = get_logger("cli_install")
++
++APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++
++# Kurzbefehl -> Befehl im CLI
++SHIMS = {
++    "YC-help": "help",
++    "YC-status": "status",
++    "YC-wivrn-toggle": "wivrn-toggle",
++    "YC-openvr": "openvr",
++    "YC-encoder": "encoder",
++    "YC-GPU": "gpu",
++}
++
++# Erkennungszeile: nur Dateien mit dieser Markierung werden ueberschrieben
++# oder geloescht — nie ein fremdes Programm gleichen Namens.
++MARKER = "# yakuda-connect cli shim"
++
++USER_BIN = os.path.join(os.path.expanduser("~"), ".local", "bin")
++
++
++# --------------------------------------------------------------------------- #
++#  Installationsart
++# --------------------------------------------------------------------------- #
++def install_kind():
++    """'appimage' | 'aur' | 'curl' | 'source'"""
++    if os.environ.get("APPIMAGE"):
++        return "appimage"
++    real = os.path.realpath(APP_DIR)
++    if real == "/usr/share/yakuda-connect":
++        return "aur"
++    if real == "/opt/yakuda-connect":
++        return "curl"
++    return "source"
++
++
++def launcher_argv(kind=None):
++    """Befehl, der yakuda-connect startet (ohne Argumente)."""
++    kind = kind or install_kind()
++    if kind == "appimage":
++        return [os.environ["APPIMAGE"]]
++    if kind == "aur" and os.path.exists("/usr/bin/yakuda-connect"):
++        return ["/usr/bin/yakuda-connect"]
++    if kind == "curl" and os.path.exists("/usr/local/bin/yakuda-connect"):
++        return ["/usr/local/bin/yakuda-connect"]
++    return [sys.executable or "python3", os.path.join(APP_DIR, "starter.py")]
++
++
++def cli_argv(command=None):
++    """Befehl fuer den Terminal-Modus, z. B. [..., '--cli', 'gpu']."""
++    argv = launcher_argv() + ["--cli"]
++    return argv + [command] if command else argv
++
++
++# --------------------------------------------------------------------------- #
++#  Kurzbefehle
++# --------------------------------------------------------------------------- #
++def shim_text(command, launcher):
++    return (f"#!/bin/sh\n{MARKER}\n"
++            f"exec {shlex.join(launcher)} --cli {command} \"$@\"\n")
++
++
++def system_shims_present():
++    """Hat das Paket (AUR/curl) die Kurzbefehle schon systemweit angelegt?"""
++    return any(os.path.exists(os.path.join(d, "YC-help"))
++               for d in ("/usr/bin", "/usr/local/bin"))
++
++
++def _is_ours(path):
++    try:
++        with open(path, encoding="utf-8", errors="replace") as fh:
++            return MARKER in fh.read(512)
++    except OSError:
++        return False
++
++
++def install_user_shims(target_dir=USER_BIN, launcher=None):
++    """
++    Legt die YC-*-Skripte an. Rueckgabe: (angelegt, uebersprungen).
++    Uebersprungen wird eine fremde Datei gleichen Namens.
++    """
++    launcher = launcher or launcher_argv()
++    os.makedirs(target_dir, exist_ok=True)
++    written, skipped = [], []
++    for name, command in SHIMS.items():
++        path = os.path.join(target_dir, name)
++        if os.path.exists(path) and not _is_ours(path):
++            skipped.append(name)
++            continue
++        with open(path, "w", encoding="utf-8") as fh:
++            fh.write(shim_text(command, launcher))
++        os.chmod(path, 0o755)
++        written.append(name)
++    log.info("CLI-Kurzbefehle in %s: %s (uebersprungen: %s)",
++             target_dir, written, skipped)
++    return written, skipped
++
++
++def remove_user_shims(target_dir=USER_BIN):
++    removed = []
++    for name in SHIMS:
++        path = os.path.join(target_dir, name)
++        if os.path.exists(path) and _is_ours(path):
++            os.remove(path)
++            removed.append(name)
++    return removed
++
++
++def user_bin_in_path():
++    parts = [os.path.realpath(p) for p in os.environ.get("PATH", "").split(":") if p]
++    return os.path.realpath(USER_BIN) in parts
++
++
++def setup_commands():
++    """
++    Das, was der Knopf tut. Rueckgabe: dict fuer die Meldung.
++
++        kind       Installationsart
++        system     True, wenn das Paket die Befehle schon mitbringt
++        written    angelegte Kurzbefehle
++        skipped    fremde Dateien, nicht angefasst
++        path_ok    liegt ~/.local/bin im PATH?
++    """
++    kind = install_kind()
++    result = {"kind": kind, "system": False, "written": [], "skipped": [],
++              "path_ok": True, "dir": USER_BIN}
++    if kind in ("aur", "curl") and system_shims_present():
++        result["system"] = True
++        return result
++    result["written"], result["skipped"] = install_user_shims()
++    result["path_ok"] = user_bin_in_path()
++    return result
++
++
++# --------------------------------------------------------------------------- #
++#  Terminal oeffnen
++# --------------------------------------------------------------------------- #
++# (Programm, Argumente vor dem Befehl). Reihenfolge: gaengige Desktops zuerst.
++_TERMINALS = [
++    ("x-terminal-emulator", ["-e"]),
++    ("konsole", ["-e"]),
++    ("gnome-terminal", ["--"]),
++    ("kgx", ["--"]),
++    ("ptyxis", ["--"]),
++    ("xfce4-terminal", ["-x"]),
++    ("mate-terminal", ["-x"]),
++    ("lxterminal", ["-e"]),
++    ("tilix", ["-e"]),
++    ("alacritty", ["-e"]),
++    ("kitty", []),
++    ("foot", []),
++    ("wezterm", ["start", "--"]),
++    ("xterm", ["-e"]),
++]
++
++
++def terminal_command(inner):
++    """Befehlszeile, die ``inner`` in einem neuen Terminalfenster startet."""
++    custom = os.environ.get("TERMINAL", "").strip()
++    if custom and shutil.which(custom.split()[0]):
++        return shlex.split(custom) + ["-e"] + inner
++    for program, args in _TERMINALS:
++        if shutil.which(program):
++            return [program] + args + inner
++    return None
++
++
++def open_terminal():
++    """Terminal mit dem CLI-Menue oeffnen. True bei Erfolg."""
++    cmd = terminal_command(cli_argv())
++    if not cmd:
++        log.warning("Kein Terminalprogramm gefunden.")
++        return False
++    # Die AppImage-Umgebung (PYTHONPATH, PATH ins eingehaengte Abbild) nicht
++    # an das Terminal vererben — der Startbefehl richtet sie selbst neu ein.
++    env = dict(os.environ)
++    if install_kind() == "appimage":
++        for key in ("PYTHONPATH", "PYTHONHOME", "LD_LIBRARY_PATH"):
++            env.pop(key, None)
++    try:
++        subprocess.Popen(cmd, env=env, start_new_session=True,
++                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
++                         stderr=subprocess.DEVNULL)
++    except OSError as exc:
++        log.warning("Terminal konnte nicht gestartet werden: %s", exc)
++        return False
++    log.info("Terminal-Modus geoeffnet: %s", cmd)
++    return True
+diff --git a/core/main.py b/core/main.py
+index 3901e08..18eed4a 100644
+--- a/core/main.py
++++ b/core/main.py
+@@ -1035,6 +1035,8 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
+         self.ui.btn_games_reset.clicked.connect(self.reset_games_list)
+         self.ui.chk_stop_server_with_app.setChecked(self._stop_server_with_app)
+         self.ui.chk_stop_server_with_app.toggled.connect(self.on_stop_server_with_app_toggled)
++        self.ui.btn_cli_setup.clicked.connect(self.setup_cli_commands)
++        self.ui.btn_cli_open.clicked.connect(self.switch_to_terminal_mode)
+         self.ui.btn_games_db_update.clicked.connect(self.start_games_db_update)
+         self._refresh_games_db_version()
+         # Im Hintergrund prüfen, ob eine neuere Spiele-DB (games.json) vorliegt.
+@@ -3648,6 +3650,56 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
+             log.warning("'Server mit der App beenden' konnte nicht gespeichert werden.")
+         self._sync_exit_guard()
+ 
++    # ------------------------------------------------------------------ #
++    #  Terminal-Modus (core/cli.py, core/cli_install.py)
++    # ------------------------------------------------------------------ #
++    def setup_cli_commands(self):
++        """Knopf 'Befehle einrichten': YC-* passend zur Installationsart."""
++        import cli_install
++        try:
++            res = cli_install.setup_commands()
++        except OSError as exc:
++            log.warning("CLI-Befehle: %s", exc)
++            QMessageBox.warning(self, tr("cli_group"),
++                                tr("cli_setup_failed").format(error=exc))
++            return
++        if res["system"]:
++            kind = "AUR" if res["kind"] == "aur" else "curl"
++            QMessageBox.information(self, tr("cli_group"),
++                                    tr("cli_setup_system").format(kind=kind))
++            return
++        parts = [tr("cli_setup_done").format(dir=res["dir"],
++                                             names="  ".join(res["written"]))]
++        if res["skipped"]:
++            parts.append(tr("cli_setup_skipped").format(names=", ".join(res["skipped"])))
++        if not res["path_ok"]:
++            parts.append(tr("cli_setup_path").format(dir=res["dir"]))
++        if res["kind"] == "appimage":
++            parts.append(tr("cli_setup_appimage"))
++        QMessageBox.information(self, tr("cli_group"), "\n\n".join(parts))
++
++    def switch_to_terminal_mode(self):
++        """
++        Knopf 'Im Terminal starten': Terminal-Menue oeffnen, Oberflaeche zu.
++
++        Der Server soll dabei WEITERLAUFEN — wer umschaltet, ist oft gerade
++        in VR. Deshalb wird "Server mit der App beenden" nur fuer dieses eine
++        Schliessen ausgesetzt (nicht gespeichert).
++        """
++        import cli_install
++        answer = QMessageBox.question(self, tr("cli_group"), tr("cli_open_confirm"),
++                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
++        if answer != QMessageBox.Yes:
++            return
++        if not cli_install.open_terminal():
++            import shlex
++            QMessageBox.warning(self, tr("cli_group"), tr("cli_no_terminal").format(
++                cmd=shlex.join(cli_install.cli_argv())))
++            return
++        self._stop_server_with_app = False
++        self._sync_exit_guard()
++        self.close()
++
+     def _exit_stop_wanted(self):
+         """Soll beim Ende der App der Server gestoppt werden?"""
+         if exit_guard.disabled_by_env() or not getattr(self, "_stop_server_with_app", False):
+diff --git a/install.sh b/install.sh
+index c858fb7..caf4e51 100644
+--- a/install.sh
++++ b/install.sh
+@@ -286,6 +286,15 @@ exec "$PY_BIN" starter.py "\$@"
+ LAUNCH
+ sudo chmod 755 "$BIN_LINK"
+ 
++# --- Terminal-Modus: Kurzbefehle YC-* (ohne Qt, spart RAM) ---
++# Markierungszeile: daran erkennt core/cli_install.py die eigenen Skripte.
++for shim in YC-help:help YC-status:status YC-wivrn-toggle:wivrn-toggle \
++            YC-openvr:openvr YC-encoder:encoder YC-GPU:gpu; do
++    printf '#!/bin/sh\n# yakuda-connect cli shim\nexec %s --cli %s "$@"\n' \
++        "$BIN_LINK" "${shim#*:}" | sudo tee "/usr/local/bin/${shim%%:*}" >/dev/null
++    sudo chmod 755 "/usr/local/bin/${shim%%:*}"
++done
++
+ # --- Desktop-Eintrag + Icon ---
+ echo "[3/4] Aktualisiere Menue-Eintrag & Icon..."
+ SVG_ICON_DIR="/usr/share/icons/hicolor/scalable/apps"
+@@ -324,3 +333,4 @@ echo ""
+ echo "Starten:"
+ echo "  - Im Anwendungsmenue: nach 'yakuda-connect' suchen"
+ echo "  - Im Terminal: yakuda-connect"
++echo "  - Ohne Oberflaeche (spart RAM): YC-help"
+diff --git a/locales/de.json b/locales/de.json
+index 54c3e76..2293dd9 100644
+--- a/locales/de.json
++++ b/locales/de.json
+@@ -1105,5 +1105,48 @@
+   "xrd_deadzone_differs": "Links und rechts sind verschieden eingestellt – Regler bewegen setzt beide gleich.",
+   "xrb_result_restart_axis": "Gespeichert. Deadzone/Kippen gelten nach einem Neustart von {game} (live ändern lässt xrBinder das Spiel abstürzen).",
+   "xrb_obah_hint_running": "▶ Läuft gerade als OpenXR: {games} — steht als eigener Eintrag mit „· OpenXR“ in der Spieleliste oben. Dort umbelegen.",
+-  "xrb_bindings_guessed": "Standardbelegung von xrizer angenommen (die Runtime meldet keine Tasten)"
++  "xrb_bindings_guessed": "Standardbelegung von xrizer angenommen (die Runtime meldet keine Tasten)",
++  "cli_title": "Terminal-Modus",
++  "cli_yes_key": "j",
++  "cli_pick_prompt": "Nummer wählen (Enter = abbrechen):",
++  "cli_save_failed": "Einstellungen konnten nicht gespeichert werden.",
++  "cli_saved": "Gespeichert.",
++  "cli_unchanged": "Nichts geändert.",
++  "cli_restart_ask": "Der Server läuft. Jetzt neu starten, damit es wirkt?",
++  "cli_restart_hint": "Wirkt nach einem Neustart des Servers (2× YC-wivrn-toggle).",
++  "cli_no_server_binary": "wivrn-server wurde nicht gefunden. Ist WiVRn installiert?",
++  "cli_start_failed": "Der Server hat sich direkt wieder beendet.",
++  "cli_see_log": "Details: {path}",
++  "cli_server_started": "WiVRn-Server gestartet.",
++  "cli_server_stopping": "Beende den WiVRn-Server …",
++  "cli_server_stopped": "WiVRn-Server beendet.",
++  "cli_autostart_note": "Hinweis: Autostart-Programme startet nur die grafische Oberfläche.",
++  "cli_help_help": "Diese Übersicht",
++  "cli_help_status": "Zeigt Server, OpenVR, Encoder und Grafikkarte",
++  "cli_help_toggle": "WiVRn-Server an/aus (je nachdem, was gerade läuft)",
++  "cli_help_openvr": "OpenVR-Kompatibilität wählen (xrizer, OpenComposite …)",
++  "cli_help_encoder": "Encoder wählen (Auto, nvenc, vaapi, Vulkan, x264)",
++  "cli_help_gpu": "Grafikkarte für WiVRn wählen",
++  "cli_help_footer": "Ohne Nummer wird nachgefragt. Mit Nummer geht es sofort, z. B. YC-encoder 2 oder YC-encoder vaapi.",
++  "cli_quit": "Beenden",
++  "cli_unknown": "Unbekannter Befehl: {name}",
++  "cli_openvr_title": "OpenVR-Kompatibilität",
++  "cli_openvr_custom_prompt": "Ordner eingeben:",
++  "cli_encoder_title": "Encoder",
++  "cli_gpu_title": "Grafikkarte",
++  "cli_group": "Terminal-Modus",
++  "cli_group_desc": "Yakuda Connect ohne Oberfläche bedienen — spart RAM unter VR (kein Qt). Befehle: YC-help, YC-status, YC-wivrn-toggle, YC-openvr, YC-encoder, YC-GPU.",
++  "cli_setup_btn": "Befehle einrichten",
++  "cli_setup_tip": "Legt die YC-*-Befehle an, passend zur Installationsart (AUR, curl, AppImage, Quellcode).",
++  "cli_open_btn": "Im Terminal starten",
++  "cli_open_tip": "Öffnet das Terminal-Menü und schließt die Oberfläche. Der WiVRn-Server läuft dabei weiter.",
++  "cli_setup_system": "Die Befehle sind schon installiert (kommen mit dem {kind}-Paket). Einfach im Terminal YC-help eingeben.",
++  "cli_setup_done": "Befehle angelegt in {dir}:\n{names}\n\nIm Terminal: YC-help",
++  "cli_setup_skipped": "Nicht angelegt, dort liegt schon ein anderes Programm: {names}",
++  "cli_setup_path": "{dir} ist nicht in deinem PATH. Füge diese Zeile in ~/.bashrc (bzw. ~/.zshrc) ein und öffne ein neues Terminal:\n\nexport PATH=\"$HOME/.local/bin:$PATH\"",
++  "cli_setup_appimage": "Hinweis AppImage: Die Befehle zeigen auf diese Datei. Nach dem Verschieben oder einem Update den Knopf erneut drücken.",
++  "cli_setup_failed": "Befehle konnten nicht angelegt werden: {error}",
++  "cli_open_confirm": "Terminal-Modus starten?\n\nDie Oberfläche wird geschlossen, um RAM zu sparen. Der WiVRn-Server läuft weiter. Zurück zur Oberfläche: yakuda-connect normal starten.",
++  "cli_no_terminal": "Kein Terminalprogramm gefunden. Du kannst den Modus selbst starten mit:\n\n{cmd}",
++  "cli_bad_choice": "Ungültige Auswahl: {value}"
+ }
+diff --git a/locales/en.json b/locales/en.json
+index cf72029..2afa991 100644
+--- a/locales/en.json
++++ b/locales/en.json
+@@ -1105,5 +1105,48 @@
+   "xrd_deadzone_differs": "Left and right are set differently – moving this slider sets both the same.",
+   "xrb_result_restart_axis": "Saved. Deadzone/tilt take effect after restarting {game} (changing them live makes xrBinder crash the game).",
+   "xrb_obah_hint_running": "▶ Running as OpenXR right now: {games} — it's a separate entry with “· OpenXR” in the game list above. Remap it there.",
+-  "xrb_bindings_guessed": "assuming xrizer's default layout (the runtime reports no buttons)"
++  "xrb_bindings_guessed": "assuming xrizer's default layout (the runtime reports no buttons)",
++  "cli_title": "Terminal mode",
++  "cli_yes_key": "y",
++  "cli_pick_prompt": "Pick a number (Enter = cancel):",
++  "cli_save_failed": "Settings could not be saved.",
++  "cli_saved": "Saved.",
++  "cli_unchanged": "Nothing changed.",
++  "cli_restart_ask": "The server is running. Restart it now so this takes effect?",
++  "cli_restart_hint": "Takes effect after a server restart (YC-wivrn-toggle twice).",
++  "cli_no_server_binary": "wivrn-server was not found. Is WiVRn installed?",
++  "cli_start_failed": "The server exited right away.",
++  "cli_see_log": "Details: {path}",
++  "cli_server_started": "WiVRn server started.",
++  "cli_server_stopping": "Stopping the WiVRn server …",
++  "cli_server_stopped": "WiVRn server stopped.",
++  "cli_autostart_note": "Note: autostart programs are only launched by the graphical app.",
++  "cli_help_help": "This overview",
++  "cli_help_status": "Shows server, OpenVR, encoder and graphics card",
++  "cli_help_toggle": "WiVRn server on/off (whichever it is now)",
++  "cli_help_openvr": "Choose OpenVR compatibility (xrizer, OpenComposite …)",
++  "cli_help_encoder": "Choose encoder (Auto, nvenc, vaapi, Vulkan, x264)",
++  "cli_help_gpu": "Choose the graphics card for WiVRn",
++  "cli_help_footer": "Without a number you get asked. With a number it applies right away, e.g. YC-encoder 2 or YC-encoder vaapi.",
++  "cli_quit": "Quit",
++  "cli_unknown": "Unknown command: {name}",
++  "cli_openvr_title": "OpenVR compatibility",
++  "cli_openvr_custom_prompt": "Enter folder:",
++  "cli_encoder_title": "Encoder",
++  "cli_gpu_title": "Graphics card",
++  "cli_group": "Terminal mode",
++  "cli_group_desc": "Use Yakuda Connect without the GUI — saves RAM in VR (no Qt). Commands: YC-help, YC-status, YC-wivrn-toggle, YC-openvr, YC-encoder, YC-GPU.",
++  "cli_setup_btn": "Set up commands",
++  "cli_setup_tip": "Creates the YC-* commands, matching how you installed (AUR, curl, AppImage, source).",
++  "cli_open_btn": "Start in terminal",
++  "cli_open_tip": "Opens the terminal menu and closes the GUI. The WiVRn server keeps running.",
++  "cli_setup_system": "The commands are already installed (they come with the {kind} package). Just type YC-help in a terminal.",
++  "cli_setup_done": "Commands created in {dir}:\n{names}\n\nIn a terminal: YC-help",
++  "cli_setup_skipped": "Not created, another program already uses the name: {names}",
++  "cli_setup_path": "{dir} is not in your PATH. Add this line to ~/.bashrc (or ~/.zshrc) and open a new terminal:\n\nexport PATH=\"$HOME/.local/bin:$PATH\"",
++  "cli_setup_appimage": "AppImage note: the commands point to this file. After moving it or updating, press the button again.",
++  "cli_setup_failed": "Commands could not be created: {error}",
++  "cli_open_confirm": "Start terminal mode?\n\nThe GUI will close to save RAM. The WiVRn server keeps running. To get the GUI back, start yakuda-connect normally.",
++  "cli_no_terminal": "No terminal program found. You can start the mode yourself with:\n\n{cmd}",
++  "cli_bad_choice": "Invalid choice: {value}"
+ }
+diff --git a/packaging/aur/PKGBUILD b/packaging/aur/PKGBUILD
+index 2d5f95e..f977630 100644
+--- a/packaging/aur/PKGBUILD
++++ b/packaging/aur/PKGBUILD
+@@ -74,6 +74,17 @@ exec python starter.py "$@"
+ LAUNCH
+     chmod 755 "$pkgdir/usr/bin/yakuda-connect"
+ 
++    # Terminal-Modus (ohne Qt, spart RAM): Kurzbefehle YC-* (core/cli.py).
++    # Die Markierungszeile erkennt core/cli_install.py wieder.
++    local shim cmd
++    for shim in YC-help:help YC-status:status YC-wivrn-toggle:wivrn-toggle \
++                YC-openvr:openvr YC-encoder:encoder YC-GPU:gpu; do
++        cmd="${shim#*:}"
++        printf '#!/bin/sh\n# yakuda-connect cli shim\nexec /usr/bin/yakuda-connect --cli %s "$@"\n' \
++            "$cmd" > "$pkgdir/usr/bin/${shim%%:*}"
++        chmod 755 "$pkgdir/usr/bin/${shim%%:*}"
++    done
++
+     # .desktop-Eintrag — WICHTIG: die .download-Variante nutzt 'Exec=yakuda-connect'
+     # und 'Icon=yakuda-connect'. Die andere zeigt auf /opt und waere hier kaputt.
+     install -Dm644 yakuda-connect.desktop.download \
+diff --git a/starter.py b/starter.py
+index e82133f..7d23739 100644
+--- a/starter.py
++++ b/starter.py
+@@ -29,11 +29,21 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'core'))
+ # später gemacht, gehen genau die frühen Meldungen verloren, die bei
+ # Startproblemen am interessantesten sind.
+ from logging_setup import setup_logging, install_excepthook  # noqa: E402
++
++# --cli: Terminal-Modus OHNE Qt (spart RAM unter VR). Muss VOR den
++# PySide6-Importen unten abzweigen — sonst waere Qt schon geladen und der
++# ganze Sinn weg. Log nur in die Datei, damit die Ausgabe sauber bleibt.
++if __name__ == "__main__" and "--cli" in sys.argv:
++    setup_logging(to_console=False)
++    import cli  # noqa: E402
++    _args = sys.argv[sys.argv.index("--cli") + 1:]
++    sys.exit(cli.main(_args))
++
+ _log = setup_logging()
+ install_excepthook()   # Abstürze landen im Log statt auf einer Konsole,
+                        # die beim Start per Desktop-Icon gar nicht existiert.
+ 
+-from core.main import VRApp                       # noqa: E402
++from core.main import VRApp                      # noqa: E402
+ from PySide6.QtWidgets import QApplication        # noqa: E402
+ from PySide6.QtGui import QIcon                   # noqa: E402
+ 
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+new file mode 100644
+index 0000000..bb3d967
+--- /dev/null
++++ b/tests/test_cli.py
+@@ -0,0 +1,102 @@
++#!/usr/bin/env python3
++"""
++tests/test_cli.py — Terminal-Modus (core/cli.py, core/cli_install.py)
++
++Wichtigste Pruefung: der Terminal-Modus laedt KEIN PySide6. Genau dafuer
++gibt es ihn (RAM sparen unter VR).
++"""
++import os
++import stat
++import subprocess
++import sys
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++
++
++def _run(args, home, extra_env=None):
++    env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME="", XDG_CACHE_HOME="")
++    env.update(extra_env or {})
++    return subprocess.run([sys.executable, os.path.join(ROOT, "starter.py"), "--cli"] + args,
++                          capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL,
++                          timeout=60)
++
++
++def test_cli_does_not_load_qt(tmp_path):
++    code = (
++        "import sys; sys.path.insert(0, %r); sys.path.insert(0, %r)\n"
++        "import cli, cli_install\n"
++        "assert not any(m.startswith('PySide6') for m in sys.modules), "
++        "[m for m in sys.modules if m.startswith('PySide6')]\n"
++        % (os.path.join(ROOT, "core"), ROOT))
++    env = dict(os.environ, HOME=str(tmp_path))
++    res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env)
++    assert res.returncode == 0, res.stderr
++
++
++def test_help_and_unknown(tmp_path):
++    res = _run(["help"], tmp_path)
++    assert res.returncode == 0
++    for name in ("YC-help", "YC-wivrn-toggle", "YC-openvr", "YC-encoder", "YC-GPU"):
++        assert name in res.stdout
++    assert _run(["gibtsnicht"], tmp_path).returncode == 2
++
++
++def test_encoder_direct_writes_both_configs(tmp_path):
++    res = _run(["encoder", "vaapi"], tmp_path)
++    assert res.returncode == 0, res.stderr
++    import json
++    ours = json.load(open(tmp_path / ".config/yakuda-connect/config/config.json"))
++    assert ours["encoder"] == "vaapi"
++    assert (tmp_path / ".config/wivrn/config.json").exists()
++
++
++def test_bad_choice_changes_nothing(tmp_path):
++    res = _run(["encoder", "99"], tmp_path)
++    assert res.returncode == 0
++    assert not (tmp_path / ".config/yakuda-connect/config/config.json").exists()
++
++
++def test_shims_point_to_launcher_and_respect_foreign_files(tmp_path):
++    sys.path.insert(0, os.path.join(ROOT, "core"))
++    import cli_install
++    target = tmp_path / "bin"
++    target.mkdir()
++    (target / "YC-GPU").write_text("#!/bin/sh\necho fremd\n")
++    written, skipped = cli_install.install_user_shims(str(target), ["/x/My App.AppImage"])
++    assert skipped == ["YC-GPU"]
++    text = (target / "YC-encoder").read_text()
++    assert "'/x/My App.AppImage' --cli encoder" in text
++    assert (target / "YC-encoder").stat().st_mode & stat.S_IXUSR
++    # Nochmal: eigene Dateien werden ueberschrieben, fremde nie.
++    cli_install.install_user_shims(str(target), ["/neu"])
++    assert "/neu --cli encoder" in (target / "YC-encoder").read_text()
++    assert "fremd" in (target / "YC-GPU").read_text()
++    removed = cli_install.remove_user_shims(str(target))
++    assert "YC-GPU" not in removed and not (target / "YC-help").exists()
++
++
++def test_install_kind_and_launcher(monkeypatch):
++    sys.path.insert(0, os.path.join(ROOT, "core"))
++    import cli_install
++    monkeypatch.setenv("APPIMAGE", "/home/u/yc.AppImage")
++    assert cli_install.install_kind() == "appimage"
++    assert cli_install.cli_argv("gpu") == ["/home/u/yc.AppImage", "--cli", "gpu"]
++    monkeypatch.delenv("APPIMAGE")
++    monkeypatch.setattr(cli_install, "APP_DIR", "/usr/share/yakuda-connect")
++    assert cli_install.install_kind() == "aur"
++    monkeypatch.setattr(cli_install, "APP_DIR", "/opt/yakuda-connect")
++    assert cli_install.install_kind() == "curl"
++    monkeypatch.setattr(cli_install, "APP_DIR", "/home/u/src/yakuda-connect")
++    assert cli_install.install_kind() == "source"
++    assert cli_install.launcher_argv()[-1].endswith("starter.py")
++
++
++def test_terminal_command(monkeypatch):
++    sys.path.insert(0, os.path.join(ROOT, "core"))
++    import cli_install
++    monkeypatch.delenv("TERMINAL", raising=False)
++    monkeypatch.setattr(cli_install.shutil, "which",
++                        lambda p: "/usr/bin/konsole" if p == "konsole" else None)
++    assert cli_install.terminal_command(["yc", "--cli"]) == ["konsole", "-e", "yc", "--cli"]
++    monkeypatch.setattr(cli_install.shutil, "which", lambda p: None)
++    assert cli_install.terminal_command(["yc"]) is None
+diff --git a/ui/ui_main.py b/ui/ui_main.py
+index f536aaa..5df5b89 100644
+--- a/ui/ui_main.py
++++ b/ui/ui_main.py
+@@ -545,6 +545,10 @@ class Ui_MainWindow:
+         self.chk_games_autoscan.setToolTip(tr("games_autoscan_tip"))
+         self.chk_stop_server_with_app.setText(tr("exit_stop_server_label"))
+         self.chk_stop_server_with_app.setToolTip(tr("exit_stop_server_tip"))
++        self.btn_cli_setup.setText(tr("cli_setup_btn"))
++        self.btn_cli_setup.setToolTip(tr("cli_setup_tip"))
++        self.btn_cli_open.setText(tr("cli_open_btn"))
++        self.btn_cli_open.setToolTip(tr("cli_open_tip"))
+         self.btn_games_reset.setText(tr("games_reset_btn"))
+         self.btn_games_reset.setToolTip(tr("games_reset_tip"))
+         self.btn_games_scan.setText(tr("games_scan_btn"))
+@@ -1845,6 +1849,24 @@ class Ui_MainWindow:
+         cv.addWidget(self.chk_stop_server_with_app)
+         adv_v.addWidget(card)
+ 
++        # -- Terminal-Modus --
++        # Direkt unter "App beenden": beides betrifft, wie die App laeuft.
++        # Der Terminal-Modus (core/cli.py) laedt kein Qt und spart so RAM.
++        card, cv = self._settings_card()
++        head, _, _ = self._settings_header("cli_group", lambda: tr("cli_group_desc"))
++        self.btn_cli_setup = QPushButton(tr("cli_setup_btn"))
++        self.btn_cli_setup.setCursor(Qt.PointingHandCursor)
++        self.btn_cli_setup.setToolTip(tr("cli_setup_tip"))
++        self.btn_cli_setup.setStyleSheet(self._CSS_SECONDARY)
++        head.addWidget(self.btn_cli_setup)
++        self.btn_cli_open = QPushButton(tr("cli_open_btn"))
++        self.btn_cli_open.setCursor(Qt.PointingHandCursor)
++        self.btn_cli_open.setToolTip(tr("cli_open_tip"))
++        self.btn_cli_open.setStyleSheet(self._CSS_PRIMARY)
++        head.addWidget(self.btn_cli_open)
++        cv.addLayout(head)
++        adv_v.addWidget(card)
++
+         # -- Spiele --
+         # Bis v1.2.9 unter "Allgemein & Updates". Der Schalter aendert, wie
+         # die App sich verhaelt, und das Zuruecksetzen greift in die Config

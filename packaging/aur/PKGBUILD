@@ -11,7 +11,7 @@
 # Von dort wird gepusht — nicht von hier.
 
 pkgname=yakuda-connect
-pkgver=1.3.4
+pkgver=1.3.5
 pkgrel=1
 pkgdesc="WiVRn VR management software with gaming optimization and OpenXR/OpenVR fixes"
 arch=('any')
@@ -73,6 +73,18 @@ cd /usr/share/yakuda-connect || exit 1
 exec python starter.py "$@"
 LAUNCH
     chmod 755 "$pkgdir/usr/bin/yakuda-connect"
+
+    # Terminal-Modus (ohne Qt, spart RAM): Kurzbefehle YC-* (core/cli.py).
+    # Die Markierungszeile erkennt core/cli_install.py wieder.
+    local shim cmd
+    for shim in YC-help:help YC-status:status YC-wivrn-toggle:wivrn-toggle \
+                YC-openvr:openvr YC-encoder:encoder YC-GPU:gpu \
+                YC-killapps:killapps YC-autostart-reset:autostart-reset YC-pairing:pairing; do
+        cmd="${shim#*:}"
+        printf '#!/bin/sh\n# yakuda-connect cli shim\nexec /usr/bin/yakuda-connect --cli %s "$@"\n' \
+            "$cmd" > "$pkgdir/usr/bin/${shim%%:*}"
+        chmod 755 "$pkgdir/usr/bin/${shim%%:*}"
+    done
 
     # .desktop-Eintrag — WICHTIG: die .download-Variante nutzt 'Exec=yakuda-connect'
     # und 'Icon=yakuda-connect'. Die andere zeigt auf /opt und waere hier kaputt.

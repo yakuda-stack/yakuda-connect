@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.3.4"
+APP_VERSION = "v1.3.5"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -1035,6 +1035,8 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         self.ui.btn_games_reset.clicked.connect(self.reset_games_list)
         self.ui.chk_stop_server_with_app.setChecked(self._stop_server_with_app)
         self.ui.chk_stop_server_with_app.toggled.connect(self.on_stop_server_with_app_toggled)
+        self.ui.btn_cli_setup.clicked.connect(self.setup_cli_commands)
+        self.ui.btn_cli_open.clicked.connect(self.switch_to_terminal_mode)
         self.ui.btn_games_db_update.clicked.connect(self.start_games_db_update)
         self._refresh_games_db_version()
         # Im Hintergrund prüfen, ob eine neuere Spiele-DB (games.json) vorliegt.
@@ -2862,33 +2864,11 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
     def is_headset_connected(self):
         """
         Prüft, ob AKTUELL ein Headset mit dem WiVRn-Server verbunden ist.
-        Nutzt nur LIVE-Signale, die beim Trennen wieder verschwinden – daher
-        NICHT die "Client connected"-Logzeile (die bleibt die ganze Session stehen
-        und würde ein Erkennen der Trennung unmöglich machen).
+        Die Pruefung selbst steht Qt-frei in core/autostart_runner.py — der
+        Terminal-Modus braucht genau dieselbe.
         """
-        # Signal A: WiVRn legt beim Verbinden ein virtuelles Audiogerät "WiVRn"
-        # an und entfernt es beim Trennen (dokumentiertes Verhalten).
-        try:
-            for kind in ("sinks", "sources"):
-                res = subprocess.run(["pactl", "list", "short", kind],
-                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                     text=True, timeout=2)
-                if "wivrn" in res.stdout.lower():
-                    return True
-        except Exception as exc:
-            log.debug("is_headset_connected: ignoriert — %s", exc)
-
-        # Signal B: aktive (ESTABLISHED) TCP-Verbindung auf dem WiVRn-Port 9757.
-        try:
-            res = subprocess.run(["ss", "-Htan"], stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, text=True, timeout=2)
-            for line in res.stdout.splitlines():
-                if "ESTAB" in line and ":9757" in line:
-                    return True
-        except Exception as exc:
-            log.debug("is_headset_connected: ignoriert — %s", exc)
-
-        return False
+        import autostart_runner
+        return autostart_runner.headset_connected()
 
     def _poll_headset_for_autostart(self):
         """
@@ -3448,6 +3428,20 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
                     except Exception as exc:
                         log.debug("stop_autostart_apps: ignoriert — %s", exc)
         self._autostart_procs = []
+        # Auch was der Terminal-Modus gestartet hat (YC-*), samt wartendem
+        # Hintergrund-Waechter — sonst liefe es doppelt, sobald die
+        # Oberflaeche selbst wieder startet.
+        try:
+            import autostart_runner
+            autostart_runner.stop_watcher()
+            groups = autostart_runner.running_apps()
+            if groups:
+                exit_guard.stop_groups([(g, s) for g, s in groups])
+                state = autostart_runner.load_state()
+                state["apps"] = []
+                autostart_runner.save_state(state)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("stop_autostart_apps (Terminal-Modus): ignoriert — %s", exc)
         self._sync_exit_guard()
 
     def start_wivrn_server(self):
@@ -3647,6 +3641,86 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
                            {exit_guard.SETTING_KEY: bool(checked)}):
             log.warning("'Server mit der App beenden' konnte nicht gespeichert werden.")
         self._sync_exit_guard()
+
+    # ------------------------------------------------------------------ #
+    #  Terminal-Modus (core/cli.py, core/cli_install.py)
+    # ------------------------------------------------------------------ #
+    def setup_cli_commands(self):
+        """Knopf 'Befehle einrichten': YC-* passend zur Installationsart."""
+        import cli_install
+        try:
+            res = cli_install.setup_commands()
+        except OSError as exc:
+            log.warning("CLI-Befehle: %s", exc)
+            QMessageBox.warning(self, tr("cli_group"),
+                                tr("cli_setup_failed").format(error=exc))
+            return
+        if res["system"]:
+            kind = "AUR" if res["kind"] == "aur" else "curl"
+            QMessageBox.information(self, tr("cli_group"),
+                                    tr("cli_setup_system").format(kind=kind))
+            return
+        parts = [tr("cli_setup_done").format(dir=res["dir"],
+                                             names="  ".join(res["written"]))]
+        if res["skipped"]:
+            parts.append(tr("cli_setup_skipped").format(names=", ".join(res["skipped"])))
+        if not res["path_ok"]:
+            parts.append(tr("cli_setup_path").format(dir=res["dir"]))
+        if res["kind"] == "appimage":
+            parts.append(tr("cli_setup_appimage"))
+        QMessageBox.information(self, tr("cli_group"), "\n\n".join(parts))
+
+    def switch_to_terminal_mode(self):
+        """
+        Knopf 'Im Terminal starten': Terminal-Menue oeffnen, Oberflaeche zu.
+
+        Der Server soll dabei WEITERLAUFEN — wer umschaltet, ist oft gerade
+        in VR. Deshalb wird "Server mit der App beenden" nur fuer dieses eine
+        Schliessen ausgesetzt (nicht gespeichert).
+        """
+        import cli_install
+        answer = QMessageBox.question(self, tr("cli_group"), tr("cli_open_confirm"),
+                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer != QMessageBox.Yes:
+            return
+        if not cli_install.open_terminal():
+            import shlex
+            QMessageBox.warning(self, tr("cli_group"), tr("cli_no_terminal").format(
+                cmd=shlex.join(cli_install.cli_argv())))
+            return
+        self._stop_server_with_app = False
+        self._handoff_autostart_to_cli()
+        self._sync_exit_guard()
+        self.close()
+
+    def _handoff_autostart_to_cli(self):
+        """
+        Autostart an den Terminal-Modus uebergeben:
+          * laufende Programme merkt sich der Terminal-Modus, damit
+            YC-killapps sie spaeter schliessen kann
+          * wartet der Timer noch aufs Headset, uebernimmt das der
+            Hintergrund-Waechter (core/autostart_runner.py)
+        Die Programme selbst laufen weiter — sie stecken in eigenen Sitzungen.
+        """
+        import autostart_runner
+        import cli_install
+        try:
+            pids = [p.pid for p in self._autostart_procs if p.poll() is None]
+            if pids:
+                autostart_runner.remember_apps(pids)
+            if self.autostart_timer.isActive() and wivrn_server.is_running(self.server_process):
+                self.autostart_timer.stop()
+                env = dict(os.environ)
+                if cli_install.install_kind() == "appimage":
+                    for key in ("PYTHONPATH", "PYTHONHOME", "LD_LIBRARY_PATH"):
+                        env.pop(key, None)
+                autostart_runner.arm(load_saved_settings(),
+                                     cli_install.cli_argv("_autostart-watch"), env)
+            # Die Oberflaeche soll die Programme beim Schliessen NICHT mehr
+            # beenden — sie gehoeren jetzt dem Terminal-Modus.
+            self._autostart_procs = []
+        except Exception as exc:  # noqa: BLE001 — Umschalten darf daran nicht scheitern
+            log.warning("Autostart-Uebergabe an den Terminal-Modus: %s", exc)
 
     def _exit_stop_wanted(self):
         """Soll beim Ende der App der Server gestoppt werden?"""

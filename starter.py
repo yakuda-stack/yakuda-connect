@@ -29,11 +29,21 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'core'))
 # später gemacht, gehen genau die frühen Meldungen verloren, die bei
 # Startproblemen am interessantesten sind.
 from logging_setup import setup_logging, install_excepthook  # noqa: E402
+
+# --cli: Terminal-Modus OHNE Qt (spart RAM unter VR). Muss VOR den
+# PySide6-Importen unten abzweigen — sonst waere Qt schon geladen und der
+# ganze Sinn weg. Log nur in die Datei, damit die Ausgabe sauber bleibt.
+if __name__ == "__main__" and "--cli" in sys.argv:
+    setup_logging(to_console=False)
+    import cli  # noqa: E402
+    _args = sys.argv[sys.argv.index("--cli") + 1:]
+    sys.exit(cli.main(_args))
+
 _log = setup_logging()
 install_excepthook()   # Abstürze landen im Log statt auf einer Konsole,
                        # die beim Start per Desktop-Icon gar nicht existiert.
 
-from core.main import VRApp                       # noqa: E402
+from core.main import VRApp                      # noqa: E402
 from PySide6.QtWidgets import QApplication        # noqa: E402
 from PySide6.QtGui import QIcon                   # noqa: E402
 
@@ -62,8 +72,13 @@ if __name__ == "__main__":
 
             app = QApplication([sys.argv[0]])
             VRApp()                   # baut die komplette UI auf
-            print(f"selftest ok — yakuda-connect {APP_VERSION}")
-            sys.exit(0)
+            print(f"selftest ok — yakuda-connect {APP_VERSION}", flush=True)
+            # os._exit statt sys.exit: die Hintergrund-Erkennung der
+            # Grafikkarten (QThread) laeuft hier evtl. noch. Beim normalen
+            # Aufraeumen bricht Qt dann mit "QThread: Destroyed while thread
+            # is still running" ab (Exitcode 134) — und build_appimage.sh
+            # meldete den Test als "nicht eindeutig", obwohl alles lief.
+            os._exit(0)
         except Exception:
             _log.exception("Selbsttest fehlgeschlagen")
             print("selftest FEHLGESCHLAGEN — Details siehe Log", file=sys.stderr)

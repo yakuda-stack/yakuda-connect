@@ -1,5 +1,25 @@
 # Highlights - Yakuda Connect
 
+### 🚀 v1.3.5 — 2026-09-23
+
+#### 🇩🇪 Deutsch
+
+* **Terminal-Modus – Yakuda Connect ohne Oberfläche.** Spart RAM unter VR: `YC-wivrn-toggle` schaltet den Server an/aus, `YC-openvr`, `YC-encoder` und `YC-GPU` wählen per Nummer, `YC-status` zeigt alles auf einen Blick, `YC-help` erklärt den Rest.
+* **Autostart und Kopplung auch im Terminal.** Deine Autostart-Programme starten, sobald das Headset verbunden ist. `YC-killapps` schließt sie, `YC-autostart-reset` setzt den Start-Timer zurück, und `YC-pairing` zeigt dir die PIN zum Koppeln.
+* **Passt zu deiner Installation.** Mit AUR und dem curl-Installer sind die Befehle sofort da. Bei AppImage oder Quellcode richtet sie Einstellungen → Erweitert → „Befehle einrichten“ ein.
+* **Ein Klick ins Terminal.** „Im Terminal starten“ öffnet das Menü und schließt die Oberfläche – der WiVRn-Server läuft einfach weiter.
+* **AppImage aktualisiert sich sparsam.** Mit AppImageUpdate, AppImageLauncher, AppManager oder AM lädt ein Update nur noch die Änderungen statt der ganzen Datei.
+
+#### 🇬🇧 English
+
+* **Terminal mode – Yakuda Connect without the GUI.** Saves RAM in VR: `YC-wivrn-toggle` turns the server on/off, `YC-openvr`, `YC-encoder` and `YC-GPU` pick by number, `YC-status` shows everything at a glance, `YC-help` explains the rest.
+* **Autostart and pairing in the terminal too.** Your autostart programs start as soon as the headset connects. `YC-killapps` closes them, `YC-autostart-reset` resets the start timer, and `YC-pairing` shows you the PIN for pairing.
+* **Fits how you installed.** With AUR and the curl installer the commands are there right away. For AppImage or source, Settings → Advanced → “Set up commands” sets them up.
+* **One click to the terminal.** “Start in terminal” opens the menu and closes the GUI – the WiVRn server just keeps running.
+* **AppImage updates use less data.** With AppImageUpdate, AppImageLauncher, AppManager or AM an update only downloads the changes instead of the whole file.
+
+---
+
 ### 🚀 v1.3.4 — 2026-09-22
 
 #### 🇩🇪 Deutsch

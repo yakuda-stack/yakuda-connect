@@ -1,5 +1,23 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.3.5 — 2026-09-23
+
+#### 🇩🇪 Deutsch
+
+* **Neu: Terminal-Modus ohne Oberfläche** (kein Qt, spart RAM unter VR). Befehle `YC-help`, `YC-status`, `YC-wivrn-toggle`, `YC-openvr`, `YC-encoder`, `YC-GPU`, `YC-killapps`, `YC-autostart-reset`, `YC-pairing`; Auswahl per Nummer oder direkt (`YC-encoder vaapi`). AUR-Paket und `install.sh` legen die Befehle systemweit an, für AppImage/Quellcode gibt es Einstellungen → Erweitert → „Befehle einrichten“ (`~/.local/bin`). „Im Terminal starten“ öffnet das Menü und schließt die Oberfläche, der Server läuft weiter. Neue Dateien: `core/cli.py`, `core/cli_install.py`, `core/autostart_runner.py`, `tests/test_cli.py`.
+* **Autostart auch im Terminal-Modus.** `YC-wivrn-toggle` schaltet wie der Dashboard-Schalter den Start-Timer scharf: ein kleiner Wächter im Hintergrund (ohne Qt) wartet aufs Headset, startet die Programme einmal und beendet sich. `YC-killapps` schließt sie (inkl. eigener Kill-Befehle, Server läuft weiter), `YC-autostart-reset` setzt den Start-Timer zurück. Beim Umschalten per „Im Terminal starten“ übernimmt der Terminal-Modus laufende Programme und einen noch wartenden Timer; umgekehrt schließt die Oberfläche auch Programme, die der Terminal-Modus gestartet hat.
+* **Kopplung im Terminal:** `YC-pairing` aktiviert die Kopplung (`wivrnctl pair`) und zeigt die PIN groß an. Enter oder Strg+C beendet sie.
+* **AppImage: Delta-Updates per `.zsync`.** Die AppImage trägt jetzt Update-Informationen (`gh-releases-zsync`), und zu jedem Release gibt es eine `.zsync`-Datei. AppImageUpdate, AppImageLauncher, AppManager, AM & Co. erkennen Updates selbst und laden nur die geänderten Teile statt der ganzen Datei. `build_appimage.sh` erzeugt beides und prüft es.
+* **Behoben: AppImage-Start-Test meldete „nicht eindeutig“.** `--selftest` lief durch, beim Beenden brach Qt aber ab, weil die GPU-Erkennung im Hintergrund noch lief (Exitcode 134). Der Selbsttest beendet sich jetzt sauber.
+
+#### 🇬🇧 English
+
+* **New: terminal mode without GUI** (no Qt, saves RAM in VR). Commands `YC-help`, `YC-status`, `YC-wivrn-toggle`, `YC-openvr`, `YC-encoder`, `YC-GPU`, `YC-killapps`, `YC-autostart-reset`, `YC-pairing`; pick by number or directly (`YC-encoder vaapi`). The AUR package and `install.sh` install the commands system-wide; for AppImage/source use Settings → Advanced → “Set up commands” (`~/.local/bin`). “Start in terminal” opens the menu and closes the GUI, the server keeps running. New files: `core/cli.py`, `core/cli_install.py`, `core/autostart_runner.py`, `tests/test_cli.py`.
+* **Autostart in terminal mode too.** Like the dashboard switch, `YC-wivrn-toggle` arms the start timer: a small background watcher (no Qt) waits for the headset, starts the programs once and exits. `YC-killapps` closes them (including custom kill commands, server keeps running), `YC-autostart-reset` resets the start timer. When switching via “Start in terminal”, terminal mode takes over running programs and a still-waiting timer; in turn the GUI also closes programs that terminal mode started.
+* **Pairing in the terminal:** `YC-pairing` enables pairing (`wivrnctl pair`) and shows the PIN in large type. Enter or Ctrl+C ends it.
+* **AppImage: delta updates via `.zsync`.** The AppImage now carries update information (`gh-releases-zsync`), and every release ships a `.zsync` file. AppImageUpdate, AppImageLauncher, AppManager, AM and others detect updates on their own and download only the changed parts instead of the whole file. `build_appimage.sh` creates and verifies both.
+* **Fixed: AppImage start test said “not conclusive”.** `--selftest` passed, but Qt aborted on exit because GPU detection was still running in the background (exit code 134). The self-test now exits cleanly.
+
 ### 🚀 v1.3.4 — 2026-09-22
 
 #### 🇩🇪 Deutsch
