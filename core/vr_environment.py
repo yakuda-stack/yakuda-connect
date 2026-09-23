@@ -522,6 +522,76 @@ def wivrn_server_binary():
     return os.path.realpath(p) if p else None
 
 
+# --------------------------------------------------------------------------- #
+#  WiVRn als Flatpak (Flathub: io.github.wivrn.wivrn) — z. B. auf SteamOS
+# --------------------------------------------------------------------------- #
+# Der Flatpak legt KEIN wivrn-server in den PATH. Sein Standardbefehl ist das
+# WiVRn-Dashboard; den Server startet man mit
+#     flatpak run --command=wivrn-server io.github.wivrn.wivrn
+# Die Konfiguration liegt in der Sandbox unter
+#     ~/.var/app/io.github.wivrn.wivrn/config/wivrn/config.json
+# (so steht es in WiVRns docs/configuration.md). Netzwerk teilt der Flatpak
+# mit dem Host (--share=network), ~/.config/openxr darf er selbst schreiben.
+#
+# Eine native Installation hat IMMER Vorrang — ist beides da, bleibt alles
+# wie bisher.
+WIVRN_FLATPAK_ID = "io.github.wivrn.wivrn"
+WIVRN_FLATPAK_CONFIG_DIR = os.path.join(HOME, ".var/app", WIVRN_FLATPAK_ID, "config/wivrn")
+_FLATPAK_APP_DIRS = (
+    os.path.join(HOME, ".local/share/flatpak/app", WIVRN_FLATPAK_ID),   # --user
+    os.path.join("/var/lib/flatpak/app", WIVRN_FLATPAK_ID),              # --system
+)
+
+
+def wivrn_flatpak_installed():
+    """Ist der WiVRn-Flatpak installiert? Nur Ordner-Pruefung, kein Subprozess."""
+    return any(os.path.isdir(d) for d in _FLATPAK_APP_DIRS)
+
+
+def wivrn_uses_flatpak():
+    """True, wenn WiVRn NUR als Flatpak da ist (keine native Binary)."""
+    return wivrn_server_binary() is None and wivrn_flatpak_installed()
+
+
+def wivrn_available():
+    """Gibt es irgendeinen WiVRn-Server (nativ oder Flatpak)?"""
+    return bool(wivrn_server_binary()) or wivrn_flatpak_installed()
+
+
+def wivrn_server_argv(extra_env=None):
+    """
+    Startbefehl fuer den Server.
+
+    ``extra_env`` (z. B. die GPU-Auswahl) muss beim Flatpak ausdruecklich
+    per ``--env=`` hinein — ``flatpak run`` reicht die Host-Umgebung nicht
+    einfach durch. Nativ genuegt es, sie in die Umgebung von Popen zu legen.
+    """
+    if wivrn_uses_flatpak():
+        argv = ["flatpak", "run"]
+        for key, value in sorted((extra_env or {}).items()):
+            argv.append(f"--env={key}={value}")
+        argv += ["--command=wivrn-server", WIVRN_FLATPAK_ID]
+        return argv
+    return ["wivrn-server"]
+
+
+def wivrn_flatpak_version():
+    """Version des WiVRn-Flatpaks aus 'flatpak info' — oder ''."""
+    import subprocess
+    try:
+        res = subprocess.run(["flatpak", "info", WIVRN_FLATPAK_ID],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             text=True, timeout=5)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("wivrn_flatpak_version: %s", exc)
+        return ""
+    for line in res.stdout.splitlines():
+        key, _, value = line.strip().partition(":")
+        if key.strip().lower() in ("version", "versión"):
+            return value.strip()
+    return ""
+
+
 def capability_tool(name):
     """
     Absoluter Pfad zu 'getcap'/'setcap' — oder "", wenn sie fehlen.
@@ -576,9 +646,14 @@ def vrchat_proton_prefix():
 # --------------------------------------------------------------------------- #
 def wivrn_config_dir():
     """
-    Verzeichnis der WiVRn-config.json — immer der native Host-Pfad.
-    (WiVRn-Flatpak wird nicht mehr unterstützt: nativ = schlanker + schneller.)
+    Verzeichnis der WiVRn-config.json.
+
+    Nativ: ~/.config/wivrn. Ist WiVRn NUR als Flatpak installiert (SteamOS,
+    Mint), liest der Server aus seiner Sandbox — dann muss auch hier hinein
+    geschrieben werden, sonst wirken Encoder, Bitrate & Co. nicht.
     """
+    if wivrn_uses_flatpak():
+        return WIVRN_FLATPAK_CONFIG_DIR
     return os.path.join(HOME, ".config/wivrn")
 
 

@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QListWidget,
                                QComboBox, QLineEdit, QGroupBox, QFormLayout,
                                QTextEdit, QFrame, QGridLayout,
                                QTabWidget, QToolButton, QPlainTextEdit,
-                               QScrollArea, QSizePolicy, QApplication)
+                               QScrollArea, QSizePolicy, QApplication, QTabBar)
 from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF, QSize
 from PySide6.QtGui import QPainter, QColor
 
@@ -211,14 +211,14 @@ class Ui_MainWindow:
             }
 
             /* Eingabefelder und Dropdowns */
-            QLineEdit, QComboBox {
+            QLineEdit, QComboBox, QSpinBox {
                 background-color: #1e222a;
                 border: 1px solid #3b4252;
                 border-radius: 4px;
                 padding: 6px;
                 color: #eceff4;
             }
-            QLineEdit:focus, QComboBox:focus {
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
                 border: 1px solid #88c0d0;
             }
 
@@ -505,6 +505,8 @@ class Ui_MainWindow:
         self.txt_code.setPlaceholderText(tr("dashboard_pair_gen"))
         self.autostart_group.setTitle(tr("dashboard_autostart"))
         self.lbl_app_count.setText(tr("dashboard_app_count"))
+        self.btn_autostart_add_vr_row.setText(tr("autostart_profile_add_row"))
+        self.lbl_vr_hint.setText(tr("autostart_vr_hint"))
         self.btn_autostart_reset.setText(tr("dashboard_autostart_reset"))
         self.btn_autostart_kill.setText(tr("dashboard_autostart_kill"))
         self.btn_autostart_kill.setToolTip(tr("autostart_kill_tip"))
@@ -878,14 +880,8 @@ class Ui_MainWindow:
         self.lbl_wivrn_ver = QLabel("<b>WiVRn Version:</b> " + tr("tools_checking"))
         self.lbl_wivrn_ver.setStyleSheet("color: #81a1c1;")
 
-        self.combo_language = QComboBox()
-        self.combo_language.addItems(["🇬🇧 English", "🇩🇪 Deutsch"])
-        self.combo_language.setFixedWidth(120)
-        self.combo_language.setStyleSheet("""
-            QComboBox { background-color: #3b4252; color: #d8dee9; border: 1px solid #4c566a;
-                        border-radius: 4px; padding: 2px 6px; font-size: 11px; }
-            QComboBox::drop-down { border: none; }
-        """)
+        # Die Sprachauswahl ist in die Einstellungen (Allgemein) umgezogen —
+        # dort sucht man sie, und die Liste waechst mit jeder locales/*.json.
 
         # Kleiner Update-Pfeil direkt neben der App-Version.
         # Standardmäßig unsichtbar; main.py blendet ihn nur ein, wenn auf GitHub
@@ -908,8 +904,6 @@ class Ui_MainWindow:
         version_layout.addWidget(self.lbl_app_ver)
         version_layout.addWidget(self.btn_app_update)
         version_layout.addStretch()
-        version_layout.addWidget(self.combo_language)
-        version_layout.addSpacing(12)
         version_layout.addWidget(self.lbl_wivrn_ver)
         layout.addLayout(version_layout)
 
@@ -1086,8 +1080,24 @@ class Ui_MainWindow:
         self.num_apps = QLineEdit("1")
         self.num_apps.setFixedWidth(50)
         self.num_apps.setAlignment(Qt.AlignCenter)
+        # Zaehler bleibt als Speicherwert (autostart_count), bedient wird
+        # aber per „+ Programm“ / ✕ wie in den Profil-Tabs.
+        self.lbl_app_count.setVisible(False)
+        self.num_apps.setVisible(False)
         count_row.addWidget(self.lbl_app_count)
         count_row.addWidget(self.num_apps)
+        # „+ Programm“ oben links ueber den Zeilen — dort war sonst nur Leere.
+        self.btn_autostart_add_vr_row = QPushButton(tr("autostart_profile_add_row"))
+        self.btn_autostart_add_vr_row.setCursor(Qt.PointingHandCursor)
+        self.btn_autostart_add_vr_row.setStyleSheet(
+            "QPushButton { background-color:#434c5e; color:#eceff4; border:none;"
+            " font-weight:bold; border-radius:4px; padding:4px 12px; }"
+            "QPushButton:hover { background-color:#5e81ac; }")
+        self.lbl_vr_hint = QLabel(tr("autostart_vr_hint"))
+        self.lbl_vr_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
+        count_row.addWidget(self.btn_autostart_add_vr_row)
+        count_row.addSpacing(10)
+        count_row.addWidget(self.lbl_vr_hint)
         count_row.addStretch()
 
         # Timer neu scharfschalten (kompakt, rechts neben dem Zähler).
@@ -1107,12 +1117,21 @@ class Ui_MainWindow:
 
         count_row.addWidget(self.btn_autostart_reset)
         count_row.addWidget(self.btn_autostart_kill)
-        autostart_layout.addLayout(count_row)
+
+        # Das Dashboard zeigt nur den festen VR-Autostart (startet beim
+        # Headset-Verbinden). Die Autostart-PROFILE (Bedingung „Spiel laeuft“)
+        # liegen im Streaming-Tab — siehe core/tabs/autostart_profiles_mixin.py.
+        vr_page = QWidget()
+        vr_layout = QVBoxLayout(vr_page)
+        vr_layout.setContentsMargins(0, 0, 0, 0)
+        vr_layout.addLayout(count_row)
 
         self.autostart_container = QWidget()
         self.autostart_container_layout = QVBoxLayout(self.autostart_container)
         self.autostart_container_layout.setContentsMargins(0, 0, 0, 0)
-        autostart_layout.addWidget(self.autostart_container)
+        vr_layout.addWidget(self.autostart_container)
+
+        autostart_layout.addWidget(vr_page)
         layout.addWidget(self.autostart_group)
 
         # --- Gekoppelte Headsets ------------------------------------------
@@ -1555,6 +1574,23 @@ class Ui_MainWindow:
         #  SEITE 1 — General & Updates
         # ==============================================================
         page_gen, gen_v = self._settings_new_page()
+
+        # -- Sprache --
+        # Ganz oben: wer die Sprache nicht versteht, soll sie sofort finden.
+        # Die Liste kommt aus locales/*.json (Anzeigename = "language_name"),
+        # eine neue Sprache braucht also keine Code-Aenderung.
+        from translations import TRANSLATIONS
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("language_group", lambda: tr("language_desc"))
+        self.combo_language = QComboBox()
+        self.combo_language.setMinimumWidth(200)
+        langs = sorted(TRANSLATIONS.items(),
+                       key=lambda kv: (kv[0] != "en", kv[1].get("language_name", kv[0]).lower()))
+        for code, texts in langs:
+            self.combo_language.addItem(texts.get("language_name", code), code)
+        head.addWidget(self.combo_language)
+        cv.addLayout(head)
+        gen_v.addWidget(card)
 
         # -- Community & Updates --
         card, cv = self._settings_card()

@@ -11,6 +11,9 @@ All interface texts live in `locales/`. You do **not** need to know Python.
 1. Copy `locales/en.json` to `locales/<code>.json`
    (`fr.json` for French, `es.json` for Spanish, `nl.json` for Dutch, …)
 2. Translate **only the values on the right**. Keep the keys on the left exactly as they are.
+   Set `"language_name"` to the name of your language as people would look for it
+   (e.g. `"🇫🇷 Français"`) — that's what appears in Settings → General → Language.
+   The language shows up there automatically, no code change needed.
 3. Keep placeholders like `{name}`, `{path}`, `{version}` — they are replaced at runtime.
 4. Open a pull request.
 
@@ -52,6 +55,9 @@ nötig.
 1. `locales/en.json` nach `locales/<code>.json` kopieren
    (`fr.json` für Französisch, `es.json` für Spanisch, `nl.json` für Niederländisch, …)
 2. **Nur die Werte rechts** übersetzen. Die Schlüssel links bleiben unverändert.
+   `"language_name"` bekommt den Namen deiner Sprache, so wie man ihn sucht
+   (z. B. `"🇫🇷 Français"`) — so steht sie in Einstellungen → Allgemein → Sprache.
+   Sie erscheint dort automatisch, ohne Code-Änderung.
 3. Platzhalter wie `{name}`, `{path}`, `{version}` müssen erhalten bleiben —
    sie werden zur Laufzeit ersetzt.
 4. Pull Request aufmachen.

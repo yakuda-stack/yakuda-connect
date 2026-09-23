@@ -1,5 +1,29 @@
 # Highlights - Yakuda Connect
 
+### 🚀 v1.3.6 — 2026-09-23
+
+#### 🇩🇪 Deutsch
+
+* **Autostart-Profile.** Im Streaming-Tab legst du Profile an: „Wenn VRChat läuft und die Brille auf ist, starte VRCX und meine OSC-Tools“ – und wenn das Spiel zu ist, gehen sie wieder zu. Das Spiel wählst du einfach aus deiner Games-Liste.
+* **Schonend für dein Spiel.** Die Programme starten auf Wunsch nacheinander statt alle auf einmal, und die Überwachung braucht praktisch keine Leistung. Ein Schalter schaltet die Automatik komplett an oder aus.
+* **Große Knöpfe fürs Headset.** „▶ Programme starten“ und „■ Programme stoppen“ triffst du auch mit dem Controller in WayVR ganz leicht. Ein grüner Punkt zeigt, welches Profil gerade läuft.
+* **Aufgeräumtes Dashboard.** Der normale Autostart bleibt auf dem Dashboard – Programme fügst du jetzt mit „+ Programm“ hinzu und entfernst sie mit ✕.
+* **Auch ohne Fenster.** Die Profile funktionieren im Terminal-Modus genauso.
+* **Sprache in den Einstellungen.** Die Sprachauswahl findest du jetzt unter Einstellungen → Allgemein – und neue Sprachen tauchen dort automatisch auf.
+* **Steam Deck / Flatpak (Test).** Yakuda Connect erkennt SteamOS und WiVRn als Flatpak, installiert ohne Passwort und startet den Server richtig. Noch nicht auf einem echten Deck getestet – Rückmeldung willkommen!
+
+#### 🇬🇧 English
+
+* **Autostart profiles.** In the Streaming tab you create profiles: “When VRChat runs and my headset is on, start VRCX and my OSC tools” – and when the game closes, they close too. You simply pick the game from your Games list.
+* **Easy on your game.** Programs can start one after another instead of all at once, and watching costs practically nothing. One switch turns the automation fully on or off.
+* **Big buttons for the headset.** “▶ Start programs” and “■ Stop programs” are easy to hit with the controller in WayVR. A green dot shows which profile is running.
+* **Tidier dashboard.** The normal autostart stays on the dashboard – add programs with “+ Program” and remove them with ✕.
+* **Works without the window too.** Profiles work the same in terminal mode.
+* **Language in Settings.** The language picker now lives in Settings → General – and new languages show up there automatically.
+* **Steam Deck / Flatpak (test).** Yakuda Connect detects SteamOS and WiVRn as a Flatpak, installs without a password and starts the server correctly. Not yet tested on a real Deck – feedback welcome!
+
+---
+
 ### 🚀 v1.3.5 — 2026-09-23
 
 #### 🇩🇪 Deutsch

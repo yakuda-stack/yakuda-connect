@@ -1,5 +1,35 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.3.6 — 2026-09-23
+
+#### 🇩🇪 Deutsch
+
+* **Neu: Autostart-Profile** (Streaming-Tab, unten — Kompatibilität, Encoder und Grafikkarte bleiben oben). „＋ Neues Profil“ legt ein Profil an: *wenn Spiel X läuft UND das Headset verbunden ist → starte diese Programme*, schließt sie wieder, wenn das Spiel endet oder die Brille ab ist (entprellt, ~6 s). Auslöser per „Laufende…“ (laufende Programme) oder „🎮 Games“ (alle Spiele aus dem Games-Tab; Steam-Spiele werden über `AppId=` in Steams `reaper`-Kommandozeile erkannt, egal wie die .exe heißt). Pro Profil: Verzögerung, **Abstand** zwischen den Programmen (gestaffelter Start, schont die Leistung beim Laden), „Mit beenden“, „⏸ Timer stoppen / ▶ Timer starten“. Große Knöpfe **▶ Programme starten / ■ Programme stoppen** – gut mit dem Laserpointer im Headset (WayVR) zu treffen. Grüner Punkt am Tab = Programme laufen.
+* **Hauptschalter „Mit App-Profilen starten“** (Standard: aus). Aus = kein Timer, kein Hintergrund-Wächter; die Knöpfe gehen trotzdem.
+* **Performance:** ein Timer für alle Profile (3 s), läuft nur, wenn der Hauptschalter an ist und ein Profil Auslöser + Programm hat. Prozesse werden direkt aus `/proc` gelesen (kein `pgrep`/`ps`), das Headset aus `/proc/net/tcp` (kein `ss`/`pactl`) – und nur, wenn der Auslöser läuft.
+* **Profile im Terminal-Modus:** `YC-wivrn-toggle` startet zusätzlich den Wächter `_profile-watch` (dieselben Regeln, `core/autostart_profiles.py`). „Im Terminal starten“ übergibt laufende Programme, die Oberfläche holt sie beim nächsten Start zurück. `YC-killapps` schließt auch Profil-Programme, `YC-status` zeigt eine Zeile „Profile“.
+* **Dashboard-Autostart aufgeräumt:** statt „Anzahl zu startender Programme“ jetzt **+ Programm** oben links und **✕** je Zeile (entfernt genau diese Zeile). Gespeichert wird wie bisher (`autostart_count`/`autostart_apps`). Knopf „Browse...“ wird nicht mehr abgeschnitten.
+* **Streaming-Tab scrollt** (war ohne Scrollbereich).
+* **WiVRn als Flatpak / SteamOS (experimentell, nicht auf echter Hardware getestet):** Ist WiVRn nur als Flatpak installiert, startet der Server per `flatpak run --command=wivrn-server io.github.wivrn.wivrn` (GPU-Wahl per `--env`), Streaming-Einstellungen landen in `~/.var/app/io.github.wivrn.wivrn/config/wivrn/config.json`, die Version kommt aus `flatpak info`. SteamOS/ChimeraOS werden erkannt: Installations-Methode „Flatpak“ statt AUR (`flatpak install --user`, kein Passwort, kein Entsperren), Update per `flatpak update`. Cargo-Builds (obah, XR HOTAS) brechen dort mit klarer Meldung ab statt `sudo pacman` zu versuchen. Native Installationen haben immer Vorrang.
+* **Sprachauswahl in Einstellungen → Allgemein** (ganz oben, statt klein auf dem Dashboard). Die Liste kommt aus `locales/*.json` (neuer Schlüssel `language_name`) — eine neue Sprache erscheint automatisch, ohne Code-Änderung (`locales/CONTRIBUTING.md` erklärt es).
+* README: „Key Features“ als verständliche Tabelle ohne Fachwissen (inkl. Tastenbelegung für OpenVR/OpenXR, Deadzone, Sprache) + kleines Glossar, Details eingeklappt; SteamOS in „Tested systems“.
+* **Tests schreiben nicht mehr ins echte Home:** `tests/conftest.py` setzt für den ganzen Testlauf ein Wegwerf-`HOME` (XDG-Variablen entfernt). Vorher landeten Dateien mehrerer Testmodule in `~/.config/yakuda-connect`, und `test_gpu_select` schlug zufällig fehl, sobald dort eine Grafikkarte gespeichert war.
+* Neue Dateien: `core/autostart_profiles.py`, `core/process_watch.py`, `core/tabs/autostart_profiles_mixin.py`, `tests/test_autostart_profiles.py`, `tests/test_steamos_flatpak.py`, `tests/test_language_setting.py`.
+
+#### 🇬🇧 English
+
+* **New: autostart profiles** (Streaming tab, at the bottom — compatibility, encoder and GPU stay on top). “＋ New profile” creates a profile: *when game X runs AND the headset is connected → start these programs*, and close them again when the game ends or the headset comes off (debounced, ~6 s). Pick the trigger via “Running…” (running programs) or “🎮 Games” (every game from the Games tab; Steam games are matched by `AppId=` in Steam's `reaper` command line, whatever the .exe is called). Per profile: delay, **gap** between programs (staggered start, easier on performance while loading), “close together”, “⏸ Stop timer / ▶ Start timer”. Big **▶ Start programs / ■ Stop programs** buttons – easy to hit with the laser pointer in the headset (WayVR). Green dot on a tab = its programs are running.
+* **Master switch “Start with app profiles”** (default: off). Off = no timer, no background watcher; the buttons still work.
+* **Performance:** one timer for all profiles (3 s), only running when the master switch is on and a profile has a trigger + program. Processes are read straight from `/proc` (no `pgrep`/`ps`), the headset from `/proc/net/tcp` (no `ss`/`pactl`) – and only while the trigger runs.
+* **Profiles in terminal mode:** `YC-wivrn-toggle` also starts the `_profile-watch` watcher (same rules, `core/autostart_profiles.py`). “Start in terminal” hands running programs over, the GUI takes them back on its next start. `YC-killapps` also closes profile programs, `YC-status` shows a “Profiles” line.
+* **Dashboard autostart tidied up:** instead of “number of programs” there is now **+ Program** (top left) and **✕** per row (removes exactly that row). Saved as before (`autostart_count`/`autostart_apps`). The “Browse...” button is no longer cut off.
+* **Streaming tab scrolls** (it had no scroll area).
+* **WiVRn as Flatpak / SteamOS (experimental, not tested on real hardware):** if WiVRn is only installed as a Flatpak, the server starts via `flatpak run --command=wivrn-server io.github.wivrn.wivrn` (GPU choice via `--env`), streaming settings go to `~/.var/app/io.github.wivrn.wivrn/config/wivrn/config.json`, the version comes from `flatpak info`. SteamOS/ChimeraOS are detected: install method “Flatpak” instead of AUR (`flatpak install --user`, no password, no unlocking), updates via `flatpak update`. Cargo builds (obah, XR HOTAS) stop there with a clear message instead of trying `sudo pacman`. Native installs always take precedence.
+* **Language picker in Settings → General** (at the top, instead of small on the dashboard). The list comes from `locales/*.json` (new key `language_name`) — a new language shows up automatically, no code change (`locales/CONTRIBUTING.md` explains how).
+* README: “Key Features” as an easy table without jargon (incl. bindings for OpenVR/OpenXR, deadzone, language) + a small glossary, details collapsed; SteamOS in “Tested systems”.
+* **Tests no longer write to the real home:** `tests/conftest.py` sets a throwaway `HOME` for the whole test run (XDG variables removed). Previously several test modules wrote into `~/.config/yakuda-connect`, and `test_gpu_select` failed at random whenever a graphics card was saved there.
+* New files: `core/autostart_profiles.py`, `core/process_watch.py`, `core/tabs/autostart_profiles_mixin.py`, `tests/test_autostart_profiles.py`, `tests/test_steamos_flatpak.py`.
+
 ### 🚀 v1.3.5 — 2026-09-23
 
 #### 🇩🇪 Deutsch

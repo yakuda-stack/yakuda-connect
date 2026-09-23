@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ShNKvvZu74)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.2.9-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.3.6-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -16,6 +16,7 @@
 |---|---|---|
 | **Arch-based** | ✅ Tested — primary development system | Full feature set: AUR installation, all components |
 | **Fedora-based** | ✅ Tested | Components come from the Fedora repos; xrizer from the COPR `@xr-sig/xrizer` or the GitHub release. The WiVRn dashboard is deliberately not offered here — yakuda-connect already provides the controls |
+| **SteamOS** (Steam Deck, Desktop Mode) | 🧪 Experimental — not yet tested on real hardware | Detected automatically: WiVRn is installed as a Flatpak for your user (no password, no read-only unlock), started via `flatpak run`, settings go into the Flatpak's own config. obah / XR HOTAS can't be built there (read-only system, no compiler) — the build stops with a clear message. |
 | Debian / Ubuntu / Linux Mint | ✅ Tested (Mint 22.3) | WiVRn from the Linux VR Adventures PPA (`ppa:lvra/wivrn`) where it builds, otherwise the Flathub Flatpak; xrizer straight from its GitHub release. Note: the PPA has no build for Ubuntu 24.04 `noble`, the base of Mint 22.x |
 
 ### 📸 Interface Preview
@@ -52,10 +53,45 @@ All screenshots: [assets/README.md](assets/README.md)
 
 ## 🚀 Key Features
 
+**In one sentence:** yakuda-connect lets you play PC VR games on Linux with a standalone headset (Meta Quest, Pico, …) over Wi-Fi or USB — and takes care of all the setup that would normally need the terminal.
+
+### What it does for you
+
+| | Feature | What that means in practice |
+|---|---|---|
+| 🥽 | **Start VR with one click** | One switch turns on the streaming server (WiVRn). Put on your headset, open the WiVRn app, connect — and start your game. |
+| 🛠️ | **Sets everything up** | Installs everything VR needs on your system, opens the network port, and can put the WiVRn app onto your headset via USB cable. |
+| 🎮 | **All your VR games in one place** | Finds your installed Steam VR games and shows them with cover art. Picks a working Proton version (the tool that runs Windows games on Linux) and good start options — then just press **▶ Play**. |
+| 🕹️ | **Change controller buttons (bindings)** | Decide which button does what in a game — move functions to other buttons, or make tilting the stick count as a button press. Works for **both** kinds of games: **OpenVR** (older, made for SteamVR) and **OpenXR** (newer, e.g. Unreal games under Proton) — all in one picture of your controllers, no config files. |
+| 🎯 | **Stop stick drift (deadzone)** | Your character walks or turns on its own? Turn up the deadzone — a small area around the stick's center that counts as “not touched”. Adjustable per stick (left, right, both) in the Controls tab, for OpenVR and OpenXR games alike. |
+| 🚀 | **Start your helper apps automatically** | Apps like VRCX, WayVR or OSC tools start by themselves when your headset connects — or, with **autostart profiles** in the Streaming tab, when a specific game starts (e.g. *“when VRChat runs and the headset is on, also start VRCX”*). One after another if you like, so your game isn't slowed down while loading — and they close again afterwards. Big **Start / Stop** buttons you can easily hit from inside VR. Works with the window closed too (terminal mode). |
+| 📡 | **Tune the picture** | Change stream quality, video encoder and which graphics card is used, when the image stutters or looks blurry. |
+| 🧰 | **Tools hub** | Install, update and start popular Linux VR tools from one list. |
+| 💾 | **Backup & restore** | Save your working VR setup and bring it back if something breaks. |
+| 🎨 | **Your look** | 8 themes, own colours, background image. |
+| 🌐 | **Your language** | English and German, switchable in **Settings → General**. More languages are just one file — see [locales/CONTRIBUTING.md](locales/CONTRIBUTING.md). |
+| 🪶 | **Light on your PC** | Starts in under a second and uses almost no CPU while you play. Want even less? Terminal mode works without any window at all. |
+
+<details>
+<summary><b>📖 Small glossary — the words you will see</b></summary>
+
+* **WiVRn** — the program that streams the picture from your PC to your headset.
+* **OpenXR / OpenVR** — two “languages” VR games use to talk to your headset. Newer games speak OpenXR, older ones (made for SteamVR) speak OpenVR.
+* **xrizer / OpenComposite** — translators that let OpenVR games run without SteamVR.
+* **Proton** — lets Windows games run on Linux (part of Steam).
+* **OSC** — how apps talk to VRChat (e.g. avatar effects, leash tools).
+* **Autostart** — apps that start on their own. On the Dashboard: when your headset connects. As a **profile** in the Streaming tab: when a certain game runs *and* your headset is connected.
+
+</details>
+
+<details>
+<summary><b>🔧 All features in detail (for advanced users)</b></summary>
+
 * **Centralized Dashboard:** Start and stop your WiVRn server instantly with a clean, easy-to-use interface.
 * **VR Games Library:** The Games tab auto-detects every installed Steam VR game and shows it as a cover tile — with curated Proton profiles and tested launch options for games like VRChat, auto-recommendations for everything else, and one-click **Use** (set Proton version) and **▶ Play** (launch via Steam) buttons.
 * **ProtonPlus Integration:** Install the recommended Proton builds (Proton-GE, GE-RTSP, Proton-CachyOS) straight from a game's panel via the ProtonPlus CLI.
 * **Advanced Autostart Chain:** Launch multiple VR companion tools (such as WayVR, VRCX, OpenComposite, SlimeVR, or OSC tools) automatically in a custom sequence.
+* **Autostart profiles (Streaming tab):** The Dashboard keeps only the standard autostart (starts on headset connect; **＋ Program** / **✕** per row). Profiles live at the bottom of the Streaming tab (compatibility, encoder and GPU stay on top): master switch **Start with app profiles** (off by default), **＋ New profile** adds named profiles with a condition — *trigger runs **and** headset connected*, e.g. *when VRChat runs, start VRCX + OSC tools*. **Gap** starts the programs one after another (e.g. every 3 s) instead of all at once. Big **▶ Start programs / ■ Stop programs** buttons, easy to hit in VR (WayVR). A green dot on a tab shows that its programs are running. Pick the trigger from running programs or straight from the Games tab (**🎮 Games**, Steam games matched by AppId). Optional start delay (let the game load first) and auto-close when the trigger exits. **⏸ Stop / ▶ Start timer** per profile, **▶ Start programs** launches them by hand. Checked every 3 s via `/proc` (no extra processes; the headset check reads `/proc/net/tcp` and only runs while the trigger is up). With only the VR tab, no extra timer runs at all. In terminal mode a small background watcher (`_profile-watch`) applies the same rules while the server runs; **Start in terminal** hands running programs over, and the GUI takes them back when it starts again.
 * **Controls Tab (OpenVR & OpenXR):** Switch on stick control via [XR HOTAS](https://github.com/galister/xr-hotas) or binding editing via [obah](https://github.com/galister/obah) — if a tool is missing, the app asks how to install it. Pick game, controller and bindings to load from dropdowns (preset: VRChat · Oculus/Meta Touch · xrizer), then browse every action set as a tab — both controllers drawn side by side with a line from each binding to its button, SteamVR-style. Click a button to edit its bindings (everything obah can do: add/remove bindings, mode, actions, parameters), edit poses, haptics, skeleton and chords (button combinations) in their own sections, and save as xrizer, VapoR or OpenComposite binding. Drag cards into any order — the card below moves out of the way and the gap closes — move each controller drawing on its own, swap the controller images for your own (`assets/controls`), collapse cards down to their names with **Tidy view** (or one at a time by right-clicking), and keep whole arrangements as named profiles. Unsaved changes are never lost silently: switching game or closing the app asks first.
 * **OpenXR games (xrBinder):** Games that use OpenXR directly (no SteamVR bindings, e.g. Unreal games under Proton) appear in the same controller editor as OpenVR games (“Controls via obah & xrBinder”). One switch on the xrBinder card builds and enables [xrBinder](https://gitlab.com/mittorn/xrBinder) by mittorn; start the game once, then click a button and assign functions — reset per button or all at once, applied live where possible.
   * **One view for OpenVR and OpenXR:** obah (SteamVR bindings) and xrBinder (OpenXR) are separate CLI/TUI tools that don't know each other — Yakuda Connect merges them into one view; you never see which one is working.
@@ -73,9 +109,10 @@ All screenshots: [assets/README.md](assets/README.md)
 * **Backup & Restore:** Instantly save or recover your entire VR environment configuration.
 * **Customizable Interface:** Eight built-in themes plus per-role colour pickers, an optional background image and adjustable card opacity — under Settings → **Design**.
 * **Light on resources:** starts in well under a second, builds the Tools tab only when you open it, no app-wide event filter, no UI freeze while checking packages and next to no CPU at idle — stays out of the way while you're in VR.
-* **Terminal mode (no GUI, no Qt):** saves RAM in VR. Commands: `YC-help`, `YC-status`, `YC-wivrn-toggle` (server on/off), `YC-openvr`, `YC-encoder`, `YC-GPU`, `YC-killapps` (close autostart programs), `YC-autostart-reset` (reset start timer), `YC-pairing` (shows the PIN) — pick by number, or directly (`YC-encoder vaapi`, `YC-GPU 1`). Included with AUR and the curl installer; for AppImage/source use Settings → Advanced → **Set up commands**. **Start in terminal** opens the menu and closes the GUI (the server keeps running). Autostart programs work here too: they start once the headset connects.
+* **Terminal mode (no GUI, no Qt):** saves RAM in VR. Commands: `YC-help`, `YC-status`, `YC-wivrn-toggle` (server on/off), `YC-openvr`, `YC-encoder`, `YC-GPU`, `YC-killapps` (close autostart programs), `YC-autostart-reset` (reset start timer), `YC-pairing` (shows the PIN), autostart profiles included (`YC-status` shows them) — pick by number, or directly (`YC-encoder vaapi`, `YC-GPU 1`). Included with AUR and the curl installer; for AppImage/source use Settings → Advanced → **Set up commands**. **Start in terminal** opens the menu and closes the GUI (the server keeps running). Autostart programs work here too: they start once the headset connects.
 * **Desktop Compatibility:** Runs smoothly across various desktop environments including KDE Plasma, GNOME, and Hyprland.
 
+</details>
 ---
 
 ## 📦 Installation & Setup

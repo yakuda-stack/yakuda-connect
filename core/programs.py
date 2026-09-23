@@ -273,6 +273,9 @@ def component_sources(method, name):
         # der bessere Weg (volle Steuerung, Lighthouse-Tracker). Und wer es
         # ganz von Hand will, bekommt ueber SOURCE_GUIDE die Anleitung.
         return [SOURCE_FLATPAK, SOURCE_PPA, SOURCE_GUIDE]
+    if method == "flatpak":
+        # SteamOS: nur der Flatpak (xrizer/OpenComposite stecken darin).
+        return [SOURCE_FLATPAK]
     if method in ("yay", "paru"):
         # xrizer gibt es auch auf Arch als Release-ZIP — praktisch, wenn der
         # AUR-Build gerade klemmt.

@@ -251,6 +251,7 @@ _TEXTS = {
         "rustup":   "Installiere aktuelles Rust ueber rustup (nur fuer deinen Benutzer, kein sudo)",
         "too_old":  "Vorhandenes Rust ist zu alt",
         "no_pm":    "Unbekannte Distribution — bitte gcc von Hand installieren und erneut versuchen.",
+        "steamos":  "SteamOS: Das System ist schreibgeschuetzt und hat keinen C-Compiler bzw. keine Entwicklerpakete. Baue das Tool in einer Distrobox (z. B. Arch) oder nimm eine fertige AppImage-Version, falls es eine gibt.",
         "no_curl":  "Weder curl noch wget gefunden — bitte eins davon installieren.",
         "err_cc":   "Kein C-Compiler verfuegbar.",
         "err_rust": "Rust/Cargo konnte nicht eingerichtet werden.",
@@ -275,6 +276,7 @@ _TEXTS = {
         "rustup":   "Installing current Rust via rustup (for your user only, no sudo)",
         "too_old":  "Installed Rust is too old",
         "no_pm":    "Unknown distribution — please install gcc manually and try again.",
+        "steamos":  "SteamOS: the system is read-only and has no C compiler or development packages. Build the tool inside a Distrobox (e.g. Arch) or use a ready-made AppImage if there is one.",
         "no_curl":  "Neither curl nor wget found — please install one of them.",
         "err_cc":   "No C compiler available.",
         "err_rust": "Could not set up Rust/Cargo.",
@@ -337,6 +339,7 @@ if [ ${{#MISSING[@]}} -eq 0 ]; then
     ok {q(t["found"])}
 else
     echo {msg("missing")}: "${{MISSING[*]}}"
+    is_steamos && fail {msg("steamos")}
     if   is_arch;   then sudo pacman -S --needed --noconfirm "${{MISSING[@]}}"
     elif is_fedora; then sudo dnf install -y "${{MISSING[@]}}"
     elif is_debian; then
@@ -398,6 +401,9 @@ if [ -r /etc/os-release ]; then
     . /etc/os-release
     OS_IDS="$ID $ID_LIKE"
 fi
+# SteamOS (und andere schreibgeschuetzte Arch-Abkoemmlinge): pacman ist da,
+# darf aber nichts installieren. Muss VOR is_arch geprueft werden.
+is_steamos() {{ [[ " $OS_IDS " == *" steamos "* || " $OS_IDS " == *" chimeraos "* ]]; }}
 is_arch()   {{ [[ "$OS_IDS" == *arch* ]] || command -v pacman >/dev/null; }}
 is_fedora() {{ [[ "$OS_IDS" == *fedora* || "$OS_IDS" == *rhel* ]] || command -v dnf >/dev/null; }}
 is_debian() {{ [[ "$OS_IDS" == *debian* || "$OS_IDS" == *ubuntu* ]] || command -v apt-get >/dev/null; }}
@@ -435,7 +441,8 @@ if command -v cc >/dev/null; then
     ok "cc {t['found']}"
 else
     echo {msg("missing")}
-    if   is_arch;   then sudo pacman -S --needed --noconfirm gcc
+    if   is_steamos; then fail {msg("steamos")}
+    elif is_arch;   then sudo pacman -S --needed --noconfirm gcc
     elif is_fedora; then sudo dnf install -y gcc
     elif is_debian; then sudo apt-get update; sudo apt-get install -y build-essential
     elif is_suse;   then sudo zypper install -y gcc
@@ -451,7 +458,7 @@ step {step("step_rust")}
 if ! rust_ready; then
     if command -v cargo >/dev/null; then
         echo {msg("too_old")}: "$(rustc --version 2>/dev/null)"
-    elif is_arch || is_fedora; then
+    elif ! is_steamos && {{ is_arch || is_fedora; }}; then
         # Arch und Fedora liefern aktuelles Rust aus den eigenen Repos.
         # Ubuntu/Debian sind zu alt -> dort direkt rustup (ohne sudo).
         echo {msg("missing")}

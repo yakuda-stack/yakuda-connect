@@ -137,6 +137,9 @@ class UpdateWorker(QThread):
             # Update-Knopf das Software-Center. Dies ist der Rueckfall, wenn
             # keines gefunden wird.
             "dnf":  f"sudo dnf upgrade --refresh {dnf_pkgs}",
+            # SteamOS: nur den WiVRn-Flatpak aktualisieren (Benutzer ODER
+            # System — flatpak findet ihn selbst).
+            "flatpak": "flatpak update -y io.github.wivrn.wivrn",
         }
         update_cmd = cmds.get(self.method, "yay -Syu")
         self.status_signal.emit(f"Update läuft ({self.method}) ...")
@@ -163,9 +166,13 @@ class InstallWorker(QThread):
     status_signal = Signal(str)
     finished_signal = Signal(bool)
 
-    def __init__(self, packages, helper="yay", copr_map=None, ppa=""):
+    def __init__(self, packages, helper="yay", copr_map=None, ppa="", flatpak_user=False):
         super().__init__()
         self.packages = packages
+        # Flatpak nur fuer den eigenen Benutzer (--user). Auf SteamOS noetig:
+        # eine System-Installation fragt per polkit nach einem Passwort, und
+        # der Benutzer 'deck' hat ab Werk keins.
+        self.flatpak_user = bool(flatpak_user)
         # 'flatpak' ist hier nur noch für den TOOLS-Tab erlaubt (ProtonPlus etc.),
         # die WiVRn-Runtime im Installations-Tab läuft ausschließlich nativ.
         self.helper = helper if helper in ("yay", "paru", "dnf", "apt", "flatpak") else "yay"
@@ -192,10 +199,11 @@ class InstallWorker(QThread):
             # remote-add zuerst: auf Mint ist Flathub eingerichtet, auf einem
             # nackten Debian nicht. '--if-not-exists' aendert nichts, wenn es
             # das Remote schon gibt.
+            scope = "--user " if self.flatpak_user else ""
             return (f"echo '=== Installiere {pkg} (Flatpak) ==='; "
-                    f"flatpak remote-add --if-not-exists flathub "
+                    f"flatpak remote-add {scope}--if-not-exists flathub "
                     f"https://flathub.org/repo/flathub.flatpakrepo; "
-                    f"flatpak install -y flathub {pkg}; " + tail)
+                    f"flatpak install {scope}-y flathub {pkg}; " + tail)
 
         if self.helper == "apt":
             ppa_cmd = ""

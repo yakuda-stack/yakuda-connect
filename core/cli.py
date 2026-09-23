@@ -155,10 +155,13 @@ def _start_server():
     Terminal. Schliesst man das Fenster, laeuft VR weiter (sonst wuerde das
     SIGHUP beim Schliessen den Server mitreissen).
     """
-    if not venv.wivrn_server_binary():
+    if not venv.wivrn_available():
         print(red(tr("cli_no_server_binary")))
         return False
-    env = gpu_select.apply_to(os.environ, _settings().get("gpu_device", ""))
+    gpu_id = _settings().get("gpu_device", "")
+    env = gpu_select.apply_to(os.environ, gpu_id)
+    # Nativ "wivrn-server", Nur-Flatpak (SteamOS) "flatpak run --command=..."
+    argv = venv.wivrn_server_argv(gpu_select.env_for_id(gpu_id))
     try:
         os.makedirs(os.path.dirname(SERVER_LOG), exist_ok=True)
         out = open(SERVER_LOG, "w")
@@ -166,7 +169,7 @@ def _start_server():
         log.warning("Server-Log nicht anlegbar (%s) — starte ohne Log.", exc)
         out = subprocess.DEVNULL
     try:
-        proc = subprocess.Popen(["wivrn-server"], stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=subprocess.STDOUT,
                                 env=env, start_new_session=True)
     except OSError as exc:
@@ -186,7 +189,25 @@ def _start_server():
     print(green("● " + tr("cli_server_started")))
     # Wie die Oberflaeche: Autostart-Programme erst, wenn das Headset da ist.
     _arm_autostart(quiet_if_none=True)
+    _arm_profiles()
     return True
+
+
+def _watch_env():
+    env = dict(os.environ)
+    if cli_install.install_kind() == "appimage":
+        for key in ("PYTHONPATH", "PYTHONHOME", "LD_LIBRARY_PATH"):
+            env.pop(key, None)
+    return env
+
+
+def _arm_profiles():
+    """Profil-Waechter (Tabs neben „VR“) starten — laeuft mit dem Server."""
+    result = autostart_runner.arm_profiles(_settings(), cli_install.cli_argv("_profile-watch"),
+                                           _watch_env())
+    if result == "armed":
+        print(tr("cli_profiles_armed"))
+    return result
 
 
 def _arm_autostart(quiet_if_none=False):
@@ -277,6 +298,18 @@ def cmd_status(_arg=None):
     else:
         auto = tr("cli_autostart_idle")
     print(f"{bold('Autostart'.ljust(14))} {auto}")
+
+    import autostart_profiles as engine
+    profiles = engine.load_profiles(data)
+    if profiles:
+        papps = autostart_runner.running_profile_apps(state)
+        if papps:
+            prof = green(tr("cli_autostart_running").format(count=len(papps)))
+        elif autostart_runner.profile_watcher_running(state):
+            prof = yellow(tr("cli_profiles_watching").format(count=len(profiles)))
+        else:
+            prof = tr("cli_profiles_idle")
+        print(f"{bold(tr('cli_profiles_label').ljust(14))} {prof}")
     return 0
 
 
@@ -424,7 +457,8 @@ def cmd_autostart_reset(_arg=None):
     if autostart_runner.running_apps():
         autostart_runner.kill_apps(_settings())
     result = _arm_autostart()
-    return 0 if result == "armed" else 1
+    profiles = _arm_profiles()
+    return 0 if "armed" in (result, profiles) else 1
 
 
 def cmd_pairing(_arg=None):
@@ -491,6 +525,11 @@ def cmd_autostart_watch(_arg=None):
     return autostart_runner.watch(_settings(), cli_install.terminal_command)
 
 
+def cmd_profile_watch(_arg=None):
+    """Intern: Waechter der Autostart-Profile (autostart_runner.profile_watch)."""
+    return autostart_runner.profile_watch(_settings(), cli_install.terminal_command)
+
+
 # Befehlsname -> Funktion. Gross-/Kleinschreibung egal ("GPU" == "gpu").
 COMMANDS = {
     "help": cmd_help,
@@ -507,6 +546,7 @@ COMMANDS = {
     "pairing": cmd_pairing,
     "pair": cmd_pairing,
     "_autostart-watch": cmd_autostart_watch,
+    "_profile-watch": cmd_profile_watch,
 }
 
 

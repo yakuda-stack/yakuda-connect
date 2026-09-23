@@ -306,6 +306,17 @@ def _os_release_ids():
     return osid, idlike
 
 
+def is_steamos():
+    """
+    SteamOS (Steam Deck) und aehnliche schreibgeschuetzte Arch-Abkoemmlinge
+    (ChimeraOS). ID_LIKE ist dort 'arch' und pacman liegt im PATH — trotzdem
+    darf nichts ins System installiert werden (/usr ist read-only, das
+    Paket-Keyring ist nicht eingerichtet). WiVRn kommt hier als Flatpak.
+    """
+    osid, _idlike = _os_release_ids()
+    return osid in ("steamos", "chimeraos")
+
+
 def is_fedora_based():
     """True auf Fedora und Ableitungen (Nobara, Bazzite, ...)."""
     osid, idlike = _os_release_ids()
@@ -537,6 +548,13 @@ def available_update_methods():
       Sonst   -> 'native', falls WiVRn selbst nativ installiert wurde.
     """
     methods = []
+    if is_steamos():
+        # Kein AUR, kein pacman: das System ist schreibgeschuetzt. WiVRn
+        # gibt es fuer SteamOS als Flatpak (Flathub), der bringt xrizer und
+        # OpenComposite gleich mit.
+        if shutil.which("flatpak"):
+            methods.append("flatpak")
+        return methods
     if is_arch_based():
         methods.extend(available_aur_helpers())     # yay vor paru
     elif is_fedora_based():
@@ -562,7 +580,7 @@ def wivrn_native_present():
 
 def default_update_method(methods):
     """Vorauswahl: yay -> paru -> dnf -> apt -> native -> erstes."""
-    for pref in ("yay", "paru", "dnf", "apt", "native"):
+    for pref in ("yay", "paru", "dnf", "apt", "flatpak", "native"):
         if pref in methods:
             return pref
     return methods[0] if methods else ""
