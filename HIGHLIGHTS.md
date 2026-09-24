@@ -1,5 +1,21 @@
 # Highlights - Yakuda Connect
 
+### 🚀 v1.3.7 — 2026-09-24
+
+#### 🇩🇪 Deutsch
+
+* **OpenXR-Vorlage mit einem Klick.** Zeigt ein OpenXR-Spiel im Controls-Tab überall „nichts belegt“ (z. B. VRChat), belegt „🧩 OpenXR-Vorlage verwenden“ die Tasten mit einer üblichen Standardbelegung: Trigger, Griff, Sticks, A/B/X/Y und Menü. Du prüfst, speicherst – oder verwirfst sie wieder.
+* **Sicherere Releases.** Die Versionsprüfung schaut jetzt auch auf AUR-`.SRCINFO`, README-Badge, Changelog und Highlights – eine vergessene Stelle fällt sofort auf.
+* **Übersicht für Mitwirkende.** Die neue `ARCHITEKTUR.md` zeigt, welcher Tab seine Logik in welcher Datei hat.
+
+#### 🇬🇧 English
+
+* **OpenXR template in one click.** If an OpenXR game shows “nothing bound” everywhere in the Controls tab (e.g. VRChat), “🧩 Use OpenXR template” fills in a common default layout: trigger, grip, sticks, A/B/X/Y and menu. You check it, save it – or discard it again.
+* **Safer releases.** The version check now also covers the AUR `.SRCINFO`, the README badge, changelog and highlights – a forgotten spot shows up right away.
+* **Overview for contributors.** The new `ARCHITEKTUR.md` shows which tab keeps its logic in which file.
+
+---
+
 ### 🚀 v1.3.6 — 2026-09-23
 
 #### 🇩🇪 Deutsch

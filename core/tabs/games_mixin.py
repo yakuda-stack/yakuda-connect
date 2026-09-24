@@ -308,6 +308,9 @@ class GamesTabMixin:
 
     def _check_games_db_update(self):
         """Hintergrund-Check, ob auf GitHub eine neuere games.json liegt."""
+        from main import startup_netcheck_disabled
+        if startup_netcheck_disabled():
+            return
         self._games_db_check_worker = GamesDbWorker(mode="check")
         self._games_db_check_worker.check_result.connect(self._on_games_db_checked)
         self._games_db_check_worker.start()

@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ShNKvvZu74)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.3.6-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.3.7-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -96,6 +96,7 @@ All screenshots: [assets/README.md](assets/README.md)
 * **OpenXR games (xrBinder):** Games that use OpenXR directly (no SteamVR bindings, e.g. Unreal games under Proton) appear in the same controller editor as OpenVR games (“Controls via obah & xrBinder”). One switch on the xrBinder card builds and enables [xrBinder](https://gitlab.com/mittorn/xrBinder) by mittorn; start the game once, then click a button and assign functions — reset per button or all at once, applied live where possible.
   * **One view for OpenVR and OpenXR:** obah (SteamVR bindings) and xrBinder (OpenXR) are separate CLI/TUI tools that don't know each other — Yakuda Connect merges them into one view; you never see which one is working.
   * **Old SteamVR games without an action file** (e.g. Gal*Gun 2): nothing for obah to edit — Yakuda Connect detects the buttons via xrizer's fixed legacy layout and remaps them through xrBinder.
+  * **🧩 Use OpenXR template:** a game reports its functions but no buttons (all cards “nothing bound”, e.g. VRChat via xrizer)? One click creates a common default layout (trigger, grip, sticks, A/B/X/Y, menu) — unsaved until you press Save, “Discard” undoes it.
   * **“⇄ Tilt = press” with threshold:** replaces the popular SteamVR “dpad in touch mode” community bindings, which don't exist on Linux.
   * **Deadzone against stick drift:** click the stick → “◎ Deadzone” tab with sliders for left, right and both (0–50 %, ↺ reset each); small movements around the center count as “stick at rest”. Works for OpenVR games too when they run via xrizer or OpenComposite (xrizer itself ignores SteamVR's `deadzone_pct`).
   * **Graphical, SteamVR-style view:** both controllers side by side, lines to each button, movable cards, your own controller images, profiles.
@@ -345,6 +346,8 @@ yakuda-connect is a free hobby project — built by VR enthusiasts, for VR enthu
 The full changelog lives in its own file — it is kept in both English and German:
 
 ➡️ **[CHANGELOG.md](CHANGELOG.md)**
+
+🧭 For contributors: **[ARCHITEKTUR.md](ARCHITEKTUR.md)** (German) maps every tab to the files that hold its logic.
 
 ---
 

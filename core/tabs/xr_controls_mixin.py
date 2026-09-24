@@ -53,6 +53,7 @@ class XrControlsMixin:
         session.apply_result.connect(self._xr_apply_result)
         ui.xrbinder_card.enabled_changed.connect(lambda _on: self._xr_games_changed())
         ui.btn_xr_reset_all.clicked.connect(self.xr_reset_all)
+        ui.btn_xr_template.clicked.connect(self.xr_apply_template)
         ui.xrbinder_card.activate()
 
     # ------------------------------------------------------------------ #
@@ -145,6 +146,8 @@ class XrControlsMixin:
         else:
             ui.obah_aux_body.setVisible(ui.btn_obah_aux_expand.isChecked())
         ui.btn_xr_reset_all.setVisible(xr_mode)
+        if not xr_mode:
+            ui.btn_xr_template.setVisible(False)
 
     def _xr_leave(self):
         self._xr_mode = False
@@ -199,6 +202,9 @@ class XrControlsMixin:
             text = tr("xrb_status_rebuild_needed")
         elif not self._xr_state.get("actions"):
             text = tr("xrb_hint_no_actions")
+        elif xr.template_offered((self._obah_edit or {}).get("controller") or xr.DEFAULT_CT,
+                                 self._xr_state, self._xr_mappings):
+            text = tr("xrb_hint_template")
         elif session.pid_of(self._xr_game):
             text = tr("xrb_hint_running")
         else:
@@ -247,6 +253,7 @@ class XrControlsMixin:
         ui.btn_obah_layout_reset.setEnabled(
             ui.obah_view_left.has_manual_layout() or ui.obah_view_right.has_manual_layout())
         ui.btn_xr_reset_all.setEnabled(bool(self._xr_mappings))
+        ui.btn_xr_template.setVisible(xr.template_offered(ct, self._xr_state, self._xr_mappings))
 
         bound, total = xr.counts(ct, self._xr_state, self._xr_mappings)
         changed = len(self._xr_mappings)
@@ -299,6 +306,20 @@ class XrControlsMixin:
         self._xr_mappings = {}
         self._set_obah_dirty(True)
         self.xr_render_views()
+
+    def xr_apply_template(self):
+        """„OpenXR-Vorlage verwenden“: Standardbelegung als (ungespeicherte) Umbelegung."""
+        ct = (self._obah_edit or {}).get("controller") or xr.DEFAULT_CT
+        mappings, matched, total = xr.template_mappings(self._xr_state, ct)
+        if not mappings:
+            QMessageBox.information(self, tr("xrb_template"), tr("xrb_template_none"))
+            return
+        self._xr_mappings = mappings
+        self._set_obah_dirty(True)
+        self._xr_update_hint()
+        self.xr_render_views()
+        self.ui.lbl_obah_editor_status.setText(
+            "● " + tr("xrb_template_applied").format(matched=matched, total=total))
 
     def xr_discard(self):
         self._xr_load_state()

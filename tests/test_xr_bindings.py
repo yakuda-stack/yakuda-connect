@@ -376,3 +376,61 @@ def test_axis_changed_detects_deadzone_and_tilt():
     assert not xb.axis_changed(a, a + c)
     assert not xb.axis_changed([], c)
     assert xb.axis_changed(c, [dict(c[0], tilt=True)])
+
+
+# --------------------------------------------------------------------------- #
+#  OpenXR-Vorlage (Spiel meldet keine Tasten, z. B. VRChat ueber xrizer)
+# --------------------------------------------------------------------------- #
+LR = ["left", "right"]
+EMPTY = {
+    "actions": [
+        {"name": "global_in_jump", "type": 1, "hands": LR, "description": "Jump"},
+        {"name": "global_in_use", "type": 1, "hands": LR, "description": "Use"},
+        {"name": "global_in_grab", "type": 1, "hands": LR, "description": "Grab"},
+        {"name": "global_in_move", "type": 3, "hands": LR, "description": "Move"},
+        {"name": "global_in_lookhorizontal", "type": 2, "hands": LR,
+         "description": "Look Horizontal"},
+        {"name": "global_in_menu", "type": 1, "hands": LR, "description": "Menu"},
+        {"name": "oculustouch_left_x_click", "type": 1, "hands": LR,
+         "description": "Oculus Touch (L) X Press"},
+        {"name": "global_in_mystery", "type": 1, "hands": LR, "description": "Something"},
+        {"name": "aim", "type": 4, "hands": ["left"], "description": "Aim pose"},
+    ],
+    "bindings": {},
+}
+
+
+def test_template_only_offered_when_nothing_bound():
+    assert xr.template_offered("oculus_touch", EMPTY, {})
+    assert not xr.template_offered("oculus_touch", STATE, {})       # Wanderer: Tasten gemeldet
+    assert not xr.template_offered("oculus_touch", {"actions": []}, {})
+    m, _, _ = xr.template_mappings(EMPTY)
+    assert not xr.template_offered("oculus_touch", EMPTY, m)        # schon angewendet
+
+
+def test_template_assigns_common_layout():
+    m, matched, total = xr.template_mappings(EMPTY, "oculus_touch")
+    src = {k: (v["source"], v["source_hand"]) for k, v in m.items()}
+    assert src[("global_in_jump", "right")] == ("a_click", "right")
+    assert ("global_in_jump", "left") not in src
+    assert src[("global_in_use", "left")] == ("trigger_value_b", "left")
+    assert src[("global_in_use", "right")] == ("trigger_value_b", "right")
+    assert src[("global_in_grab", "right")] == ("squeeze_value_b", "right")
+    assert src[("global_in_move", "left")] == ("thumbstick", "left")
+    assert src[("global_in_lookhorizontal", "right")] == ("thumbstick_x", "right")
+    assert src[("global_in_menu", "left")] == ("menu_click", "left")
+    assert ("global_in_menu", "right") not in src                    # System rechts bleibt frei
+    assert src[("oculustouch_left_x_click", "left")] == ("x_click", "left")
+    assert not any(k[0] == "global_in_mystery" for k in src)
+    assert (matched, total) == (7, 8)                               # Pose zaehlt nicht
+    bound, _ = xr.counts("oculus_touch", EMPTY, m)
+    assert bound > 0
+
+
+def test_template_uses_fallback_buttons_on_other_controllers():
+    m, _, _ = xr.template_mappings(EMPTY, "knuckles")
+    src = {k: (v["source"], v["source_hand"]) for k, v in m.items()}
+    assert src[("oculustouch_left_x_click", "left")] == ("a_click", "left")   # Index: A statt X
+    m, _, _ = xr.template_mappings(EMPTY, "vive_controller")
+    src = {k: (v["source"], v["source_hand"]) for k, v in m.items()}
+    assert src[("global_in_move", "left")] == ("trackpad", "left")           # Vive: Trackpad

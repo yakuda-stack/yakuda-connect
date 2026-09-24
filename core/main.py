@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.3.6"
+APP_VERSION = "v1.3.7"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -140,6 +140,16 @@ from logging_setup import get_logger, read_log_tail
 
 log = get_logger("main")
 
+
+
+# Tests (tests/conftest.py) setzen das, damit nicht jedes VRApp 1,5 s nach
+# dem Start GitHub fragt. Solche Threads liefen beim Testende sonst oft noch
+# -> "QThread: Destroyed while thread is still running" -> SIGABRT (Code 6).
+NO_NETCHECK_ENV = "YAKUDA_NO_STARTUP_NETCHECK"
+
+
+def startup_netcheck_disabled():
+    return os.environ.get(NO_NETCHECK_ENV, "").strip() not in ("", "0")
 
 
 class PackageCheckWorker(QThread):
@@ -530,6 +540,8 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
 
     def check_app_update(self):
         """Startet den stillen Versions-Check im Hintergrund."""
+        if startup_netcheck_disabled():
+            return
         if self._app_update_check_worker is not None and self._app_update_check_worker.isRunning():
             return
         self._app_update_check_worker = AppUpdateCheckWorker(self.APP_VERSION)

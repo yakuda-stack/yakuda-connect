@@ -20,6 +20,7 @@ core/xrbinder.py in die xrBinder-INI schreibt.
 
 Kein Qt, keine Dateien — alles hier ist mit einfachen Tests pruefbar.
 """
+import re
 from collections import OrderedDict
 
 import obah_editor as oe
@@ -380,6 +381,156 @@ def has_changes_on(state, mappings, paths):
         if target in paths or (target is None and paths & set(default_paths(state, *key))):
             return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+#  OpenXR-Vorlage (Knopf „OpenXR-Vorlage verwenden“)
+# --------------------------------------------------------------------------- #
+# Manche Spiele (z. B. VRChat ueber xrizer) melden Aktionen, aber die Runtime
+# verraet keine einzige Taste -> alle Karten „nichts belegt“. Die Vorlage legt
+# dann eine uebliche Standardbelegung an: erst ueber Tastennamen im Aktions-
+# namen ("oculustouch_left_x_click", "Thumbstick X"), sonst ueber die
+# Bedeutung ("Jump" -> A, "Grab" -> Griff). Ergebnis sind normale
+# Umbelegungen: ungespeichert, pruefbar, per „Verwerfen“ weg.
+
+# Tastenname im Text -> Komponente (Reihenfolge = Vorrang)
+_TPL_COMPONENT_WORDS = (
+    ("thumbrest", ("thumbrest",)),
+    ("thumbstick", ("thumbstick", "joystick", "stick", "trackpad", "touchpad", "analog")),
+    ("trigger", ("trigger",)),
+    ("squeeze", ("grip", "squeeze")),
+    ("menu", ("menu",)),
+    ("system", ("system",)),
+)
+_TPL_LETTERS = ("a", "b", "x", "y")
+
+# Bedeutung -> (Komponente, feste Seite oder None = je Hand, Bool-Art)
+_TPL_MEANINGS = (
+    (("jump",), "a", "right"),
+    (("crouch", "prone", "duck"), "thumbstick/click", "right"),
+    (("sprint", "run"), "thumbstick/click", "left"),
+    (("pause", "options", "quickmenu"), "menu", "left"),
+    (("mute", "mic", "microphone", "voice", "talk"), "y", "left"),
+    (("back", "cancel"), "b", "right"),
+    (("grab", "grabbing", "pickup", "pick", "hold", "drop", "climb"), "squeeze", None),
+    (("use", "interact", "fire", "shoot", "select", "confirm"), "trigger", None),
+)
+_TPL_MOVE = ("move", "movement", "locomotion", "walk", "strafe", "teleport")
+_TPL_TURN = ("turn", "rotate", "rotation", "look", "snap", "camera", "scroll")
+
+# Fehlt eine Taste am Controller: Ersatz (Index hat A/B statt X/Y, Vive ein Trackpad)
+_TPL_FALLBACK = {"x": ("a",), "y": ("b",), "a": ("x",), "b": ("y",),
+                 "menu": ("system", "b", "y"), "system": ("menu", "b"),
+                 "thumbstick": ("trackpad",), "thumbrest": ()}
+
+
+def _tpl_tokens(act):
+    text = f"{act.get('name', '')} {act.get('description', '')}"
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text).lower()
+    text = text.replace("oculus touch", "oculustouch")   # sonst waere "touch" die Art
+    return [t for t in re.split(r"[^a-z0-9]+", text) if t]
+
+
+def _tpl_side(tokens):
+    has_l = bool({"left", "l", "lhand", "lefthand"} & set(tokens))
+    has_r = bool({"right", "r", "rhand", "righthand"} & set(tokens))
+    return "left" if has_l and not has_r else "right" if has_r and not has_l else None
+
+
+def _tpl_kinds(tokens, action_type, base):
+    typ = TYPE_NAMES.get(action_type)
+    if typ == "vector2":
+        return [""]
+    if typ == "float":
+        if base in ("thumbstick", "trackpad"):
+            if {"x", "horizontal"} & set(tokens):
+                return ["x"]
+            if {"y", "vertical"} & set(tokens):
+                return ["y"]
+            return []
+        return ["value", "force", "click"]
+    if "touch" in tokens and base not in ("thumbrest",):
+        return ["touch"]
+    if base == "thumbrest":
+        return ["touch"]
+    return ["click", "value"]
+
+
+def _tpl_resolve(ct, side, base, kinds, action_type):
+    """Passende Komponente dieser Seite (mit Ersatztasten) oder None."""
+    for b in (base,) + _TPL_FALLBACK.get(base, ()):
+        comps = components(ct, side, b)
+        for kind in kinds:
+            comp = b if kind == "" else f"{b}/{kind}"
+            if comp in comps and source_for(comp, action_type):
+                return comp
+    return None
+
+
+def _tpl_target(tokens, action_type):
+    """(Basis-Komponente, Seite oder None, Arten) fuer eine Aktion — oder None."""
+    side = _tpl_side(tokens)
+    tset = set(tokens)
+    # 1) Tastenname steht im Namen
+    for base, words in _TPL_COMPONENT_WORDS:
+        if tset & set(words):
+            if base in ("menu", "system") and side != "right":
+                base, side = "menu", "left"     # System rechts ist bei Quest reserviert
+            return base, side, _tpl_kinds(tokens, action_type, base)
+    if "axis" not in tset and tset & {"button", "press", "click", "touch", "btn"}:
+        for letter in _TPL_LETTERS:
+            if letter in tset:
+                return letter, side, _tpl_kinds(tokens, action_type, letter)
+    # 2) Bedeutung
+    typ = TYPE_NAMES.get(action_type)
+    if typ == "vector2" or (typ == "float" and tset & {"horizontal", "vertical"}):
+        if tset & set(_TPL_MOVE):
+            return "thumbstick", "left", _tpl_kinds(tokens, action_type, "thumbstick")
+        if tset & set(_TPL_TURN):
+            return "thumbstick", "right", _tpl_kinds(tokens, action_type, "thumbstick")
+        if typ == "vector2":
+            return "thumbstick", side, [""]
+        return None
+    for words, target, fixed in _TPL_MEANINGS:
+        if tset & set(words):
+            base, _, kind = target.partition("/")
+            kinds = [kind] if kind else _tpl_kinds(tokens, action_type, base)
+            return base, side or fixed, kinds
+    return None
+
+
+def template_mappings(state, ct=DEFAULT_CT):
+    """
+    Standardbelegung fuer ein Spiel ohne gemeldete Tasten.
+    Rueckgabe: (mappings, zugeordnete Aktionen, alle Aktionen).
+    """
+    mappings = OrderedDict()
+    acts = actions(state)
+    matched = 0
+    for act in acts:
+        target = _tpl_target(_tpl_tokens(act), act["type"])
+        if not target:
+            continue
+        base, side, kinds = target
+        hands = [h for h in (act.get("hands") or []) if h in ("left", "right")]
+        sides = [side] if side else (hands or ["left", "right"])
+        hit = False
+        for s in sides:
+            comp = _tpl_resolve(ct, s, base, kinds, act["type"])
+            if comp and assign(state, mappings, act, s, comp):
+                hit = True
+            if not act.get("hands") and hit:
+                break                   # Aktion ohne Hand: nur eine Taste
+        matched += 1 if hit else 0
+    return mappings, matched, len(acts)
+
+
+def template_offered(ct, state, mappings):
+    """Knopf zeigen? Aktionen da, aber keine Taste belegt und nichts umgelegt."""
+    if not actions(state) or mappings:
+        return False
+    bound, _total = counts(ct, state, mappings)
+    return bound == 0
 
 
 # --------------------------------------------------------------------------- #

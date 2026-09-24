@@ -62,6 +62,48 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # Kein echter Server-Stopp und kein Waechter-Prozess aus Tests heraus —
 # siehe core/exit_guard.py (DISABLE_ENV).
 os.environ.setdefault("YAKUDA_NO_EXIT_GUARD", "1")
+# Keine Update-Checks gegen GitHub beim Start jedes VRApp (core/main.py).
+# Die liefen beim Testende oft noch -> Qt bricht mit SIGABRT ab (Code 6/134).
+os.environ.setdefault("YAKUDA_NO_STARTUP_NETCHECK", "1")
+
+# Sicherheitsnetz: jeden gestarteten QThread merken und am Ende abwarten.
+_threads = []
+
+
+def _track_qthreads():
+    import weakref
+    from PySide6.QtCore import QThread
+    if getattr(QThread.start, "_yc_tracked", False):
+        return
+    orig = QThread.start
+
+    def start(self, *args, **kwargs):
+        _threads.append(weakref.ref(self))
+        return orig(self, *args, **kwargs)
+    start._yc_tracked = True
+    QThread.start = start
+
+
+_track_qthreads()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    still = []
+    for ref in _threads:
+        th = ref()
+        try:
+            if th is not None and th.isRunning():
+                th.requestInterruption()
+                th.quit()
+                if not th.wait(15000):
+                    still.append(type(th).__name__)
+        except RuntimeError:
+            pass
+    if still:
+        sys.stderr.write(f"\nconftest: Threads liefen noch: {still} — beende hart\n")
+        sys.stderr.flush()
+        sys.stdout.flush()
+        os._exit(int(exitstatus))
 
 # Haelt die QApplication am Leben, bis der Prozess endet. NICHT entfernen,
 # auch wenn keine andere Stelle sie liest — siehe Modul-Docstring.

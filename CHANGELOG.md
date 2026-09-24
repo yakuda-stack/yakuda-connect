@@ -1,5 +1,27 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.3.7 — 2026-09-24
+
+#### 🇩🇪 Deutsch
+
+* **Neu: „🧩 OpenXR-Vorlage verwenden“** (Controls-Tab, OpenXR-Spiele). Meldet ein Spiel seine Funktionen, aber keine einzige Taste (alle Karten „nichts belegt“, z. B. VRChat über xrizer), erscheint der Knopf samt Hinweis. Ein Klick legt eine übliche Standardbelegung als normale Umbelegungen an: erst über Tastennamen im Aktionsnamen (`oculustouch_left_x_click` → X, „Thumbstick X“ → Stick-X-Achse), sonst über die Bedeutung (Jump → A, Use → Trigger, Grab → Griff, Move → linker Stick, Turn/Look → rechter Stick, Menu → Menü links, Mic → Y, Crouch → Stick-Klick rechts). Die System-Taste rechts bleibt frei (bei Quest reserviert). Index nimmt A/B statt X/Y, Vive das Trackpad statt des Sticks. Erst nach „Speichern“ aktiv, „Verwerfen“ nimmt alles zurück; die Statuszeile zeigt „Vorlage: n von m Funktionen zugeordnet“. Logik: `xr_bindings.template_mappings()` / `template_offered()`, ohne Qt.
+* **Versionsprüfung überarbeitet** (`scripts/bump_version.py`). `--check` prüft jetzt zusätzlich `packaging/aur/.SRCINFO` (pkgver, pkgrel, source-Zeile passend zum Tag), den Versions-Badge in `README.md` und, ob CHANGELOG.md und HIGHLIGHTS.md die aktuelle Version als **obersten** Block mit Datum `JJJJ-MM-TT` haben. Ein leerer Block ist beim normalen `--check` nur ein Hinweis, mit `--expect` (Release) ein Fehler. Beim Setzen einer Version werden `.SRCINFO` und Badge mitgezogen; in CHANGELOG/HIGHLIGHTS kommt **nur** die Überschrift `### 🚀 vX.Y.Z — Datum` (Text schreibt der Autor, `--date` für ein anderes Datum).
+* **Neu: `packaging/aur/.SRCINFO`** im Projekt (aus der PKGBUILD erzeugt, makepkg-Format).
+* **Neu: `ARCHITEKTUR.md`** — welcher Tab seine Logik wo hat, welche Datei was macht, Regeln (Texte, Config, Pfade, `proc.run`), Datenpfade, Release-Ablauf und eine Tabelle „Welche Dateien für welche Änderung?“. In der README verlinkt.
+* README: Eintrag zur OpenXR-Vorlage.
+* Neue Tests: `tests/test_bump_version.py`, `tests/test_xr_template_gui.py`, Vorlage-Tests in `tests/test_xr_bindings.py`.
+* **pytest endete manchmal mit Signal 6 (SIGABRT) trotz „alles bestanden“.** Jedes `VRApp` in den Tests fragte 1,5 s nach dem Start GitHub nach App- und Spiele-DB-Updates (`AppUpdateCheckWorker`, `GamesDbWorker`). Liefen diese Threads beim Testende noch, brach Qt beim Beenden ab. Jetzt setzt `tests/conftest.py` `YAKUDA_NO_STARTUP_NETCHECK=1` (keine Update-Checks beim Start, `core/main.py`/`games_mixin.py`) und wartet am Ende auf alle noch laufenden QThreads.
+
+#### 🇬🇧 English
+
+* **New: “🧩 Use OpenXR template”** (Controls tab, OpenXR games). If a game reports its functions but not a single button (every card “nothing bound”, e.g. VRChat via xrizer), the button appears together with a hint. One click creates a common default layout as normal remaps: first by button names in the action name (`oculustouch_left_x_click` → X, “Thumbstick X” → stick X axis), otherwise by meaning (Jump → A, Use → trigger, Grab → grip, Move → left stick, Turn/Look → right stick, Menu → menu left, Mic → Y, Crouch → right stick click). The right system button stays free (reserved on Quest). Index uses A/B instead of X/Y, Vive the trackpad instead of the stick. Only active after “Save”, “Discard” undoes everything; the status line shows “Template: n of m functions assigned”. Logic: `xr_bindings.template_mappings()` / `template_offered()`, no Qt.
+* **Version check reworked** (`scripts/bump_version.py`). `--check` now also verifies `packaging/aur/.SRCINFO` (pkgver, pkgrel, source line matching the tag), the version badge in `README.md`, and that CHANGELOG.md and HIGHLIGHTS.md have the current version as the **top** block with a `YYYY-MM-DD` date. An empty block is only a hint with a plain `--check`, an error with `--expect` (release). Setting a version also updates `.SRCINFO` and the badge; CHANGELOG/HIGHLIGHTS only get the heading `### 🚀 vX.Y.Z — date` (the author writes the text, `--date` for another date).
+* **New: `packaging/aur/.SRCINFO`** in the project (generated from the PKGBUILD, makepkg format).
+* **New: `ARCHITEKTUR.md`** (German) — where each tab keeps its logic, what each file does, rules (texts, config, paths, `proc.run`), data paths, release steps and a table “which files for which change?”. Linked from the README.
+* README: entry for the OpenXR template.
+* New tests: `tests/test_bump_version.py`, `tests/test_xr_template_gui.py`, template tests in `tests/test_xr_bindings.py`.
+* **pytest sometimes ended with signal 6 (SIGABRT) despite “all passed”.** Every `VRApp` in the tests asked GitHub for app and game-DB updates 1.5 s after start (`AppUpdateCheckWorker`, `GamesDbWorker`). If those threads were still running when the tests ended, Qt aborted on exit. Now `tests/conftest.py` sets `YAKUDA_NO_STARTUP_NETCHECK=1` (no update checks on start, `core/main.py`/`games_mixin.py`) and waits for every still-running QThread at the end.
+
 ### 🚀 v1.3.6 — 2026-09-23
 
 #### 🇩🇪 Deutsch
