@@ -955,6 +955,7 @@
   "autostart_profile_status_manual": "Started by hand — {count} program(s) active.",
   "autostart_profile_row_del_tip": "Remove row",
   "autostart_profile_status_off": "Timer off — programs only via “Start programs”.",
+  "autostart_profile_status_dup": "Off — profile “{name}” uses the same trigger (only one profile per game is active).",
   "autostart_profile_status_no_trigger": "No trigger set yet.",
   "autostart_profile_status_no_apps": "No program set yet.",
   "autostart_profile_status_wait": "Waiting for {trigger} + headset (checked every 3 s).",

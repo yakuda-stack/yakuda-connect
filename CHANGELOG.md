@@ -1,5 +1,23 @@
 # Changelog - Yakuda Connect
 
+### 🚀 v1.3.8 — 2026-09-26
+
+#### 🇩🇪 Deutsch
+
+* **Fix: Autostart-Profile mit gleichem Auslöser starteten alle gleichzeitig.** Hatten zwei Profile denselben Auslöser (z. B. zwei VRChat-Setups mit unterschiedlichen DCB-Profilen), liefen beim Spielstart beide los – das DCB startete doppelt und meldete einen Fehler. Jetzt gilt: **pro Auslöser ist nur ein Profil aktiv.** Schaltet man bei einem Profil den Timer ein, geht der Timer der anderen Profile mit demselben Auslöser aus (wie ein Radio-Knopf), deren laufende Programme werden beendet. Das gilt auch, wenn man den Auslöser ändert (Eingabe fertig, „Laufende…“, „🎮 Games“). Als gleich gelten z. B. `VRChat` und `VRChat.exe` bzw. dieselbe `[AppId=…]`.
+* Das abgeschaltete Profil zeigt in der Statuszeile „Aus — Profil ‚X‘ nutzt denselben Auslöser …“ (neuer Text `autostart_profile_status_dup`, DE/EN).
+* Absicherung in GUI **und** Terminal-Modus (`_profile-watch`): auch bei alten Configs mit Doppel-Einträgen startet nur das erste aktive Profil. Logik: `autostart_profiles.trigger_key()` / `blocked_by()`, ohne Qt.
+* README: Hinweis bei den Autostart-Profilen.
+* Neue Tests in `tests/test_autostart_profiles.py` (Engine, GUI, Terminal-Modus).
+
+#### 🇬🇧 English
+
+* **Fix: autostart profiles with the same trigger all started at once.** If two profiles had the same trigger (e.g. two VRChat setups with different DCB profiles), both launched when the game started – DCB ran twice and reported an error. Now **only one profile per trigger is active.** Turning on a profile's timer turns off the timer of other profiles with the same trigger (like a radio button) and closes their running programs. The same applies when the trigger is changed (typing finished, “Running…”, “🎮 Games”). `VRChat` and `VRChat.exe`, or the same `[AppId=…]`, count as the same trigger.
+* The profile that was turned off shows “Off — profile ‘X’ uses the same trigger …” in its status line (new text `autostart_profile_status_dup`, DE/EN).
+* Safeguard in the GUI **and** terminal mode (`_profile-watch`): even with old configs that contain duplicates, only the first active profile starts. Logic: `autostart_profiles.trigger_key()` / `blocked_by()`, no Qt.
+* README: note in the autostart profiles entry.
+* New tests in `tests/test_autostart_profiles.py` (engine, GUI, terminal mode).
+
 ### 🚀 v1.3.7 — 2026-09-24
 
 #### 🇩🇪 Deutsch

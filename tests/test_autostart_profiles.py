@@ -612,3 +612,58 @@ def test_locales_complete():
     keys = [k for k in de if k.startswith("autostart_profile_")]
     assert len(keys) > 20
     assert all(k in en for k in keys)
+
+
+# --------------------------------------------------------------------------- #
+#  Gleicher Ausloeser in mehreren Profilen: nur eins aktiv
+# --------------------------------------------------------------------------- #
+def test_engine_blocked_by_same_trigger():
+    import autostart_profiles as engine
+    app_row = [{"cmd": "x"}]
+    profs = [
+        {"name": "A", "trigger": "VRChat.exe", "enabled": True, "apps": app_row},
+        {"name": "B", "trigger": "vrchat", "enabled": True, "apps": app_row},
+        {"name": "C", "trigger": "VRChat", "enabled": False, "apps": app_row},
+        {"name": "D", "trigger": "Resonite", "enabled": True, "apps": app_row},
+        {"name": "E", "trigger": "VRChat [AppId=438100]", "enabled": True, "apps": app_row},
+    ]
+    assert engine.blocked_by(profs) == {1: 0}
+    assert engine.trigger_key("VRChat [AppId=438100]") == engine.trigger_key("x [appid=438100]")
+
+
+def test_gui_enable_turns_other_same_trigger_off(app, clean):
+    a = _new_profile(app, trigger="VRChat.exe")
+    b = _new_profile(app, trigger="VRChat", cmd="sleep 61")
+    # b wurde mit Timer an angelegt (alte Config) -> a gewinnt (erstes)
+    assert app._profile_blocked_by(b) == a["name"] and app._profile_blocked_by(a) is None
+    on = {"vrchat"}
+    app._profile_step(a, on, 0)
+    app._profile_step(b, on, 0)
+    assert a["launched"] and not b["launched"]           # kein Doppelstart
+    # b aktivieren -> a geht aus und seine Programme werden beendet
+    b["chk_enabled"].setChecked(False)
+    b["chk_enabled"].setChecked(True)
+    assert not a["chk_enabled"].isChecked() and a["procs"] == []
+    assert "Test" in a["lbl_status"].text()               # Hinweis mit Profilname
+    app._profile_step(b, on, 1)
+    assert b["launched"] and len(b["procs"]) == 1
+
+
+def test_gui_trigger_edit_claims(app, clean):
+    a = _new_profile(app, trigger="VRChat")
+    b = _new_profile(app, trigger="Resonite")
+    b["inp_trigger"].setText("VRChat.exe")
+    b["inp_trigger"].editingFinished.emit()
+    assert b["chk_enabled"].isChecked() and not a["chk_enabled"].isChecked()
+
+
+def test_cli_profile_watch_same_trigger_only_first(runner):
+    run, started = runner
+    s = _settings()
+    second = dict(s["autostart_profiles"][0], name="VRC2",
+                  apps=[{"type": "CMD", "cmd": "c"}])
+    s["autostart_profiles"].append(second)
+    run.profile_watch(s, _sleep=lambda d: None, _now=lambda: 0.0,
+                      _snapshot=lambda: {"appid=438100"}, _headset=lambda: True,
+                      _server_running=lambda: True, _max_ticks=3)
+    assert [c for c, _p in started] == ["a", "b"]         # "c" nie gestartet

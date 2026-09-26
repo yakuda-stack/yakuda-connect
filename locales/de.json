@@ -955,6 +955,7 @@
   "autostart_profile_status_manual": "Von Hand gestartet — {count} Programm(e) aktiv.",
   "autostart_profile_row_del_tip": "Zeile entfernen",
   "autostart_profile_status_off": "Timer aus — Programme nur per „Programme starten“.",
+  "autostart_profile_status_dup": "Aus — Profil „{name}“ nutzt denselben Auslöser (pro Spiel ist nur ein Profil aktiv).",
   "autostart_profile_status_no_trigger": "Noch kein Auslöser eingetragen.",
   "autostart_profile_status_no_apps": "Noch kein Programm eingetragen.",
   "autostart_profile_status_wait": "Wartet auf {trigger} + Headset (Prüfung alle 3 s).",

@@ -345,6 +345,10 @@ def profile_watch(settings, terminal_command=None, _sleep=time.sleep, _now=time.
     if not engine.master_enabled(settings):
         profiles = []          # Automatik aus -> nichts tun (Schleife endet gleich)
     states = [engine.new_state() for _ in profiles]
+    blocked = engine.blocked_by(profiles)   # gleicher Ausloeser: nur das erste aktive
+    for i, owner in blocked.items():
+        log.warning("[CLI-Profile] '%s' uebersprungen — '%s' nutzt denselben Ausloeser.",
+                    profiles[i]["name"], profiles[owner]["name"])
     groups = {i: [] for i in range(len(profiles))}      # idx -> [[pgid, start]]
     pending = []                                        # [(faellig, idx, app)]
 
@@ -381,7 +385,8 @@ def profile_watch(settings, terminal_command=None, _sleep=time.sleep, _now=time.
 
         changed = False
         for i, prof in enumerate(profiles):
-            ok = engine.armed(prof) and process_watch.matches(prof["trigger"], names)
+            ok = (engine.armed(prof) and i not in blocked
+                  and process_watch.matches(prof["trigger"], names))
             ok = ok and headset_ok()
             action = engine.step(states[i], ok, prof["delay"], prof["stop_with"], now)
             if action == "launch":

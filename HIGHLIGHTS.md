@@ -1,5 +1,17 @@
 # Highlights - Yakuda Connect
 
+### 🚀 v1.3.8 — 2026-09-26
+
+#### 🇩🇪 Deutsch
+
+* **Kein doppelter Start mehr bei Autostart-Profilen.** Du kannst mehrere Profile für dasselbe Spiel anlegen (z. B. zwei VRChat-Setups), aber es ist immer nur eins aktiv. Schaltest du bei einem den Timer ein, gehen die anderen für dieses Spiel automatisch aus – so startet z. B. DCB nie mehr zweimal.
+
+#### 🇬🇧 English
+
+* **No more double starts with autostart profiles.** You can create several profiles for the same game (e.g. two VRChat setups), but only one is ever active. Turning on the timer of one turns the others for that game off automatically – so DCB, for example, never starts twice.
+
+---
+
 ### 🚀 v1.3.7 — 2026-09-24
 
 #### 🇩🇪 Deutsch

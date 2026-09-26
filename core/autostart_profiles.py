@@ -18,7 +18,15 @@ process_watch.headset_connected, und nur, wenn der Ausloeser laeuft).
 
 „Programme starten“ (von Hand) umgeht die Bedingung; so gestartete
 Programme beendet ``step()`` nicht, solange der Ausloeser nie lief.
+
+Ein Ausloeser = ein aktives Profil
+----------------------------------
+Mehrere Profile duerfen denselben Ausloeser haben (z. B. zwei VRChat-Setups),
+aber nur EINES davon mit Timer an. Die Oberflaeche schaltet beim Aktivieren
+die anderen aus; ``blocked_by()`` sichert das zusaetzlich fuer GUI und
+Terminal-Modus ab (auch fuer alte Configs mit Doppel-Eintraegen).
 """
+import process_watch
 from config_manager import load_saved_settings
 
 PROFILE_KEY = "autostart_profiles"
@@ -90,6 +98,28 @@ def armed(profile):
     """Hat das Profil alles, um von selbst zu arbeiten?"""
     return bool(profile.get("enabled") and profile.get("trigger", "").strip()
                 and commands(profile))
+
+
+def trigger_key(trigger):
+    """Vergleichbarer Schluessel: „VRChat.exe“ == „vrchat“, „X [AppId=1]“ -> appid=1."""
+    return process_watch.norm(process_watch.match_key(trigger or ""))
+
+
+def blocked_by(profiles):
+    """{index: index_des_besitzers} fuer Profile, die gesperrt sind, weil ein
+    FRUEHERES aktives Profil denselben Ausloeser hat. Nur das erste zaehlt."""
+    owner, out = {}, {}
+    for i, prof in enumerate(profiles):
+        if not armed(prof):
+            continue
+        key = trigger_key(prof.get("trigger"))
+        if not key:
+            continue
+        if key in owner:
+            out[i] = owner[key]
+        else:
+            owner[key] = i
+    return out
 
 
 def new_state():

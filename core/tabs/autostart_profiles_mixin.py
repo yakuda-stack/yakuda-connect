@@ -361,6 +361,11 @@ class AutostartProfilesMixin:
             self._profile_add_row(prof, app)
 
         inp_trigger.textChanged.connect(self._profiles_changed)
+        # Gleicher Ausloeser: erst nach fertiger Eingabe pruefen, sonst
+        # wuerde „VRChat“ beim Tippen von „VRChat.exe“ schon zuschlagen.
+        inp_trigger.editingFinished.connect(lambda: self._profile_claim_trigger(prof))
+        chk_enabled.toggled.connect(
+            lambda on: on and self._profile_claim_trigger(prof))
         chk_enabled.toggled.connect(lambda _on: self._profile_style_timer_btn(prof))
         chk_enabled.toggled.connect(self._profiles_changed)
         btn_games.clicked.connect(lambda: self._profile_pick_game(prof))
@@ -518,6 +523,7 @@ class AutostartProfilesMixin:
         item = listw.currentItem()
         if item:
             prof["inp_trigger"].setText(item.text())
+            self._profile_claim_trigger(prof)
 
     def _profile_pick_game(self, prof):
         """Alle Spiele aus dem Games-Tab zur Auswahl — ohne Suchen."""
@@ -564,6 +570,7 @@ class AutostartProfilesMixin:
         item = listw.currentItem()
         if item:
             prof["inp_trigger"].setText(game_trigger(item.data(Qt.UserRole)))
+            self._profile_claim_trigger(prof)
 
     def _profile_start_now(self, prof):
         """„Programme starten“: sofort, ohne auf den Ausloeser zu warten.
@@ -618,6 +625,49 @@ class AutostartProfilesMixin:
         """Hat das Profil alles, was es zum Arbeiten braucht?"""
         return engine.armed(self._profile_data(prof))
 
+    def _profile_claim_trigger(self, prof):
+        """Nur EIN aktives Profil pro Ausloeser: ist ``prof`` aktiv, wird der
+        Timer aller anderen Profile mit demselben Ausloeser ausgeschaltet
+        (wie ein Radio-Knopf). Laufende Programme der anderen werden beendet."""
+        if getattr(self, "_profiles_loading", False):
+            return
+        if not prof["chk_enabled"].isChecked():
+            return
+        key = engine.trigger_key(prof["inp_trigger"].text())
+        if not key:
+            return
+        for other in self._profiles:
+            if other is prof or not other["chk_enabled"].isChecked():
+                continue
+            if engine.trigger_key(other["inp_trigger"].text()) != key:
+                continue
+            log.info("[Profile] '%s' aktiviert — Timer von '%s' aus (gleicher Ausloeser).",
+                     prof["name"], other["name"])
+            other["chk_enabled"].setChecked(False)
+            if other["launched"] and not other["manual"]:
+                self._profile_stop(other)
+                other.update(engine.new_state())
+            self._profile_render_status(other)
+
+    def _profile_blocked_by(self, prof):
+        """Name des Profils, das denselben Ausloeser schon belegt — sonst None.
+        Aktiv: das erste aktive Profil gewinnt. Timer aus: irgendein aktives."""
+        profiles = getattr(self, "_profiles", [])
+        if prof not in profiles:
+            return None
+        data = [self._profile_data(p) for p in profiles]
+        idx = profiles.index(prof)
+        if data[idx]["enabled"]:
+            owner = engine.blocked_by(data).get(idx)
+            return None if owner is None else profiles[owner]["name"]
+        key = engine.trigger_key(data[idx]["trigger"])
+        if not key:
+            return None
+        for p, d in zip(profiles, data):
+            if p is not prof and engine.armed(d) and engine.trigger_key(d["trigger"]) == key:
+                return p["name"]
+        return None
+
     def _profiles_update_timer(self):
         """Timer nur laufen lassen, wenn es etwas zu beobachten gibt."""
         master = bool(getattr(self.ui, "toggle_profiles", None)
@@ -653,7 +703,7 @@ class AutostartProfilesMixin:
 
     def _profile_step(self, prof, names, now, headset_ok=None):
         """Ein Takt fuer ein Profil — Regeln aus autostart_profiles.step()."""
-        armed = self._profile_armed(prof)
+        armed = self._profile_armed(prof) and not self._profile_blocked_by(prof)
         trig = armed and process_watch.matches(prof["inp_trigger"].text(), names)
         # Headset nur fragen, wenn der Ausloeser laeuft (spart die Pruefung).
         head = bool(trig) and (headset_ok() if headset_ok else bool(self._profile_headset()))
@@ -828,6 +878,8 @@ class AutostartProfilesMixin:
             text = tr("autostart_profile_status_manual").format(count=self._profile_alive(prof))
         elif not self.ui.toggle_profiles.isChecked():
             text = tr("autostart_profile_status_master_off")
+        elif (dup := self._profile_blocked_by(prof)):
+            text = tr("autostart_profile_status_dup").format(name=dup)
         elif not prof["chk_enabled"].isChecked():
             text = tr("autostart_profile_status_off")
         elif not trig:
