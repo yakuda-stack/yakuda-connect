@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ShNKvvZu74)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.3.9-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.4.0-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -69,7 +69,7 @@ All screenshots: [assets/README.md](assets/README.md)
 | 🧰 | **Tools hub** | Install, update and start popular Linux VR tools from one list. |
 | 💾 | **Backup & restore** | Save your working VR setup and bring it back if something breaks. |
 | 🎨 | **Your look** | 8 themes, own colours, background image. |
-| 🌐 | **Your language** | English and German, switchable in **Settings → General**. More languages are just one file — see [locales/CONTRIBUTING.md](locales/CONTRIBUTING.md). |
+| 🌐 | **Your language** | English,German and Français, switchable in **Settings → General**. More languages are just one file — see [locales/CONTRIBUTING.md](locales/CONTRIBUTING.md). |
 | 🪶 | **Light on your PC** | Starts in under a second and uses almost no CPU while you play. Want even less? Terminal mode works without any window at all. |
 
 <details>

@@ -1,5 +1,20 @@
 # Changelog - Yakuda Connect
 
+
+### 🚀 v1.4.0 — 2026-10-01
+
+#### 🇩🇪 Deutsch
+
+* **Neu: Französische Übersetzung** (`locales/fr.json`) von [@jmfergeau](https://github.com/jmfergeau) (Discord: Ketsu Anaguma), PR #11. Danke! 💙
+* Erscheint automatisch in der Sprachauswahl, keine Code-Änderung nötig.
+* Noch nicht übersetzte Texte (z. B. neue Autostart-Profil-Texte) werden auf Englisch angezeigt.
+
+#### 🇬🇧 English
+
+* **New: French translation** (`locales/fr.json`) by [@jmfergeau](https://github.com/jmfergeau) (Discord: Ketsu Anaguma), PR #11. Thank you! 💙
+* Shows up automatically in the language selection, no code changes needed.
+* Texts that aren't translated yet (e.g. new autostart profile texts) are shown in English.
+
 ### 🚀 v1.3.9 — 2026-09-29
 
 #### 🇩🇪 Deutsch

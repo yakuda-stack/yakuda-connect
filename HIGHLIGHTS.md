@@ -1,5 +1,20 @@
 # Highlights - Yakuda Connect
 
+
+### 🚀 v1.4.0 — 2026-10-01
+
+#### 🇩🇪 Deutsch
+
+* **Neu: Französisch! 🇫🇷** Yakuda Connect gibt es jetzt auch auf Französisch – einfach in den Einstellungen unter „🌐 Sprache“ auswählen. Ein großes Dankeschön an [@jmfergeau](https://github.com/jmfergeau) (auf Discord: **Ketsu Anaguma**) für die komplette Übersetzung! 💙
+
+#### 🇬🇧 English
+
+* **New: French! 🇫🇷** Yakuda Connect is now available in French – just pick it in the settings under “🌐 Language”. A big thank you to [@jmfergeau](https://github.com/jmfergeau) (on Discord: **Ketsu Anaguma**) for the full translation! 💙
+
+
+---
+
+
 ### 🚀 v1.3.9 — 2026-09-29
 
 #### 🇩🇪 Deutsch
