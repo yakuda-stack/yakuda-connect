@@ -1,6 +1,28 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.1 — 2026-10-07
+
+#### 🇩🇪 Deutsch
+
+* **Warnung bei falscher WiVRn-Version.** Passt die WiVRn-App auf der Brille nicht zur Version am PC, sagt dir die App das jetzt direkt – der häufigste Grund, warum die Brille nicht verbindet.
+* **VRChat: passendes Proton für Wayland oder X11.** Beim ersten Öffnen fragt die App kurz, ob du Wayland nutzt, und empfiehlt dann die richtige Proton-Version – jetzt mit Proton-RTSP-Wayland-GE **Beta4**.
+* **ⓘ neben jeder Proton-Version** öffnet ihre Webseite mit Changelog.
+* **Aufgeräumte README** mit klareren Installationswegen.
+* **Neu im Tools-Tab: LinuxVR-ViewShot** – Fotos in VR per Hand-Rahmen-Geste. Mit einem Klick per AUR, AppImage oder Installationsskript.
+* **Hilfe für Umsteiger von Windows.** Im Installations-Tab steht jetzt, was im Terminal bei einer AUR-Installation passiert und welche Taste du drücken musst – z. B. **q**, um den langen PKGBUILD-Text zu schließen.
+
+#### 🇬🇧 English
+
+* **Warning on wrong WiVRn version.** If the WiVRn app on your headset doesn't match the version on your PC, the app now tells you right away – the most common reason a headset won't connect.
+* **VRChat: the right Proton for Wayland or X11.** On first open the app asks once whether you use Wayland and then recommends the right Proton version – now with Proton-RTSP-Wayland-GE **Beta4**.
+* **ⓘ next to every Proton version** opens its website with the changelog.
+* **Tidied-up README** with clearer install methods.
+* **New in the Tools tab: LinuxVR-ViewShot** – take photos in VR with a hand-frame gesture. One click via AUR, AppImage or install script.
+* **Help for people coming from Windows.** The Installation tab now explains what happens in the terminal during an AUR install and which key to press – e.g. **q** to close the long PKGBUILD text.
+
+---
+
 ### 🚀 v1.4.0 — 2026-10-01
 
 #### 🇩🇪 Deutsch

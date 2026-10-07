@@ -294,6 +294,63 @@ def _proton_entry(pv_map, pd_map, key, role, desc=None, cachyos_only=False,
     return entry
 
 
+def _build_protons(pv, pd, pv_meta, p):
+    """Proton-Eintraege eines Spiels aus seinem "proton"-Block."""
+    protons = []
+    # Empfiehlt ein Spiel auf CachyOS DIESELBE Version wie ueberall sonst
+    # (bei VRChat seit 1.1.9 der Fall: RTSP-Proton, weil proton-cachyos die
+    # MediaFoundation-Patches fuer AVPro nicht hat), stuende sie doppelt in
+    # der Liste. Der Default-Eintrag wird auf CachyOS dann ausgeblendet —
+    # sichtbar bleibt der main_cachyos-Eintrag, der dort auch das
+    # "Empfohlen"-Badge traegt.
+    same_on_cachyos = bool(p.get("cachyos")) and p.get("cachyos") == p.get("default")
+
+    if p.get("cachyos"):
+        protons.append(_proton_entry(pv, pd, p["cachyos"], "main_cachyos",
+                                     p.get("cachyos_desc"), cachyos_only=True,
+                                     meta=pv_meta.get(p["cachyos"])))
+    if p.get("default"):
+        protons.append(_proton_entry(pv, pd, p["default"], "main",
+                                     p.get("default_desc"),
+                                     hide_on_cachyos=same_on_cachyos,
+                                     meta=pv_meta.get(p["default"])))
+    # Die Alternative wird NUR ausgeblendet, wenn es fuer genau diesen
+    # Slot ein CachyOS-Gegenstueck gibt. Frueher stand hier
+    # bool(p.get("alternative_cachyos")) — was zufaellig richtig war,
+    # solange es nur einen Zusatz-Slot gab. Mit dem "safe"-Slot darunter
+    # waere es falsch geworden: ein safe_cachyos-Eintrag haette die
+    # Alternative auf CachyOS mit verschwinden lassen.
+    if p.get("alternative"):
+        protons.append(_proton_entry(pv, pd, p["alternative"], "alternative",
+                                     p.get("alt_desc"),
+                                     hide_on_cachyos=bool(p.get("alternative_cachyos")),
+                                     meta=pv_meta.get(p["alternative"])))
+    # Optionale eigene Alternative fuer CachyOS: dort ist die
+    # "Performance statt Kompatibilitaet"-Option proton-cachyos, nicht
+    # Valves Proton. Ohne diesen Slot muesste man sich fuer einen der
+    # beiden entscheiden und der jeweils andere Nutzerkreis saehe Unsinn.
+    if p.get("alternative_cachyos"):
+        protons.append(_proton_entry(pv, pd, p["alternative_cachyos"], "alternative",
+                                     p.get("alt_cachyos_desc"), cachyos_only=True,
+                                     meta=pv_meta.get(p["alternative_cachyos"])))
+    # Dritter Slot "safe": die risikoarme Wahl OHNE Video-/Codec-Extras.
+    # Bewusst getrennt von "alternative": bei VRChat ist die Alternative
+    # ein zweiter Medien-Build (RTSP), waehrend "safe" gerade der Verzicht
+    # darauf ist. Beide in einen Slot zu quetschen haette bedeutet, dem
+    # Nutzer zwei gegensaetzliche Empfehlungen unter einem Label zu zeigen.
+    if p.get("safe"):
+        protons.append(_proton_entry(pv, pd, p["safe"], "safe",
+                                     p.get("safe_desc"),
+                                     hide_on_cachyos=bool(p.get("safe_cachyos")),
+                                     meta=pv_meta.get(p["safe"])))
+    if p.get("safe_cachyos"):
+        protons.append(_proton_entry(pv, pd, p["safe_cachyos"], "safe",
+                                     p.get("safe_cachyos_desc"), cachyos_only=True,
+                                     meta=pv_meta.get(p["safe_cachyos"])))
+
+    return protons
+
+
 def build_games_from_config(cfg):
     """Übersetzt eine games.json in die interne GAMES-Struktur."""
     if not isinstance(cfg, dict):
@@ -316,57 +373,21 @@ def build_games_from_config(cfg):
     for appid, g in (cfg.get("games", {}) or {}).items():
         appid = str(appid)
         p = g.get("proton", {}) or {}
-        protons = []
-        # Empfiehlt ein Spiel auf CachyOS DIESELBE Version wie ueberall sonst
-        # (bei VRChat seit 1.1.9 der Fall: RTSP-Proton, weil proton-cachyos die
-        # MediaFoundation-Patches fuer AVPro nicht hat), stuende sie doppelt in
-        # der Liste. Der Default-Eintrag wird auf CachyOS dann ausgeblendet —
-        # sichtbar bleibt der main_cachyos-Eintrag, der dort auch das
-        # "Empfohlen"-Badge traegt.
-        same_on_cachyos = bool(p.get("cachyos")) and p.get("cachyos") == p.get("default")
-
-        if p.get("cachyos"):
-            protons.append(_proton_entry(pv, pd, p["cachyos"], "main_cachyos",
-                                         p.get("cachyos_desc"), cachyos_only=True,
-                                         meta=pv_meta.get(p["cachyos"])))
-        if p.get("default"):
-            protons.append(_proton_entry(pv, pd, p["default"], "main",
-                                         p.get("default_desc"),
-                                         hide_on_cachyos=same_on_cachyos,
-                                         meta=pv_meta.get(p["default"])))
-        # Die Alternative wird NUR ausgeblendet, wenn es fuer genau diesen
-        # Slot ein CachyOS-Gegenstueck gibt. Frueher stand hier
-        # bool(p.get("alternative_cachyos")) — was zufaellig richtig war,
-        # solange es nur einen Zusatz-Slot gab. Mit dem "safe"-Slot darunter
-        # waere es falsch geworden: ein safe_cachyos-Eintrag haette die
-        # Alternative auf CachyOS mit verschwinden lassen.
-        if p.get("alternative"):
-            protons.append(_proton_entry(pv, pd, p["alternative"], "alternative",
-                                         p.get("alt_desc"),
-                                         hide_on_cachyos=bool(p.get("alternative_cachyos")),
-                                         meta=pv_meta.get(p["alternative"])))
-        # Optionale eigene Alternative fuer CachyOS: dort ist die
-        # "Performance statt Kompatibilitaet"-Option proton-cachyos, nicht
-        # Valves Proton. Ohne diesen Slot muesste man sich fuer einen der
-        # beiden entscheiden und der jeweils andere Nutzerkreis saehe Unsinn.
-        if p.get("alternative_cachyos"):
-            protons.append(_proton_entry(pv, pd, p["alternative_cachyos"], "alternative",
-                                         p.get("alt_cachyos_desc"), cachyos_only=True,
-                                         meta=pv_meta.get(p["alternative_cachyos"])))
-        # Dritter Slot "safe": die risikoarme Wahl OHNE Video-/Codec-Extras.
-        # Bewusst getrennt von "alternative": bei VRChat ist die Alternative
-        # ein zweiter Medien-Build (RTSP), waehrend "safe" gerade der Verzicht
-        # darauf ist. Beide in einen Slot zu quetschen haette bedeutet, dem
-        # Nutzer zwei gegensaetzliche Empfehlungen unter einem Label zu zeigen.
-        if p.get("safe"):
-            protons.append(_proton_entry(pv, pd, p["safe"], "safe",
-                                         p.get("safe_desc"),
-                                         hide_on_cachyos=bool(p.get("safe_cachyos")),
-                                         meta=pv_meta.get(p["safe"])))
-        if p.get("safe_cachyos"):
-            protons.append(_proton_entry(pv, pd, p["safe_cachyos"], "safe",
-                                         p.get("safe_cachyos_desc"), cachyos_only=True,
-                                         meta=pv_meta.get(p["safe_cachyos"])))
+        protons = _build_protons(pv, pd, pv_meta, p)
+        # Optional: eigene Empfehlung fuer Nicht-Wayland-Sitzungen (X11).
+        # Bei VRChat ist auf Wayland Proton-RTSP-Wayland-GE die erste Wahl,
+        # unter X11 bringt dessen Wayland-Teil nichts — dort ist das normale
+        # RTSP-Proton die Empfehlung. Aeltere Clients kennen die *_x11-Felder
+        # nicht und ignorieren sie einfach.
+        protons_x11 = None
+        if p.get("default_x11"):
+            p_x11 = dict(p)
+            p_x11["default"] = p["default_x11"]
+            p_x11["default_desc"] = p.get("default_x11_desc")
+            if p.get("alternative_x11"):
+                p_x11["alternative"] = p["alternative_x11"]
+                p_x11["alt_desc"] = p.get("alt_x11_desc")
+            protons_x11 = _build_protons(pv, pd, pv_meta, p_x11)
 
         launch = {}
         if g.get("amd_start") or g.get("nvidia_start"):
@@ -416,6 +437,7 @@ def build_games_from_config(cfg):
             "name": g.get("name", appid),
             "picture": picture,
             "protons": protons,
+            "protons_x11": protons_x11,
             "launch_params": launch,
             "fixes": g.get("fixes", []) or [],
             "toggles": toggles,
@@ -1674,6 +1696,55 @@ def is_cachyos():
         return False
 
 
+# --------------------------------------------------------------------------- #
+#  Wayland oder X11? (fuer Spiele mit eigener X11-Empfehlung, z. B. VRChat)
+# --------------------------------------------------------------------------- #
+def session_looks_wayland():
+    """Grobe Erkennung der laufenden Sitzung — nur als Vorschlag fuer die Frage."""
+    return (os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+            or bool(os.environ.get("WAYLAND_DISPLAY")))
+
+
+def get_uses_wayland():
+    """Antwort des Nutzers: True/False, oder None = noch nie gefragt."""
+    val = _load_app_config().get("games_uses_wayland")
+    return val if isinstance(val, bool) else None
+
+
+def set_uses_wayland(flag):
+    if not update_json(APP_CONFIG, {"games_uses_wayland": bool(flag)}):
+        log.warning("Wayland-Auswahl konnte nicht gespeichert werden.")
+
+
+def game_protons(game):
+    """Proton-Liste des Spiels — mit X11-Variante, wenn der Nutzer kein Wayland nutzt."""
+    if game.get("protons_x11") and get_uses_wayland() is False:
+        return game["protons_x11"]
+    return game.get("protons", [])
+
+
+def proton_info_url(proton):
+    """
+    Webseite einer Proton-Version fuer den kleinen ⓘ-Knopf, oder "".
+
+    Zuerst die in der games.json eingetragene release_url, sonst ein
+    bekanntes Projekt anhand des Namens/Runners.
+    """
+    if proton.get("release_url"):
+        return proton["release_url"]
+    name = (proton.get("version") or "").lower()
+    runner = (proton.get("protonplus_runner") or "").lower()
+    if "rtsp" in name or "rtsp" in runner:
+        return "https://github.com/SpookySkeletons/proton-rtsp/releases"
+    if "cachyos" in name or "cachyos" in runner:
+        return "https://github.com/CachyOS/proton-cachyos/releases"
+    if "ge" in runner or name.startswith("ge-proton") or "proton-ge" in name:
+        return "https://github.com/GloriousEggroll/proton-ge-custom/releases"
+    if name.startswith("proton"):
+        return "https://github.com/ValveSoftware/Proton"
+    return ""
+
+
 def recommended_role(game=None):
     """Welche 'role' auf diesem System die Haupt-Empfehlung ist.
 
@@ -1689,7 +1760,7 @@ def recommended_role(game=None):
         return "main"
     if game is None:
         return "main_cachyos"
-    has_cachy = any(p.get("role") == "main_cachyos" for p in game.get("protons", []))
+    has_cachy = any(p.get("role") == "main_cachyos" for p in game_protons(game))
     return "main_cachyos" if has_cachy else "main"
 
 
@@ -1702,7 +1773,7 @@ def visible_protons(game):
     """
     cachy = is_cachyos()
     rec = recommended_role(game)
-    protons = [p for p in game.get("protons", [])
+    protons = [p for p in game_protons(game)
                if not (cachy and p.get("hide_on_cachyos"))
                and not ((not cachy) and p.get("cachyos_only"))]
     # Empfehlung zuerst, danach feste Rollen-Reihenfolge: Alternative (Backup)

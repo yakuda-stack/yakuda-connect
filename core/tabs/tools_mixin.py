@@ -21,6 +21,7 @@ import paths
 from appimage_installer import AppImageInstallWorker
 import cargo_installer
 from cargo_installer import CargoInstallWorker
+from script_installer import ScriptInstallWorker
 from install_worker import InstallWorker, RemoveWorker, RpmInstallWorker
 from jsonio import read_json, write_json_atomic
 from translations import tr, get_language
@@ -208,6 +209,7 @@ class ToolsTabMixin:
         cargo_inst    = status.get("cargo_installed", False)
         cargo_ver     = status.get("cargo_version", "")
         cargo_upd     = status.get("cargo_has_update", False)
+        script_inst   = status.get("script_installed", False)
         config_ok     = status.get("config_present", False)
 
         methods = card.get("methods") or []
@@ -219,7 +221,7 @@ class ToolsTabMixin:
         # Dropdown nur zeigen, wenn Auswahl besteht UND noch installiert/aktualisiert werden kann
         show_combo = (combo is not None and len(methods) >= 2
                       and not appimage_inst and not pm_inst and not flatpak_inst
-                      and not cargo_inst)
+                      and not cargo_inst and not script_inst)
         if combo is not None:
             combo.setVisible(show_combo)
 
@@ -249,6 +251,17 @@ class ToolsTabMixin:
             else:
                 card["lbl_update"].setText("")
                 btn.setText(tr("tools_delete"))
+            btn.setEnabled(True)
+
+        elif script_inst:
+            # Per Projekt-Skript installiert: Loeschen laeuft ueber dasselbe
+            # Skript ("uninstall"), Updates bringt das Projekt selbst mit.
+            card["lbl_version"].setText("")
+            card["lbl_update"].setText("")
+            st.setText(tr("tools_script_ok"))
+            st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
+            card["cmd_widget"].setVisible(True)
+            btn.setText(tr("tools_delete"))
             btn.setEnabled(True)
 
         elif pm_inst:
@@ -361,7 +374,8 @@ class ToolsTabMixin:
         methods = appimg.detect_install_methods(tool)
         card["methods"] = methods
         labels = {"appimage": "AppImage", "yay": "yay", "paru": "paru",
-                  "flatpak": "Flatpak", "rpm": "RPM (dnf)", "cargo": "Cargo"}
+                  "flatpak": "Flatpak", "rpm": "RPM (dnf)", "cargo": "Cargo",
+                  "script": tr("tools_method_script")}
         combo.blockSignals(True)
         combo.clear()
         for mthd in methods:
@@ -395,6 +409,8 @@ class ToolsTabMixin:
             self.delete_tool(key)
         elif status.get("cargo_installed") and not status.get("cargo_has_update"):
             self.delete_tool(key)
+        elif status.get("script_installed"):
+            self.remove_tool_script(key)
         elif status.get("pm_installed"):
             # Per yay/paru installiert -> Paket entfernen
             self.remove_tool_pm(key)
@@ -507,6 +523,16 @@ class ToolsTabMixin:
                 lambda success, k=key: self.on_tool_installed(k, success)
             )
             self.tool_worker.start()
+        elif method == "script":
+            # Offizielles Installationsskript des Projekts im Terminal.
+            self.tool_worker = ScriptInstallWorker(tool)
+            self.tool_worker.status_signal.connect(
+                lambda msg, k=key: self._set_tool_status(k, msg)
+            )
+            self.tool_worker.finished_signal.connect(
+                lambda success, k=key: self.on_tool_installed(k, success)
+            )
+            self.tool_worker.start()
         elif method == "flatpak":
             self.tool_worker = InstallWorker([tool.get("flatpak_id", "")], helper="flatpak")
             self.tool_worker.finished_signal.connect(
@@ -563,6 +589,28 @@ class ToolsTabMixin:
 
         # Status frisch berechnen und anzeigen
         self._refresh_single_tool(key)
+
+    def remove_tool_script(self, key):
+        """Entfernt ein per Projekt-Skript installiertes Tool (Skript mit 'uninstall')."""
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        tool = card.get("tool", {})
+        name = tool.get("name", key)
+        reply = QMessageBox.question(
+            self, tr("tools_script_remove_title"),
+            tr("tools_script_remove_text").format(name=name),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        card["btn_install"].setEnabled(False)
+        card["btn_install"].setText(tr("tools_deleting"))
+        self.tool_worker = ScriptInstallWorker(tool, uninstall=True)
+        self.tool_worker.status_signal.connect(
+            lambda msg, k=key: self._set_tool_status(k, msg))
+        self.tool_worker.finished_signal.connect(
+            lambda _ok, k=key: self._refresh_single_tool(k))
+        self.tool_worker.start()
 
     def remove_tool_pm(self, key):
         """

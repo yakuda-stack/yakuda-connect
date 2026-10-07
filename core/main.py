@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.0"
+APP_VERSION = "v1.4.1"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -377,6 +377,10 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         self._adb_mtp_busy = False
         self._adb_success_noted = False
         self._usb_last_info = None           # zuletzt erkannter Zustand
+        # WiVRn-Versionsvergleich Brille <-> PC: None = noch nicht geprueft,
+        # () = passt/unbekannt/laeuft, (client, server) = passt NICHT.
+        self._wivrn_ver_state = None
+        self._wivrn_ver_worker = None
         # Kurzlebige Rueckmeldung des Verbinden-Knopfes. Die USB-Zeile wird
         # alle vier Sekunden neu gezeichnet — ohne Ablaufzeit waere die
         # Meldung entweder sofort weg oder fuer immer da.

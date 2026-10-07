@@ -13,7 +13,7 @@ Felder:
 
 Installationsmethoden (distro-abhängig automatisch gefiltert):
   install_methods : Liste erlaubter Methoden, Teilmenge von
-                    {"appimage", "aur", "flatpak", "rpm", "cargo"}. Fehlt das Feld, wird aus
+                    {"appimage", "aur", "flatpak", "rpm", "cargo", "script"}. Fehlt das Feld, wird aus
                     install_type/Feldern abgeleitet.
                       * "aur"     -> nur auf Arch-Distros, wenn yay oder paru da ist
                       * "appimage"-> überall, wenn github_repo/appimage_url gesetzt
@@ -21,6 +21,9 @@ Installationsmethoden (distro-abhängig automatisch gefiltert):
                       * "cargo"   -> überall; baut per 'cargo install' nach
                                      ~/.config/yakuda-connect/tools/cargo/<key>/
                                      (Rust/Compiler werden bei Bedarf nachinstalliert)
+                      * "script"  -> überall mit curl; führt das offizielle
+                                     'curl -fsSL <script_url> | bash' des Projekts
+                                     im Terminal aus (core/script_installer.py)
                     Sind mehrere Methoden verfügbar, zeigt die Karte ein
                     Dropdown. Vorauswahl: AppImage; sonst yay; sonst die erste.
   github_repo      : "owner/repo" -> neueste passende Release wird automatisch geholt
@@ -34,6 +37,8 @@ Installationsmethoden (distro-abhängig automatisch gefiltert):
   cargo_git        : Git-URL -> "cargo install --git <url>" statt crates.io
   cargo_sys_deps   : {"arch": [...], "fedora": [...], "debian": [...], "suse": [...]}
                      Systempakete, die vor dem Cargo-Build da sein muessen
+  script_url       : Roh-URL des install.sh für "script"
+  script_uninstall_args : Argumente zum Entfernen per Skript (Standard: "uninstall")
   config_dirs      : Ordnernamen in ~/.config zur Erkennung/zum Löschen
   icon_url         : Icon (GitHub blob- oder raw-URL)
   launch_args      : Zusätzliche Startargumente für die AppImage

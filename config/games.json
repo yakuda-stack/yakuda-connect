@@ -1,22 +1,22 @@
 {
   "info": {
-    "version": "1.2.8",
-    "last_updated": "2026-09-12"
+    "version": "1.2.9",
+    "last_updated": "2026-10-07"
   },
   "picture_template": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg",
   "proton_versions": {
     "Pro11": "Proton 11",
     "Pro11GE": "Proton-GE",
     "Pro11WaylandGE": {
-      "version": "Proton-RTSP-Wayland-GE-Beta3",
+      "version": "Proton-RTSP-Wayland-GE-Beta4",
       "tool_prefix": [
         "Proton-RTSP-Wayland-GE"
       ],
       "protonplus_runner": null,
       "manual": true,
-      "download_url": "https://github.com/Go08er/Proton-RTSP-Wayland-GE/releases/download/v11.1.0-beta.3/Proton-RTSP-Wayland-GE-Beta3.tar.gz",
-      "checksum_url": "https://github.com/Go08er/Proton-RTSP-Wayland-GE/releases/download/v11.1.0-beta.3/Proton-RTSP-Wayland-GE-Beta3.tar.gz.sha512sum",
-      "release_url": "https://github.com/Go08er/Proton-RTSP-Wayland-GE/releases/tag/v11.1.0-beta.3"
+      "download_url": "https://github.com/Go08er/Proton-RTSP-Wayland-GE/releases/download/v11.1.0-beta.4/Proton-RTSP-Wayland-GE-Beta4.tar.gz",
+      "checksum_url": "https://github.com/Go08er/Proton-RTSP-Wayland-GE/releases/download/v11.1.0-beta.4/Proton-RTSP-Wayland-GE-Beta4.tar.gz.sha512sum",
+      "release_url": "https://github.com/Go08er/Proton-RTSP-Wayland-GE/releases/tag/v11.1.0-beta.4"
     },
     "Pro11GERTSP": {
       "version": "proton-rtsp-11.0-20260609-4",
@@ -68,6 +68,16 @@
         "alt_desc": {
           "de": "Backup: der Upstream, von dem die Wayland-Variante abstammt. Gleicher Medienstack, aber ohne die Wayland-Patches — laeuft ueber XWayland. Nimm das, wenn Wayland-GE Aerger macht oder ein neuer Medien-Fix noch nicht im Fork angekommen ist.",
           "en": "Backup: the upstream the Wayland variant derives from. Same media stack, but without the Wayland patches — runs on XWayland. Use this if Wayland-GE misbehaves or a new media fix hasn't reached the fork yet."
+        },
+        "default_x11": "Pro11GERTSP",
+        "default_x11_desc": {
+          "de": "Haupt-Empfehlung ohne Wayland (X11): RTSP-Proton mit MediaFoundation-Patches — bringt die VRChat-Videoplayer zum Laufen. Ueber ProtonPlus installierbar.",
+          "en": "Main recommendation without Wayland (X11): RTSP Proton with MediaFoundation patches — makes the VRChat video players work. Installable via ProtonPlus."
+        },
+        "alternative_x11": "Pro11WaylandGE",
+        "alt_x11_desc": {
+          "de": "Wayland-Variante desselben Medienstacks. Unter X11 bringen die Wayland-Patches nichts — nur nehmen, wenn du doch eine Wayland-Sitzung nutzt.",
+          "en": "Wayland variant of the same media stack. On X11 the Wayland patches add nothing — only pick this if you do use a Wayland session."
         },
         "safe": "Pro11",
         "safe_desc": {

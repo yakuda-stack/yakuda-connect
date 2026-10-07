@@ -343,6 +343,32 @@ class PairingPinWorker(QThread):
             self.pin_signal.emit("")
 
 
+class WivrnVersionWorker(QThread):
+    """
+    Vergleicht die WiVRn-Version auf der Brille (per adb) mit dem
+    installierten ``wivrn-server``.
+
+    Das ist DER Klassiker im Support: Server per Paketmanager aktualisiert,
+    App auf der Brille noch alt — und die Brille verbindet einfach nicht,
+    ohne verstaendliche Fehlermeldung. ``dumpsys`` kann ein paar Sekunden
+    dauern, deshalb im Hintergrund und nur einmal pro angesteckter Brille.
+    """
+    result_signal = QtSignal(dict)   # client, server, match (True/False/None)
+
+    def run(self):
+        res = {"client": "", "server": "", "match": None}
+        try:
+            serial = wapk.ready_serial()
+            if serial:
+                package = wapk.detect_package(serial)
+                res["client"] = wapk.client_version(serial, package)
+            res["server"] = wapk.server_version()
+            res["match"] = wapk.versions_match(res["client"], res["server"])
+        except Exception as exc:  # noqa: BLE001 — Hinweis darf nie abstuerzen
+            log.debug("WiVRn-Versionsvergleich fehlgeschlagen: %s", exc)
+        self.result_signal.emit(res)
+
+
 class UsbHeadsetWorker(QThread):
     """
     Sucht im Hintergrund nach einer per USB angeschlossenen Brille.
@@ -574,6 +600,20 @@ class DashboardMixin:
             self._adb_updated = None          # naechstes Problem neu bewerten
             self._note_adb_success()
 
+        # WiVRn-Version Brille <-> PC: einmal pro angesteckter Brille
+        # vergleichen. Passt sie nicht, wird die sonst unsichtbare gruene
+        # Zeile gelb und sagt, was zu tun ist.
+        if state == "ready":
+            if self._wivrn_ver_state is None:
+                self._start_wivrn_version_check()
+            mismatch = self._wivrn_ver_state
+            if mismatch and not text:
+                color = "#ebcb8b"
+                text = tr("usb_state_version_mismatch").format(
+                    client=mismatch[0], server=mismatch[1])
+        else:
+            self._wivrn_ver_state = None      # neu ansteckt = neu pruefen
+
         if problem and self._adb_updated:
             old_ver, new_ver = self._adb_updated
             text = f"{text} {tr('usb_state_after_update').format(old=old_ver, new=new_ver)}"
@@ -722,6 +762,8 @@ class DashboardMixin:
             QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
     def _on_apk_finished(self, success):
+        if success:
+            self._wivrn_ver_state = None    # neue APK drauf -> neu vergleichen
         self.ui.btn_apk_install.setEnabled(True)
         self.ui.btn_apk_download.setEnabled(True)
         self.ui.btn_apk_cancel.setVisible(False)
@@ -858,6 +900,27 @@ class DashboardMixin:
         self._doctor_worker.probe_signal.connect(self._on_adb_probe_done)
         self._release_worker_on_finish("_doctor_worker")
         self._doctor_worker.start()
+
+    def _start_wivrn_version_check(self):
+        """Startet den Versionsvergleich (siehe ``WivrnVersionWorker``)."""
+        if self._wivrn_ver_worker is not None and self._wivrn_ver_worker.isRunning():
+            return
+        self._wivrn_ver_state = ()      # "laeuft" — verhindert Doppelstarts
+        self._wivrn_ver_worker = WivrnVersionWorker()
+        self._wivrn_ver_worker.result_signal.connect(self._on_wivrn_version_done)
+        self._release_worker_on_finish("_wivrn_ver_worker")
+        self._wivrn_ver_worker.start()
+
+    def _on_wivrn_version_done(self, res):
+        # Nur bei einem SICHEREN "passt nicht" warnen. Unbekannt (None) heisst
+        # schweigen — lieber keine Warnung als eine falsche.
+        if res.get("match") is False:
+            log.warning("WiVRn-Version passt nicht: Brille %s, PC %s",
+                        res.get("client"), res.get("server"))
+            self._wivrn_ver_state = (res.get("client"), res.get("server"))
+        else:
+            self._wivrn_ver_state = ()
+        self._render_usb_state(None)
 
     def _on_adb_probe_done(self, info):
         self._adb_updated = tuple(info.get("updated") or ())

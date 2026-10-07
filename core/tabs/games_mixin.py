@@ -665,11 +665,41 @@ class GamesTabMixin:
             if getattr(tile, "_arrow", None):
                 tile._arrow.setText("▴")
 
+        # Spiele mit eigener X11-Empfehlung (VRChat): einmal fragen, ob
+        # Wayland genutzt wird — davon haengt die empfohlene Proton-Version ab.
+        if game.get("protons_x11") and games_db.get_uses_wayland() is None:
+            self._ask_uses_wayland()
+
         detail = (self._build_local_game_detail(appid, game["entry"])
                   if game.get("local")
                   else self._build_game_detail(appid, game))
         self._games_detail_widget = detail
         grid.addWidget(detail, row * 2 + 1, 0, 1, self.GAMES_TILES_PER_ROW)
+
+    def _ask_uses_wayland(self):
+        """Fragt Wayland/X11 ab und merkt sich die Antwort."""
+        guess = games_db.session_looks_wayland()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(tr("games_wayland_title"))
+        box.setText(tr("games_wayland_text"))
+        box.setInformativeText(tr("games_wayland_detected_yes") if guess
+                               else tr("games_wayland_detected_no"))
+        yes = box.addButton(tr("games_wayland_yes"), QMessageBox.YesRole)
+        no = box.addButton(tr("games_wayland_no"), QMessageBox.NoRole)
+        box.setDefaultButton(yes if guess else no)
+        self._widen_dialog_buttons(box)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is None:              # Fenster geschlossen -> Erkennung nehmen
+            games_db.set_uses_wayland(guess)
+        else:
+            games_db.set_uses_wayland(clicked is yes)
+
+    def _change_uses_wayland(self):
+        """Knopf im Panel: Antwort aendern und Panel neu aufbauen."""
+        self._ask_uses_wayland()
+        self._refresh_detail()
 
     def _refresh_detail(self):
         """Baut das offene Panel neu auf (z. B. nach 'Use': Aktiv-Badge)."""
@@ -1368,7 +1398,25 @@ class GamesTabMixin:
         # --- Proton-Versionen (gefiltert + Empfehlung zuerst) ---
         lbl_proton = QLabel(tr("games_proton_section"))
         lbl_proton.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-        box.addWidget(lbl_proton)
+        if game.get("protons_x11"):
+            proton_head = QHBoxLayout()
+            proton_head.addWidget(lbl_proton)
+            proton_head.addStretch()
+            uses_wl = games_db.get_uses_wayland() is not False
+            btn_wl = QPushButton(tr("games_wayland_switch").format(
+                session="Wayland" if uses_wl else "X11"))
+            btn_wl.setCursor(Qt.PointingHandCursor)
+            btn_wl.setToolTip(tr("games_wayland_switch_tip"))
+            btn_wl.setStyleSheet("""
+                QPushButton { background: transparent; color: #88c0d0; border: none;
+                              font-size: 11px; padding: 0; }
+                QPushButton:hover { color: #eceff4; text-decoration: underline; }
+            """)
+            btn_wl.clicked.connect(lambda _=False: self._change_uses_wayland())
+            proton_head.addWidget(btn_wl)
+            box.addLayout(proton_head)
+        else:
+            box.addWidget(lbl_proton)
 
         role_labels = {
             "main": tr("games_role_main"),
@@ -1407,6 +1455,23 @@ class GamesTabMixin:
                 "color: #a3be8c; font-family: monospace; font-size: 12px; font-weight: bold; border: none;")
             lbl_ver.setTextInteractionFlags(Qt.TextSelectableByMouse)
             head.addWidget(lbl_ver)
+
+            # Kleines ⓘ: oeffnet die Webseite der Proton-Version (Release-
+            # Notes, Changelog), wenn eine bekannt ist.
+            info_url = games_db.proton_info_url(proton)
+            if info_url:
+                btn_info = QPushButton("ⓘ")
+                btn_info.setCursor(Qt.PointingHandCursor)
+                btn_info.setToolTip(tr("games_proton_info_tip").format(url=info_url))
+                btn_info.setFixedSize(20, 20)
+                btn_info.setStyleSheet("""
+                    QPushButton { background: transparent; color: #88c0d0; border: none;
+                                  font-size: 14px; padding: 0; }
+                    QPushButton:hover { color: #eceff4; }
+                """)
+                btn_info.clicked.connect(
+                    lambda _=False, u=info_url: QDesktopServices.openUrl(QUrl(u)))
+                head.addWidget(btn_info)
 
             badge_text = (tr("games_recommended_cachyos")
                           if is_rec and rec_role == "main_cachyos"

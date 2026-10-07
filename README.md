@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ShNKvvZu74)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.4.0-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.4.1-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -69,7 +69,7 @@ All screenshots: [assets/README.md](assets/README.md)
 | 🧰 | **Tools hub** | Install, update and start popular Linux VR tools from one list. |
 | 💾 | **Backup & restore** | Save your working VR setup and bring it back if something breaks. |
 | 🎨 | **Your look** | 8 themes, own colours, background image. |
-| 🌐 | **Your language** | English,German and Français, switchable in **Settings → General**. More languages are just one file — see [locales/CONTRIBUTING.md](locales/CONTRIBUTING.md). |
+| 🌐 | **Your language** | English, German and Français, switchable in **Settings → General**. More languages are just one file — see [locales/CONTRIBUTING.md](locales/CONTRIBUTING.md). |
 | 🪶 | **Light on your PC** | Starts in under a second and uses almost no CPU while you play. Want even less? Terminal mode works without any window at all. |
 
 <details>
@@ -89,6 +89,8 @@ All screenshots: [assets/README.md](assets/README.md)
 
 * **Centralized Dashboard:** Start and stop your WiVRn server instantly with a clean, easy-to-use interface.
 * **VR Games Library:** The Games tab auto-detects every installed Steam VR game and shows it as a cover tile — with curated Proton profiles and tested launch options for games like VRChat, auto-recommendations for everything else, and one-click **Use** (set Proton version) and **▶ Play** (launch via Steam) buttons.
+* **Wayland or X11 for VRChat:** When you open VRChat in the Games tab, the app asks once whether you use Wayland — on Wayland it recommends [Proton-RTSP-Wayland-GE](https://github.com/Go08er/Proton-RTSP-Wayland-GE), on X11 the regular [proton-rtsp](https://github.com/SpookySkeletons/proton-rtsp). Change it any time via **Session: … · change** above the Proton list.
+* **ⓘ Proton info:** The small **ⓘ** next to a Proton version opens its website (release notes, changelog) when one is known.
 * **ProtonPlus Integration:** Install the recommended Proton builds (Proton-GE, GE-RTSP, Proton-CachyOS) straight from a game's panel via the ProtonPlus CLI.
 * **Advanced Autostart Chain:** Launch multiple VR companion tools (such as WayVR, VRCX, OpenComposite, SlimeVR, or OSC tools) automatically in a custom sequence.
 * **Autostart profiles (Streaming tab):** The Dashboard keeps only the standard autostart (starts on headset connect; **＋ Program** / **✕** per row). Profiles live at the bottom of the Streaming tab (compatibility, encoder and GPU stay on top): master switch **Start with app profiles** (off by default), **＋ New profile** adds named profiles with a condition — *trigger runs **and** headset connected*, e.g. *when VRChat runs, start VRCX + OSC tools*. **Gap** starts the programs one after another (e.g. every 3 s) instead of all at once. Big **▶ Start programs / ■ Stop programs** buttons, easy to hit in VR (WayVR). A green dot on a tab shows that its programs are running. Pick the trigger from running programs or straight from the Games tab (**🎮 Games**, Steam games matched by AppId). Optional start delay (let the game load first) and auto-close when the trigger exits. **⏸ Stop / ▶ Start timer** per profile, **▶ Start programs** launches them by hand. Several profiles may share a trigger (e.g. two VRChat setups), but only **one per trigger is active**: turning on a profile's timer turns the others with the same trigger off. Checked every 3 s via `/proc` (no extra processes; the headset check reads `/proc/net/tcp` and only runs while the trigger is up). With only the VR tab, no extra timer runs at all. In terminal mode a small background watcher (`_profile-watch`) applies the same rules while the server runs; **Start in terminal** hands running programs over, and the GUI takes them back when it starts again.
@@ -102,10 +104,13 @@ All screenshots: [assets/README.md](assets/README.md)
   * **Graphical, SteamVR-style view:** both controllers side by side, lines to each button, movable cards, your own controller images, profiles.
   * **Takes care of the plumbing:** builds and patches xrBinder, registers the layer, runs the IPC service as a systemd service, reloads live only when safe, backs up foreign files.
 * **Launch tools from their card:** every installed tool in the Tools tab has a **▶ Start** button — command-line tools (obah, XR HOTAS, adb) open in a terminal, everything else starts straight away.
+* **LinuxVR-ViewShot in the Tools tab:** take VR photos with a hand-frame gesture — install it via AUR, AppImage or the project's own install script (**Script (curl)**, runs `curl … | bash` in a visible terminal; removing uses the same script with `uninstall`).
 * **Cargo Tools on any Distro:** obah and XR HOTAS are built with `cargo install` in a visible terminal; a missing C compiler, OpenXR library or Rust toolchain is installed along the way.
 * **OSC Toolbox:** One-click OSC Query fix for supported OSC tools (OSC Leash, OscGoesBrrr) when VRChat OSC acts up.
+* **Help for Linux newcomers:** On Arch-based systems the Installation tab explains what happens in the terminal during an AUR install (yay/paru) — invisible password, which questions to just confirm with Enter, and how to close the long PKGBUILD text (**q**).
 * **One-Click Environment Setup:** Automated installation of essential WiVRn dependencies and network/firewall configuration (Port 9757).
 * **Headset Client Installer:** Easily install and sideload the companion Android client (.apk) directly onto your standalone VR headset (Pico / Quest) via USB.
+* **WiVRn version check:** With the headset on USB, the app compares the WiVRn app version on the headset with `wivrn-server` on the PC and warns if they differ — the most common reason a headset won't connect.
 * **Stream Fine-Tuning:** Configure encoders, pick the graphics card WiVRn runs on (handy when an integrated GPU keeps winning the Vulkan lottery), toggle OpenVR compatibility, and manage your OpenXR runtimes directly from the UI.
 * **Backup & Restore:** Instantly save or recover your entire VR environment configuration.
 * **Customizable Interface:** Eight built-in themes plus per-role colour pickers, an optional background image and adjustable card opacity — under Settings → **Design**.
@@ -140,9 +145,9 @@ Then launch it from your application menu or simply run:
 yakuda-connect
 ```
 
-### Method 2: Fedora, Debian, Ubuntu and Linux Mint
+### Method 2: One-line installer (Fedora, Debian, Ubuntu, Linux Mint, …)
 
-The setup script detects the package manager itself (pacman, dnf, apt, zypper) and installs PySide6 from the matching distribution package; if there is none, it builds its own venv, touching neither the system Python nor PEP 668:
+One command downloads the setup script, installs the tool and launches it. The setup script detects the package manager itself (pacman, dnf, apt, zypper) and installs PySide6 from the matching distribution package; if there is none, it builds its own venv, touching neither the system Python nor PEP 668:
 
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh) && yakuda-connect
@@ -150,18 +155,8 @@ bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/mai
 
 The VR components themselves are then installed from within the app (Installation tab). On Fedora they come from the official repos; xrizer is available from the COPR `@xr-sig/xrizer` or, as an alternative, straight from the GitHub release — selectable per component.
 
-### Method 3: Express Installation (AppImage & Terminal)
+### Method 3: AppImage (No Installation Required)
 
-Choose one of the two options below to get started as quickly as possible:
-
-#### Option A: One-Click Terminal Command (Fastest Method)
-Open your terminal and paste the following command. It will automatically download the setup script, install the tool, and launch it immediately:
-
-```bash
-bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/main/install.sh) && yakuda-connect
-```
-
-#### Option B: Manual AppImage (No Installation Required)
 1. Navigate to the **Releases** section on GitHub.
 2. Download `yakuda-connect-<version>-x86_64.AppImage`. One file for every
    system: it works with **FUSE 3** (Arch, CachyOS, Fedora 40+, Ubuntu 24.04+,
@@ -188,19 +183,19 @@ bash <(curl -s https://raw.githubusercontent.com/yakuda-stack/yakuda-connect/mai
 
 ### Method 4: Manual Installation (From Source)
 
-If you prefer to clone the repository and run the application directly from the source code, execute these commands in your terminal sequence:
+If you prefer to clone the repository and run the application directly from the source code, run these commands in your terminal:
 
-1. Clone the repository[cite: 2]:
+1. Clone the repository:
 ```bash
 git clone https://github.com/yakuda-stack/yakuda-connect.git
 ```
 
-2. Change to the project directory[cite: 2]:
+2. Change to the project directory:
 ```bash
 cd yakuda-connect
 ```
 
-3. Run the installation script[cite: 2]:
+3. Run the installation script:
 ```bash
 bash install.sh
 ```

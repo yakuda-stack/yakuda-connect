@@ -1,7 +1,7 @@
 {
   "info": {
-    "version": "1.3.2",
-    "last_updated": "2026-09-21"
+    "version": "1.3.3",
+    "last_updated": "2026-10-07"
   },
   "_comment": "Werkzeugliste des Tools-Tabs. Feldbedeutung siehe Kopf von core/programs.py. Eigene Eintraege gehoeren NICHT hier hinein, sondern in die Nutzerkopie unter ~/.config/yakuda-connect/config/tools.json — die wird zusaetzlich eingelesen und ueberlebt jedes App-Update.",
   "apps": [
@@ -84,6 +84,31 @@
       "rpm_asset_match": ".rpm",
       "flatpak_id": "dev.slimevr.SlimeVR",
       "category": "tracking"
+    },
+    {
+      "key": "linuxvr-viewshot",
+      "name": "LinuxVR-ViewShot",
+      "pkg": "linuxvr-viewshot",
+      "desc": "Fotos in VR per Hand-Rahmen-Geste – Linux-Alternative zu VRHandsFrame (OpenXR-Layer für WiVRn/Monado + Desktop-App für deine Fotos).",
+      "desc_eng": "Take photos in VR with a hand-frame gesture – Linux alternative to VRHandsFrame (OpenXR layer for WiVRn/Monado + desktop app for your photos).",
+      "start_cmd": "linuxvr-viewshot",
+      "link": "https://github.com/yakuda-stack/LinuxVR-ViewShot",
+      "install_methods": [
+        "aur",
+        "appimage",
+        "script"
+      ],
+      "github_repo": "yakuda-stack/LinuxVR-ViewShot",
+      "asset_match": "-x86_64.AppImage",
+      "include_prerelease": false,
+      "script_url": "https://raw.githubusercontent.com/yakuda-stack/LinuxVR-ViewShot/main/install.sh",
+      "icon_url": "https://raw.githubusercontent.com/yakuda-stack/LinuxVR-ViewShot/main/UI/assets/linuxvr-viewshot.png",
+      "config_dirs": [
+        "linuxvr-viewshot"
+      ],
+      "note": "Nach der Installation einmal öffnen – das Willkommen-Fenster richtet VR-Layer und Hintergrund-Dienst ein. Skript braucht git, PyQt6 und Rust ≥ 1.88.",
+      "note_eng": "Open it once after installing – the welcome window sets up the VR layer and background service. The script needs git, PyQt6 and Rust ≥ 1.88.",
+      "category": "misc"
     },
     {
       "key": "unityhub",

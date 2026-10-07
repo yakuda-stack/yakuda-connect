@@ -483,6 +483,8 @@ class Ui_MainWindow:
         self.btn_install.setText(tr("install_btn"))
         self.btn_update.setText(tr("update_btn"))
         self.info_group.setTitle(tr_amp("install_hints_title"))
+        if hasattr(self, "lbl_aur_help"):
+            self.lbl_aur_help.setText(tr("install_aur_help"))
 
         # --- Dashboard-Tab ---
         self.server_group.setTitle(tr("dashboard_server"))
@@ -721,6 +723,24 @@ class Ui_MainWindow:
         self.lbl_worker_status = QLabel(tr("install_ready"))
         self.lbl_worker_status.setStyleSheet("color: #7b88a1; font-style: italic; margin-top: 5px;")
         layout.addWidget(self.lbl_worker_status)
+
+        # Hilfe fuer Linux-Neulinge (z. B. von Windows): was im Terminal bei
+        # einer AUR-Installation (yay/paru) passiert und welche Taste man
+        # drueckt. Nur auf Arch-basierten Systemen — nur dort gibt es das AUR.
+        self.lbl_aur_help = QLabel(tr("install_aur_help"))
+        self.lbl_aur_help.setWordWrap(True)
+        self.lbl_aur_help.setTextFormat(Qt.RichText)
+        self.lbl_aur_help.setStyleSheet("""
+            QLabel { background-color: #1e222a; border: 1px solid #3b4252;
+                     border-left: 3px solid #88c0d0; border-radius: 4px;
+                     padding: 8px 10px; color: #d8dee9; font-size: 11px; }
+        """)
+        try:
+            from appimage_installer import is_arch_based
+            self.lbl_aur_help.setVisible(is_arch_based())
+        except Exception as exc:
+            log.debug("AUR-Hilfe: Distro-Erkennung fehlgeschlagen — %s", exc)
+        layout.addWidget(self.lbl_aur_help)
 
         layout.addSpacing(20)
 

@@ -1,6 +1,32 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.4.1 — 2026-10-07
+
+#### 🇩🇪 Deutsch
+
+* **Neu: Warnung bei unterschiedlicher WiVRn-Version (Brille ↔ PC).** Hängt die Brille per USB dran und adb ist bereit, vergleicht die App einmal die Version der WiVRn-App auf der Brille (`dumpsys package` → `versionName`) mit `wivrn-server`. Passen die ersten beiden Stellen nicht (z. B. 25.11 ↔ 26.1), wird die USB-Zeile gelb und nennt beide Versionen plus den Tipp „⬇ APK herunterladen & installieren“. Läuft im Hintergrund (`WivrnVersionWorker`), einmal pro angesteckter Brille; neu geprüft nach Abstecken und nach einer APK-Installation. Ist eine Version unbekannt, gibt es keine Warnung. Neuer Text `usb_state_version_mismatch` (DE/EN/FR).
+* **Neu: Wayland/X11-Abfrage bei VRChat.** Beim ersten Aufklappen fragt die App einmal „Wayland oder X11?“ (vorausgewählt per `XDG_SESSION_TYPE`/`WAYLAND_DISPLAY`) und speichert die Antwort (`games_uses_wayland`). Wayland → Proton-RTSP-Wayland-GE empfohlen, X11 → normales proton-rtsp. Umschalten über „Sitzung: … · ändern“ über der Proton-Liste. In der `games.json` über die neuen Felder `default_x11`, `alternative_x11`, `default_x11_desc`, `alt_x11_desc` – ältere Clients ignorieren sie. Logik: `games.game_protons()`, `get_uses_wayland()`/`set_uses_wayland()`, Proton-Liste als eigene Funktion `_build_protons()`.
+* **Neu: ⓘ neben der Proton-Version** im Spiele-Tab. Öffnet die Webseite der Version: `release_url` aus der `games.json`, sonst bekannte Projekte (GE, CachyOS, proton-rtsp, Valve) per `games.proton_info_url()`.
+* **VRChat: Proton-RTSP-Wayland-GE Beta3 → Beta4** (`v11.1.0-beta.4`, Download, Prüfsumme, Release-Link). proton-rtsp bleibt auf `11.0-20260609-4` (aktuell). Spiele-Datenbank `games.json` → **1.2.9**.
+* **README aufgeräumt:** `[cite: 2]`-Reste entfernt, doppelter Installationsbefehl (Methode 2 / 3A) zusammengelegt – Methode 3 ist jetzt nur noch die AppImage, Leerzeichen bei „English, German“ ergänzt, neue Features eingetragen.
+* Neue Tests: `tests/test_wivrn_version_wayland.py`.
+* **Neu im Tools-Tab: LinuxVR-ViewShot** (direkt unter SlimeVR, Kategorie „Sonstiges“). Installierbar per AUR (`linuxvr-viewshot`), AppImage (GitHub-Release) oder **Skript (curl)**.
+* **Neue Installationsmethode „script“** (`core/script_installer.py`): führt das offizielle `curl -fsSL <script_url> | bash` eines Projekts im sichtbaren Terminal aus und merkt sich die Installation per Marker in `~/.config/yakuda-connect/tools/script/<key>/`. „Löschen“ startet dasselbe Skript mit `uninstall` (`script_uninstall_args`). Neue Felder in `tools.json`: `script_url`, `script_uninstall_args`. `tools.json` → **1.3.3**. Neue Texte `tools_method_script`, `tools_script_*` (DE/EN/FR), neue Tests `tests/test_script_installer.py`.
+* **Neu: Terminal-Hilfe für Linux-Neulinge** (Installations-Tab, unter „System-Check abgeschlossen“, nur auf Arch-basierten Systemen). Erklärt, was bei einer AUR-Installation per yay/paru im Terminal passiert: unsichtbares Passwort, Fragen wie „Diffs to show?“/„Packages to cleanBuild?“ mit Enter bestätigen, PKGBUILD-Ansicht mit **q** schließen (**G** = ans Ende), „Proceed with installation? [Y/n]“ mit Enter. Neuer Text `install_aur_help` (DE/EN/FR), Label `lbl_aur_help` in `ui/ui_main.py`.
+
+#### 🇬🇧 English
+
+* **New: warning on WiVRn version mismatch (headset ↔ PC).** When the headset is on USB and adb is ready, the app compares the WiVRn app version on the headset (`dumpsys package` → `versionName`) with `wivrn-server` once. If the first two parts differ (e.g. 25.11 ↔ 26.1), the USB line turns yellow, names both versions and suggests “⬇ Download & Install APK”. Runs in the background (`WivrnVersionWorker`), once per plugged-in headset; checked again after unplugging and after an APK install. If a version is unknown, there is no warning. New text `usb_state_version_mismatch` (DE/EN/FR).
+* **New: Wayland/X11 question for VRChat.** On first expand the app asks once “Wayland or X11?” (preselected via `XDG_SESSION_TYPE`/`WAYLAND_DISPLAY`) and remembers the answer (`games_uses_wayland`). Wayland → Proton-RTSP-Wayland-GE recommended, X11 → regular proton-rtsp. Change it via “Session: … · change” above the Proton list. In `games.json` via the new fields `default_x11`, `alternative_x11`, `default_x11_desc`, `alt_x11_desc` – older clients ignore them. Logic: `games.game_protons()`, `get_uses_wayland()`/`set_uses_wayland()`, Proton list moved into `_build_protons()`.
+* **New: ⓘ next to the Proton version** in the Games tab. Opens the version's website: `release_url` from `games.json`, otherwise known projects (GE, CachyOS, proton-rtsp, Valve) via `games.proton_info_url()`.
+* **VRChat: Proton-RTSP-Wayland-GE Beta3 → Beta4** (`v11.1.0-beta.4`, download, checksum, release link). proton-rtsp stays on `11.0-20260609-4` (latest). Games database `games.json` → **1.2.9**.
+* **README cleaned up:** removed `[cite: 2]` leftovers, merged the duplicate install command (method 2 / 3A) – method 3 is now AppImage only, added the missing space in “English, German”, listed the new features.
+* New tests: `tests/test_wivrn_version_wayland.py`.
+* **New in the Tools tab: LinuxVR-ViewShot** (right below SlimeVR, category “Misc”). Install via AUR (`linuxvr-viewshot`), AppImage (GitHub release) or **Script (curl)**.
+* **New install method “script”** (`core/script_installer.py`): runs a project's official `curl -fsSL <script_url> | bash` in a visible terminal and remembers the install via a marker in `~/.config/yakuda-connect/tools/script/<key>/`. “Delete” runs the same script with `uninstall` (`script_uninstall_args`). New `tools.json` fields: `script_url`, `script_uninstall_args`. `tools.json` → **1.3.3**. New texts `tools_method_script`, `tools_script_*` (DE/EN/FR), new tests `tests/test_script_installer.py`.
+* **New: terminal help for Linux newcomers** (Installation tab, below “System check complete”, Arch-based systems only). Explains what happens in the terminal during an AUR install via yay/paru: invisible password, confirm questions like “Diffs to show?”/“Packages to cleanBuild?” with Enter, close the PKGBUILD view with **q** (**G** = jump to end), “Proceed with installation? [Y/n]” with Enter. New text `install_aur_help` (DE/EN/FR), label `lbl_aur_help` in `ui/ui_main.py`.
+
 ### 🚀 v1.4.0 — 2026-10-01
 
 #### 🇩🇪 Deutsch

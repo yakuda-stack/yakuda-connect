@@ -380,6 +380,11 @@ def detect_install_methods(tool):
         methods.append("rpm")
     if "flatpak" in supported and tool.get("flatpak_id") and flatpak_available():
         methods.append("flatpak")
+    if "script" in supported:
+        # Offizielles curl|bash-Skript des Projekts (core/script_installer.py).
+        import script_installer
+        if script_installer.available(tool):
+            methods.append("script")
     return methods
 
 
@@ -649,6 +654,10 @@ def compute_status(tool):
         if inst:
             st["cargo_has_update"] = cargo_installer.update_available(tool)
 
+    if "script" in supported:
+        import script_installer
+        st["script_installed"] = script_installer.local_status(tool)[0]
+
     st["config_present"] = native_installed(tool)
     return st
 
@@ -671,6 +680,10 @@ def installed_locally(tool):
         return True
     if tool.get("flatpak_id") and flatpak_query(tool)[0]:
         return True
+    if "script" in supported:
+        import script_installer
+        if script_installer.local_status(tool)[0]:
+            return True
     if "aur" in supported and tool.get("pkg"):
         for h in available_aur_helpers():
             if pm_query(tool, h)[0]:
