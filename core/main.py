@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.1"
+APP_VERSION = "v1.4.2"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -1414,10 +1414,10 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         for key, card in self.ui.tool_cards.items():
             tool = all_tools.get(key, {})
             if "lbl_desc" in card:
-                desc = tool.get("desc_eng", tool.get("desc", "")) if lang == "en" else tool.get("desc", "")
+                desc = programs.tool_text(tool, "desc", lang)
                 card["lbl_desc"].setText(desc)
             if card.get("lbl_note") is not None:
-                note = tool.get("note_eng", tool.get("note", "")) if lang == "en" else tool.get("note", "")
+                note = programs.tool_text(tool, "note", lang)
                 card["lbl_note"].setText(note)
         # Filter-Beschriftungen neu setzen. Die getroffene Auswahl wird ueber
         # currentData gerettet und danach wiederhergestellt — sonst springt

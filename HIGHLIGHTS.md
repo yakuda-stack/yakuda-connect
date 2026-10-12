@@ -1,6 +1,18 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.2 — 2026-10-12
+
+#### 🇩🇪 Deutsch
+
+* **Fix: Tool-Beschreibungen in der richtigen Sprache.** Im Tools-Tab standen die Beschreibungen auf Deutsch, auch wenn Englisch eingestellt war – jetzt passt es sofort. Französisch zeigt jetzt Englisch statt Deutsch.
+
+#### 🇬🇧 English
+
+* **Fix: tool descriptions in the right language.** The Tools tab showed descriptions in German even with English selected – now it's right from the start. French now shows English instead of German.
+
+---
+
 ### 🚀 v1.4.1 — 2026-10-07
 
 #### 🇩🇪 Deutsch

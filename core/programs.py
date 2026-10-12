@@ -379,6 +379,19 @@ def reload_tools_config():
     return TOOLS_APPS, TOOLS_OSC
 
 
+def tool_text(tool, field, lang):
+    """Beschreibung/Hinweis eines Tools in der gewaehlten Sprache.
+
+    tools.json kennt nur Deutsch (``desc``) und Englisch (``desc_eng``).
+    Deutsch gibt es deshalb NUR bei ``lang == "de"`` — alle anderen Sprachen
+    (en, fr, ...) bekommen Englisch, und fehlt das, den deutschen Text.
+    """
+    de = tool.get(field, "") or ""
+    if lang == "de":
+        return de
+    return tool.get(field + "_eng") or de
+
+
 def all_tools():
     """Alle Werkzeuge beider Seiten in einer Liste (Anwendungen + OSC)."""
     return list(TOOLS_APPS) + list(TOOLS_OSC)

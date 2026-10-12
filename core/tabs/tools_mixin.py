@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QMessageBox
 from PySide6.QtCore import QThread, Signal as QtSignal
 
 import appimage_installer as appimg
+import programs
 import paths
 from appimage_installer import AppImageInstallWorker
 import cargo_installer
@@ -139,7 +140,7 @@ class ToolsTabMixin:
             # Gesucht wird ueber Name, Schluessel, Paketname UND Beschreibung.
             # Nur der Name waere zu wenig: wer "tracker" tippt, meint das
             # Thema, nicht ein Tool, das zufaellig so heisst.
-            desc = tool.get("desc_eng", "") if lang == "en" else tool.get("desc", "")
+            desc = programs.tool_text(tool, "desc", lang)
             haystack = " ".join([
                 str(tool.get("name", "")), str(key), str(tool.get("pkg", "")),
                 str(card.get("category", "")), str(desc),

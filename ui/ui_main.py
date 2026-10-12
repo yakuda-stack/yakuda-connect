@@ -73,8 +73,8 @@ class ToggleSwitch(QCheckBox):
 
 # Programme aus zentraler Datei laden
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'core')))
-from programs import TOOLS_APPS, TOOLS_OSC
-from translations import tr, tr_amp
+from programs import TOOLS_APPS, TOOLS_OSC, tool_text
+from translations import tr, tr_amp, get_language
 
 from logging_setup import get_logger
 
@@ -2644,7 +2644,10 @@ class Ui_MainWindow:
         card_layout.addLayout(top_row)
 
         # Zeile 2: Beschreibung — lesbar, bricht um
-        lbl_desc = QLabel(tool["desc"])
+        # Sprache beachten: beim Aufbau der Karte muss schon die gewaehlte
+        # Sprache gelten, nicht erst nach einem Sprachwechsel.
+        lang = get_language()
+        lbl_desc = QLabel(tool_text(tool, "desc", lang))
         lbl_desc.setStyleSheet("color: #d8dee9; font-size: 11px;")
         lbl_desc.setWordWrap(True)
         lbl_desc.setMinimumWidth(0)
@@ -2654,7 +2657,7 @@ class Ui_MainWindow:
         # Nutzer bei Tools ohne AppImage/Flatpak) — klein, kursiv, gelb.
         lbl_note = None
         if tool.get("note"):
-            lbl_note = QLabel(tool["note"])
+            lbl_note = QLabel(tool_text(tool, "note", lang))
             lbl_note.setStyleSheet("color: #ebcb8b; font-size: 10px; font-style: italic;")
             lbl_note.setWordWrap(True)
             lbl_note.setMinimumWidth(0)

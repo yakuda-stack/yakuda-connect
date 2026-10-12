@@ -1,6 +1,24 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.4.2 — 2026-10-12
+
+#### 🇩🇪 Deutsch
+
+* **Fix: Tool-Beschreibungen erschienen auf Deutsch, obwohl Englisch eingestellt war.** Der Tools-Tab wird erst beim ersten Öffnen gebaut; die Karten setzten dabei hart `tool["desc"]` / `tool["note"]` (Deutsch) ein. Richtig wurde es nur nach einem Sprachwechsel. Jetzt gilt die gewählte Sprache schon beim Aufbau.
+* **Fix: Französisch bekam deutsche Tool-Texte.** `tools.json` kennt nur `desc`/`desc_eng`. Bisher lieferte nur `lang == "en"` Englisch – alle anderen Sprachen fielen auf Deutsch zurück. Jetzt: Deutsch nur bei `de`, sonst Englisch (Rückfall Deutsch).
+* Neue gemeinsame Funktion `programs.tool_text(tool, field, lang)` – genutzt beim Kartenaufbau (`ui/ui_main.py`), beim Sprachwechsel (`core/main.py`) und bei der Suche (`core/tabs/tools_mixin.py`).
+* Neue Tests: `tests/test_tools_desc_language.py` (u. a. prüft er, dass jedes Tool eine englische Beschreibung hat).
+* **Tests: kein SIGSEGV mehr nach dem Testlauf.** Alle Tests grün, aber `pytest` stürzte beim Beenden ab (Qt räumt seine Objekte in zufälliger Reihenfolge ab). `tests/conftest.py` beendet den Prozess jetzt ganz am Schluss hart mit dem echten Exit-Code (`os._exit`) – fehlgeschlagene Tests melden weiter einen Fehler. Abschalten mit `YAKUDA_TEST_NO_HARD_EXIT=1`.
+
+#### 🇬🇧 English
+
+* **Fix: tool descriptions showed in German even with English selected.** The Tools tab is only built on first open, and the cards used `tool["desc"]` / `tool["note"]` (German) directly. It was only correct after switching languages. The selected language now applies when the cards are built.
+* **Fix: French got German tool texts.** `tools.json` only has `desc`/`desc_eng`. Previously only `lang == "en"` returned English – every other language fell back to German. Now: German only for `de`, otherwise English (fallback German).
+* New shared function `programs.tool_text(tool, field, lang)` – used when building cards (`ui/ui_main.py`), on language change (`core/main.py`) and for search (`core/tabs/tools_mixin.py`).
+* New tests: `tests/test_tools_desc_language.py` (also checks that every tool has an English description).
+* **Tests: no more SIGSEGV after the test run.** All tests passed, but `pytest` crashed on exit (Qt tearing down its objects in random order). `tests/conftest.py` now exits the process hard at the very end with the real exit code (`os._exit`) – failing tests still report an error. Disable with `YAKUDA_TEST_NO_HARD_EXIT=1`.
+
 ### 🚀 v1.4.1 — 2026-10-07
 
 #### 🇩🇪 Deutsch

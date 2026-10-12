@@ -87,7 +87,13 @@ def _track_qthreads():
 _track_qthreads()
 
 
+# Exit-Code des Testlaufs, fuer den harten Ausstieg in pytest_unconfigure.
+_exitstatus = None   # None = Lauf kam nie bis sessionfinish
+
+
 def pytest_sessionfinish(session, exitstatus):
+    global _exitstatus
+    _exitstatus = int(exitstatus)
     still = []
     for ref in _threads:
         th = ref()
@@ -127,3 +133,37 @@ def _fresh_gpu_cache():
     if mod is not None and hasattr(mod, "clear_cache"):
         mod.clear_cache()
     yield
+
+
+# --------------------------------------------------------------------------- #
+#  Harter Ausstieg nach dem Testlauf (gegen SIGSEGV beim Beenden)
+# --------------------------------------------------------------------------- #
+# Alle Tests gruen, und trotzdem endete "pytest" mit Signal 11 (SIGSEGV):
+# Der Absturz passiert erst NACH der Zusammenfassung, wenn Python beim
+# Beenden die Qt-Objekte (Widgets, QApplication, Threads) in zufaelliger
+# Reihenfolge abraeumt. Fuer Release-Skripte und die CI sieht das aus wie
+# ein Fehlschlag, obwohl nichts kaputt ist.
+#
+# Loesung: Ganz zum Schluss — nachdem pytest alles ausgegeben und alle
+# anderen Plugins fertig sind (trylast) — beenden wir den Prozess sofort
+# mit dem ECHTEN Exit-Code. Qt raeumt dann gar nicht erst auf.
+# Fehlgeschlagene Tests liefern also weiterhin einen Fehler-Code.
+#
+# os._exit() ueberspringt atexit — deshalb das Wegwerf-HOME hier selbst
+# loeschen. Abschalten (z. B. zum Untersuchen des Absturzes):
+#     YAKUDA_TEST_NO_HARD_EXIT=1 python3 -m pytest
+@pytest.hookimpl(trylast=True)
+def pytest_unconfigure(config):
+    if os.environ.get("YAKUDA_TEST_NO_HARD_EXIT"):
+        return
+    # Nur der Haupt-Prozess — nicht ein pytest-xdist-Worker.
+    if hasattr(config, "workerinput"):
+        return
+    # Kein Ergebnis (z. B. Aufruf-Fehler) -> pytest normal enden lassen,
+    # sonst wuerde ein Fehler als 0 = Erfolg gemeldet.
+    if _exitstatus is None:
+        return
+    shutil.rmtree(_TEST_HOME, ignore_errors=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(_exitstatus)
