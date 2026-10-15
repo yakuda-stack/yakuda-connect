@@ -1,6 +1,18 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.4.3 — 2026-10-15
+
+#### 🇩🇪 Deutsch
+
+* **Fix: Linux Mint/Ubuntu/Debian – App blieb im Installations-Tab gesperrt.** `_runtime_installed()` hatte keinen eigenen Fall für `apt` und fiel in den yay/paru-Zweig. Dort lief `apt -Q wivrn-server` – den Befehl gibt es nicht, die Prüfung schlug also immer fehl und `on_tab_changed()` ließ keinen anderen Tab zu („Installation unvollständig“). Jetzt gilt WiVRn auf apt-Systemen als installiert, wenn `wivrn-server` im PATH liegt **oder** der WiVRn-Flatpak (`io.github.wivrn.wivrn`) da ist.
+* **Fix: xrizer stand auf apt-Systemen immer auf „⚠ Nicht vollständig im System“.** xrizer kommt dort als GitHub-Release nach `~/.local/share/xrizer` und steht in keiner `dpkg`-Liste. `PackageCheckWorker` prüft für `APT_GITHUB_COMPONENTS` jetzt über `venv.find_openvr_compat()`, ob `bin/linux64/vrclient.so` wirklich da ist.
+
+#### 🇬🇧 English
+
+* **Fix: Linux Mint/Ubuntu/Debian – app stayed locked on the Installation tab.** `_runtime_installed()` had no case for `apt` and fell through to the yay/paru branch, which ran `apt -Q wivrn-server` – a command that doesn't exist. The check always failed and `on_tab_changed()` blocked every other tab ("installation incomplete"). On apt systems WiVRn now counts as installed if `wivrn-server` is in PATH **or** the WiVRn Flatpak (`io.github.wivrn.wivrn`) is present.
+* **Fix: xrizer always showed "⚠ Not fully installed" on apt systems.** There xrizer comes as a GitHub release in `~/.local/share/xrizer` and is in no `dpkg` list. `PackageCheckWorker` now checks `APT_GITHUB_COMPONENTS` via `venv.find_openvr_compat()`, i.e. whether `bin/linux64/vrclient.so` really exists.
+
 ### 🚀 v1.4.2 — 2026-10-12
 
 #### 🇩🇪 Deutsch

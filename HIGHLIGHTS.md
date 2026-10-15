@@ -1,6 +1,20 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.3 — 2026-10-15
+
+#### 🇩🇪 Deutsch
+
+* **Fix für Linux Mint, Ubuntu & Debian.** Die App kam nicht aus dem Installations-Tab heraus, obwohl alles installiert war – jetzt sind alle Tabs wieder erreichbar.
+* **xrizer wird richtig erkannt.** Ein per GitHub installiertes xrizer zeigt jetzt „Installiert“ statt „Nicht vollständig“.
+
+#### 🇬🇧 English
+
+* **Fix for Linux Mint, Ubuntu & Debian.** The app wouldn't leave the Installation tab even though everything was installed – all tabs are reachable again.
+* **xrizer is detected correctly.** An xrizer installed from GitHub now shows "Installed" instead of "Not fully installed".
+
+---
+
 ### 🚀 v1.4.2 — 2026-10-12
 
 #### 🇩🇪 Deutsch

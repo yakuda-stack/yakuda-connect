@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.2"
+APP_VERSION = "v1.4.3"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -250,6 +250,13 @@ class PackageCheckWorker(QThread):
                          "has_update": False}
             else:
                 is_installed = all(pkg in installed for pkg in idents)
+                # xrizer kommt auf apt-Systemen als GitHub-Release nach
+                # ~/.local/share/xrizer und steht deshalb in KEINER
+                # dpkg-Liste. Ohne diese Abfrage stand dort fuer immer
+                # "Nicht vollstaendig", obwohl xrizer laeuft (Linux Mint).
+                if (not is_installed and self.method == "apt"
+                        and name in programs.APT_GITHUB_COMPONENTS):
+                    is_installed = bool(venv.find_openvr_compat(name))
                 if not is_installed and self.method in ("dnf", "apt"):
                     # Selbst gebaut oder aus einem fremden Repo: kein RPM, aber
                     # das Programm ist da. Frueher stand hier trotzdem "fehlt",
@@ -1252,6 +1259,13 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
             return shutil.which("wivrn-server") is not None
         if method == "flatpak":
             return venv.wivrn_flatpak_installed()
+        if method == "apt":
+            # Debian/Ubuntu/Mint: PPA-Paket (Binary im PATH) ODER Flatpak.
+            # Frueher fiel apt in den yay/paru-Zweig unten: 'apt -Q' gibt es
+            # nicht, die Pruefung schlug IMMER fehl und alle Tabs blieben
+            # gesperrt.
+            return (shutil.which("wivrn-server") is not None
+                    or venv.wivrn_flatpak_installed())
         # yay/paru: WiVRn/Monado-Pakete vorhanden?
         if not shutil.which(method):
             return False
