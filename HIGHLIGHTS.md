@@ -1,6 +1,20 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.4 — 2026-10-25
+
+#### 🇩🇪 Deutsch
+
+* **Schnellerer Start.** Die App hat beim Öffnen viele kleine Programme nacheinander gefragt (z. B. ob obah installiert ist – zwölfmal!), bevor das Fenster erschien. Das passiert jetzt einmal, im Hintergrund oder gar nicht mehr. Das Fenster ist spürbar schneller da.
+* **Schneller auch beim AUR-Paket und der AppImage.** Python muss den Programmcode nicht mehr bei jedem Start neu übersetzen.
+
+#### 🇬🇧 English
+
+* **Faster startup.** On launch the app asked lots of small programs one after another (e.g. whether obah is installed – twelve times!) before the window appeared. That now happens once, in the background, or not at all. The window shows up noticeably faster.
+* **Faster for the AUR package and the AppImage too.** Python no longer has to recompile the program code on every start.
+
+---
+
 ### 🚀 v1.4.3 — 2026-10-15
 
 #### 🇩🇪 Deutsch

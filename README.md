@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ShNKvvZu74)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.4.3-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.4.4-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -114,7 +114,7 @@ All screenshots: [assets/README.md](assets/README.md)
 * **Stream Fine-Tuning:** Configure encoders, pick the graphics card WiVRn runs on (handy when an integrated GPU keeps winning the Vulkan lottery), toggle OpenVR compatibility, and manage your OpenXR runtimes directly from the UI.
 * **Backup & Restore:** Instantly save or recover your entire VR environment configuration.
 * **Customizable Interface:** Eight built-in themes plus per-role colour pickers, an optional background image and adjustable card opacity — under Settings → **Design**.
-* **Light on resources:** starts in well under a second, builds the Tools tab only when you open it, no app-wide event filter, no UI freeze while checking packages and next to no CPU at idle — stays out of the way while you're in VR.
+* **Light on resources:** starts in well under a second, builds the Tools tab only when you open it, no app-wide event filter, no UI freeze while checking packages and next to no CPU at idle — stays out of the way while you're in VR. Slow system queries (package manager, Flatpak, `pactl`, WiVRn version) run once, in the background, or are replaced by quick file checks, so the window doesn't wait for them; the AUR package and AppImage ship precompiled bytecode.
 * **Terminal mode (no GUI, no Qt):** saves RAM in VR. Commands: `YC-help`, `YC-status`, `YC-wivrn-toggle` (server on/off), `YC-openvr`, `YC-encoder`, `YC-GPU`, `YC-killapps` (close autostart programs), `YC-autostart-reset` (reset start timer), `YC-pairing` (shows the PIN), autostart profiles included (`YC-status` shows them) — pick by number, or directly (`YC-encoder vaapi`, `YC-GPU 1`). Included with AUR and the curl installer; for AppImage/source use Settings → Advanced → **Set up commands**. **Start in terminal** opens the menu and closes the GUI (the server keeps running). Autostart programs work here too: they start once the headset connects.
 * **Desktop Compatibility:** Runs smoothly across various desktop environments including KDE Plasma, GNOME, and Hyprland.
 

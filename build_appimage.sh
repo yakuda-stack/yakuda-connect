@@ -182,6 +182,11 @@ cp CHANGELOG.md HIGHLIGHTS.md "$BUILD_DIR/usr/lib/yakuda-connect/"
 # Bytecode und Entwicklerreste gehoeren nicht in die Auslieferung
 find "$BUILD_DIR/usr/lib/yakuda-connect" -type d -name '__pycache__' -prune -exec rm -rf {} +
 find "$BUILD_DIR/usr/lib/yakuda-connect" -type f -name '*.py[co]' -delete
+# Danach frisch vorkompilieren (seit v1.4.4): die AppImage ist schreib-
+# geschuetzt, ohne .pyc uebersetzt Python bei JEDEM Start alles neu
+# (~0,2 s). Die .pyc passen nur zur Python-Version dieses Build-Rechners —
+# auf anderen Versionen werden sie ignoriert (wie bisher, kein Fehler).
+python3 -m compileall -q "$BUILD_DIR/usr/lib/yakuda-connect" >/dev/null || true
 # Screenshots aus assets/ wuerden die AppImage nur aufblaehen
 rm -f "$BUILD_DIR/usr/lib/yakuda-connect/assets/"{dashboard,games1,games2,installation,settings,settings2,streaming,tools}.png
 
@@ -220,6 +225,9 @@ if ! pip install --target="$BUILD_DIR/usr/lib/python3" "PySide6-Essentials>=6.5"
     echo "[Warn] PySide6 konnte nicht gebundelt werden — muss auf dem System vorhanden sein."
 fi
 find "$BUILD_DIR/usr/lib/python3" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+# Auch PySide6/shiboken6 bringen Python-Dateien mit, die bei jedem Import
+# geladen werden — gleiche Begruendung wie oben.
+python3 -m compileall -q "$BUILD_DIR/usr/lib/python3" >/dev/null 2>&1 || true
 
 # --- xcb-Bibliotheken mitliefern --------------------------------------------
 # Seit Qt 6.5 braucht das xcb-Plugin (X11) libxcb-cursor0 und weitere

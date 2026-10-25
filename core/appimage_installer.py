@@ -441,9 +441,46 @@ def ppa_supports_codename(owner_repo, codename, timeout=6):
         return None
 
 
+def _flatpak_installation_dirs():
+    """Die beiden Standard-Installationen von Flatpak: --user und --system.
+
+    Beachtet dieselben Umgebungsvariablen wie flatpak selbst
+    (FLATPAK_USER_DIR / FLATPAK_SYSTEM_DIR / XDG_DATA_HOME).
+    """
+    data_home = os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share")
+    user_dir = os.environ.get("FLATPAK_USER_DIR") or os.path.join(data_home, "flatpak")
+    system_dir = os.environ.get("FLATPAK_SYSTEM_DIR") or "/var/lib/flatpak"
+    return (user_dir, system_dir)
+
+
+def _flatpak_has_extra_installations():
+    """Gibt es zusaetzliche Flatpak-Installationen (/etc/flatpak/installations.d)?
+
+    Selten (eigene Installationsorte, z. B. auf einer zweiten Platte). Nur
+    dann reicht der Ordner-Blick unten nicht und 'flatpak info' muss ran.
+    """
+    try:
+        return bool(os.listdir("/etc/flatpak/installations.d"))
+    except OSError:
+        return False
+
+
 def flatpak_app_installed(app_id):
-    """True, wenn diese Flatpak-Anwendung installiert ist (Benutzer ODER System)."""
-    if not shutil.which("flatpak"):
+    """True, wenn diese Flatpak-Anwendung installiert ist (Benutzer ODER System).
+
+    Zuerst per Ordner-Pruefung: eine installierte App hat in ihrer
+    Installation den Pfad app/<id>/current/active (Symlinks auf den aktiven
+    Commit). Das kostet Mikrosekunden — 'flatpak info' dagegen startet einen
+    eigenen Prozess (~0,1–0,3 s) und lief beim Programmstart mehrfach im
+    GUI-Thread (Autostart-Vorschlagsliste). Der Subprozess bleibt nur als
+    Rueckfall fuer zusaetzliche Installationsorte.
+    """
+    if not app_id or not shutil.which("flatpak"):
+        return False
+    for base in _flatpak_installation_dirs():
+        if os.path.isdir(os.path.join(base, "app", app_id, "current", "active")):
+            return True
+    if not _flatpak_has_extra_installations():
         return False
     res = proc.run(["flatpak", "info", app_id],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -678,16 +715,30 @@ def installed_locally(tool):
             return True
     if (tool.get("github_repo") or tool.get("appimage_url")) and local_status(tool)[0]:
         return True
-    if tool.get("flatpak_id") and flatpak_query(tool)[0]:
+    # Ordner-Pruefung statt 'flatpak info' (siehe flatpak_app_installed).
+    if tool.get("flatpak_id") and flatpak_app_installed(tool["flatpak_id"]):
         return True
     if "script" in supported:
         import script_installer
         if script_installer.local_status(tool)[0]:
             return True
     if "aur" in supported and tool.get("pkg"):
-        for h in available_aur_helpers():
-            if pm_query(tool, h)[0]:
+        helpers = available_aur_helpers()
+        if helpers and shutil.which("pacman"):
+            # 'yay -Q' / 'paru -Q' reichen die Frage nur an pacman weiter,
+            # laden vorher aber ihre eigene Config. Diese Funktion laeuft
+            # beim Start mehrfach im GUI-Thread (Controls-Tab) — frueher bis
+            # zu 12 yay/paru-Aufrufe. pacman direkt: ein Aufruf, gleiche
+            # Antwort (AUR-Pakete stehen genauso in der lokalen pacman-DB).
+            res = proc.run(["pacman", "-Q", tool["pkg"]],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=proc.DEFAULT_TIMEOUT)
+            if res.returncode == 0:
                 return True
+        else:
+            for h in helpers:
+                if pm_query(tool, h)[0]:
+                    return True
     cmd = tool.get("start_cmd")
     if cmd and (shutil.which(cmd) or os.access(os.path.join(HOME, ".cargo", "bin", cmd), os.X_OK)):
         return True

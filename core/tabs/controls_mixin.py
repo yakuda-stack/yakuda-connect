@@ -1276,6 +1276,24 @@ class ControlsTabMixin:
         return next((t for t in programs.all_tools() if t.get("key") == key), {})
 
     def _control_installed(self, key):
+        # Waehrend des Fensteraufbaus fragen mehrere Stellen dasselbe
+        # (Tab-Aufbau, Hinweiszeile, zwei Uebersetzungsdurchlaeufe) — frueher
+        # sechs Subprozesse je Tool im GUI-Thread. Solange is_loading gilt,
+        # kann sich nichts aendern (es laeuft noch keine Installation), also
+        # einmal fragen und merken. Danach wieder jedes Mal frisch.
+        loading = getattr(self, "is_loading", False)
+        cache = getattr(self, "_control_installed_cache", None)
+        if loading:
+            if cache is None:
+                cache = self._control_installed_cache = {}
+            if key in cache:
+                return cache[key]
+        result = self._control_installed_uncached(key)
+        if loading:
+            cache[key] = result
+        return result
+
+    def _control_installed_uncached(self, key):
         tool = self._control_tool(key)
         if not tool:
             return False

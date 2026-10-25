@@ -1,6 +1,30 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.4.4 — 2026-10-25
+
+#### 🇩🇪 Deutsch
+
+* **Performance: deutlich schnellerer Start.** Beim Fensteraufbau liefen im GUI-Thread viele externe Programme nacheinander – das Fenster erschien erst danach. Gemessen mit simulierten 0,2 s je Aufruf: **4,7 s → 1,0 s** bis zum Fenster.
+  * **Controls-Tab:** `_control_installed()` fragte beim Start sechsmal dieselbe Frage (Tab-Aufbau, Hinweiszeile, zwei Übersetzungsdurchläufe), jedes Mal per `yay -Q` **und** `paru -Q` – bis zu 12 Aufrufe. Jetzt merkt sich die Prüfung das Ergebnis, solange `is_loading` gilt (danach wieder frisch), und `appimage_installer.installed_locally()` fragt `pacman -Q` direkt (ein Aufruf; yay/paru reichen `-Q` ohnehin nur an pacman weiter).
+  * **Flatpak:** `appimage_installer.flatpak_app_installed()` prüft jetzt per Ordner (`app/<id>/current/active` in der Benutzer- und System-Installation, inkl. `FLATPAK_USER_DIR`/`FLATPAK_SYSTEM_DIR`) statt per `flatpak info`. Der Subprozess bleibt nur als Rückfall für zusätzliche Installationsorte (`/etc/flatpak/installations.d`). Betraf beim Start 4× die Autostart-Vorschlagsliste.
+  * **WiVRn-Version:** `wivrn-server --version` läuft jetzt im `PackageCheckWorker` (neues Signal `version_signal`, neue Funktion `wivrn_version_text()`) statt im GUI-Thread.
+  * **Mikrofonliste (Settings):** die beiden `pactl`-Aufrufe beim Start laufen jetzt im Hintergrund (`MicScanWorker`). Der Knopf „Aktualisieren“ liest weiter direkt.
+  * **`_runtime_installed()` (Arch):** ein `pacman -Q wivrn-server lib32-wivrn-server` statt je Paket ein `yay -Q`.
+* **Paketierung: Bytecode wird vorkompiliert.** AUR-Paket und AppImage löschten `__pycache__` und kompilierten nichts vor. Weil `/usr/share` bzw. die AppImage schreibgeschützt sind, übersetzte Python bei **jedem** Start alle Module neu (gemessen ~0,1–0,2 s). `PKGBUILD` und `build_appimage.sh` rufen jetzt `python -m compileall` auf. Passt die Python-Version nicht, werden die `.pyc` einfach ignoriert (wie bisher).
+* Neue Tests: `tests/test_startup_speed.py`.
+
+#### 🇬🇧 English
+
+* **Performance: much faster startup.** While building the window, many external programs ran one after another on the GUI thread – the window only appeared afterwards. Measured with a simulated 0.2 s per call: **4.7 s → 1.0 s** until the window shows.
+  * **Controls tab:** `_control_installed()` asked the same question six times at startup (tab build, notice row, two translation passes), each time via `yay -Q` **and** `paru -Q` – up to 12 calls. The result is now remembered while `is_loading` is set (fresh again afterwards), and `appimage_installer.installed_locally()` asks `pacman -Q` directly (one call; yay/paru just pass `-Q` on to pacman anyway).
+  * **Flatpak:** `appimage_installer.flatpak_app_installed()` now checks the folder (`app/<id>/current/active` in the user and system installation, incl. `FLATPAK_USER_DIR`/`FLATPAK_SYSTEM_DIR`) instead of running `flatpak info`. The subprocess is only a fallback for extra installations (`/etc/flatpak/installations.d`). Affected the autostart suggestion list 4× at startup.
+  * **WiVRn version:** `wivrn-server --version` now runs in `PackageCheckWorker` (new signal `version_signal`, new function `wivrn_version_text()`) instead of the GUI thread.
+  * **Microphone list (Settings):** the two `pactl` calls at startup now run in the background (`MicScanWorker`). The "Refresh" button still reads directly.
+  * **`_runtime_installed()` (Arch):** one `pacman -Q wivrn-server lib32-wivrn-server` instead of one `yay -Q` per package.
+* **Packaging: bytecode is precompiled.** The AUR package and the AppImage deleted `__pycache__` and compiled nothing. Since `/usr/share` and the AppImage are read-only, Python recompiled every module on **every** start (measured ~0.1–0.2 s). `PKGBUILD` and `build_appimage.sh` now run `python -m compileall`. If the Python version doesn't match, the `.pyc` files are simply ignored (as before).
+* New tests: `tests/test_startup_speed.py`.
+
 ### 🚀 v1.4.3 — 2026-10-15
 
 #### 🇩🇪 Deutsch

@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.3"
+APP_VERSION = "v1.4.4"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -152,6 +152,52 @@ def startup_netcheck_disabled():
     return os.environ.get(NO_NETCHECK_ENV, "").strip() not in ("", "0")
 
 
+def wivrn_version_text():
+    """WiVRn-Version als Anzeigetext. Startet ggf. 'wivrn-server --version'.
+
+    Auf Modulebene, damit der PackageCheckWorker sie im Hintergrund rufen
+    kann — im GUI-Thread hing sonst das Fenster, bis der Server antwortet.
+    """
+    # Nur-Flatpak: Version aus 'flatpak info' (ohne die Sandbox zu starten)
+    if venv.wivrn_uses_flatpak():
+        ver = venv.wivrn_flatpak_version()
+        return f"{ver} (Flatpak)" if ver else "Flatpak"
+    # Nativ: Version direkt aus der wivrn-server-Binary lesen
+    try:
+        res = subprocess.run(["wivrn-server", "--version"], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, timeout=proc.DEFAULT_TIMEOUT)
+        if res.returncode == 0:
+            version_match = re.search(r'[\d\.]+', res.stdout)
+            return version_match.group(0) if version_match else "Unbekannt"
+    except Exception as exc:
+        log.debug("get_wivrn_version: ignoriert — %s", exc)
+    return tr("tools_not_installed")
+
+
+class MicScanWorker(QThread):
+    """Liest die Aufnahmequellen (2x pactl) im Hintergrund.
+
+    Beim Start lief das im GUI-Thread und verzoegerte das erste Zeichnen
+    des Fensters. ``scan`` ist eine Funktion ohne Widget-Zugriff, die
+    (quellen, aktuelle_standardquelle) liefert.
+
+    Signal: done((sources, current))
+    """
+    done = QtSignal(object)
+
+    def __init__(self, scan):
+        super().__init__()
+        self._scan = scan
+
+    def run(self):
+        try:
+            data = self._scan()
+        except Exception:
+            log.exception("Mikrofon-Quellen nicht lesbar")
+            data = ([], None)
+        self.done.emit(data)
+
+
 class PackageCheckWorker(QThread):
     """
     Ermittelt im Hintergrund, welche Pakete installiert sind und fuer welche
@@ -166,6 +212,8 @@ class PackageCheckWorker(QThread):
         results = {"WiVRn / Monado": {"installed": bool, "has_update": bool}, ...}
     """
     result_signal = QtSignal(dict, bool)
+    # WiVRn-Version als fertiger Anzeigetext — kommt VOR result_signal.
+    version_signal = QtSignal(str)
 
     def __init__(self, method, groups):
         super().__init__()
@@ -233,6 +281,10 @@ class PackageCheckWorker(QThread):
         return installed, updatable
 
     def run(self):
+        try:
+            self.version_signal.emit(wivrn_version_text())
+        except Exception:
+            log.exception("WiVRn-Version nicht ermittelbar")
         try:
             installed, updatable = self._installed_and_updatable()
         except Exception:
@@ -457,6 +509,9 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
 
         self.apply_loaded_settings()
         self.is_loading = False
+        # Start-Zwischenspeicher der Controls-Installationspruefung verwerfen
+        # (siehe controls_mixin._control_installed) — ab jetzt wieder frisch.
+        self._control_installed_cache = None
 
 # Erststart- / Willkommenstext für den Nutzer setzen
         self._set_welcome_text()
@@ -1131,7 +1186,12 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         self.ui.btn_mic_refresh.clicked.connect(self.refresh_mic_sources)
         self.ui.btn_mic_set.clicked.connect(self.apply_mic_source)
         self.ui.btn_mic_reset.clicked.connect(self.reset_mic_source)
-        self.refresh_mic_sources()
+        # Zwei pactl-Aufrufe — im Hintergrund, damit das Fenster nicht
+        # darauf wartet. Die Liste steht in den Settings und wird beim
+        # Start nicht gebraucht. Der Knopf "Aktualisieren" liest weiter
+        # direkt (vom Nutzer ausgeloest, da darf es kurz dauern).
+        self._mic_worker = None
+        self._start_mic_scan()
 
         # Dashboard Steuerung — Schiebeschalter statt Start/Stop-Buttons
         self.ui.toggle_server.toggled.connect(self.on_server_toggled)
@@ -1236,19 +1296,12 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         # ausgeklappten VRChat-Bereich des Games-Tabs (siehe _build_game_detail).
 
     def get_wivrn_version(self):
-        # Nur-Flatpak: Version aus 'flatpak info' (ohne die Sandbox zu starten)
-        if venv.wivrn_uses_flatpak():
-            ver = venv.wivrn_flatpak_version()
-            return f"{ver} (Flatpak)" if ver else "Flatpak"
-        # Nativ: Version direkt aus der wivrn-server-Binary lesen
-        try:
-            res = subprocess.run(["wivrn-server", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=proc.DEFAULT_TIMEOUT)
-            if res.returncode == 0:
-                version_match = re.search(r'[\d\.]+', res.stdout)
-                return version_match.group(0) if version_match else "Unbekannt"
-        except Exception as exc:
-            log.debug("get_wivrn_version: ignoriert — %s", exc)
-        return tr("tools_not_installed")
+        # Blockiert (Subprozess) — im GUI-Thread nicht verwenden; der
+        # PackageCheckWorker liefert die Version per version_signal.
+        return wivrn_version_text()
+
+    def _on_wivrn_version(self, text):
+        self.ui.lbl_wivrn_ver.setText(f"<b>WiVRn Version:</b> {text}")
 
     def _runtime_installed(self):
         """Ist die WiVRn-Runtime für die aktuell gewählte Methode installiert?"""
@@ -1269,14 +1322,19 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         # yay/paru: WiVRn/Monado-Pakete vorhanden?
         if not shutil.which(method):
             return False
-        for pkg in INSTALL_PACKAGES.get("WiVRn / Monado", []):
-            # Listenform statt shell=True: der Paketname wandert nicht mehr
-            # durch eine Shell, die ihn interpretieren koennte.
-            res = proc.run([method, "-Q", pkg],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT)
-            if res.returncode != 0:
-                return False
-        return True
+        # Laeuft im GUI-Thread und beim Start mehrfach (Fenster-Aufbau +
+        # Tab-Wechsel). 'yay -Q' reicht die Anfrage ohnehin nur an pacman
+        # weiter, laedt vorher aber erst seine eigene Config (~100+ ms je
+        # Aufruf). pacman direkt, mit ALLEN Paketen in einem Aufruf: gleiches
+        # Ergebnis (Exitcode != 0, sobald eines fehlt), nur deutlich schneller.
+        pkgs = INSTALL_PACKAGES.get("WiVRn / Monado", [])
+        query_tool = "pacman" if shutil.which("pacman") else method
+        # Listenform statt shell=True: der Paketname wandert nicht mehr
+        # durch eine Shell, die ihn interpretieren koennte.
+        res = proc.run([query_tool, "-Q", *pkgs],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=proc.DEFAULT_TIMEOUT)
+        return res.returncode == 0
 
     def are_critical_packages_missing(self):
         return not self._runtime_installed()
@@ -1842,6 +1900,7 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
 
         self._pkgcheck_again = False
         self._pkgcheck_worker = PackageCheckWorker(method, groups)
+        self._pkgcheck_worker.version_signal.connect(self._on_wivrn_version)
         self._pkgcheck_worker.result_signal.connect(self._on_package_check_done)
         self._pkgcheck_worker.finished.connect(self._on_package_check_finished)
         self._pkgcheck_worker.start()
@@ -1874,7 +1933,7 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
                 label.setText(tr("pkg_incomplete"))
                 label.setStyleSheet("color: #ebcb8b; font-weight: bold;")
 
-        self.ui.lbl_wivrn_ver.setText(f"<b>WiVRn Version:</b> {self.get_wivrn_version()}")
+        # WiVRn-Version kommt jetzt aus dem Worker (version_signal).
         note = getattr(self, "_install_missing_note", "")
         if note:
             # Einmalig: nach der naechsten Pruefung gilt wieder der Normaltext.
@@ -3389,9 +3448,34 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         except Exception as exc:
             log.debug("_mic_add_header: Kopfzeile nicht formatierbar — %s", exc)
 
-    def refresh_mic_sources(self):
+    def _start_mic_scan(self):
+        """Quellen im Hintergrund lesen; das Dropdown fuellt _on_mic_scan_done."""
+        if not self._pactl_available():
+            self.refresh_mic_sources()          # setzt nur den "kein pactl"-Hinweis
+            return
+        worker = self._mic_worker
+        if worker is not None and worker.isRunning():
+            return
+        self._mic_worker = MicScanWorker(
+            lambda: (self._mic_list_sources(), self._current_default_source()))
+        self._mic_worker.done.connect(self._on_mic_scan_done)
+        self._mic_worker.start()
+
+    def _on_mic_scan_done(self, data):
+        if getattr(self, "_exit_cleanup_done", False):
+            return
+        self.refresh_mic_sources(data)
+
+    def refresh_mic_sources(self, data=None):
         """Fuellt das Dropdown gruppiert (Mikrofone / Virtuelle / Monitore).
-        Die aktive Standard-Quelle wird mit ● markiert und vorausgewaehlt."""
+        Die aktive Standard-Quelle wird mit ● markiert und vorausgewaehlt.
+
+        ``data`` = (quellen, aktuelle_quelle), wenn schon im Hintergrund
+        gelesen (MicScanWorker); sonst wird hier direkt gelesen. Das bool,
+        das clicked() mitliefert, zaehlt nicht als Daten.
+        """
+        if not isinstance(data, tuple):
+            data = None
         combo = self.ui.combo_mic_source
         combo.clear()
 
@@ -3404,12 +3488,12 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         self.ui.btn_mic_set.setEnabled(True)
         self.ui.btn_mic_reset.setEnabled(True)
 
-        sources = self._mic_list_sources()
+        sources = data[0] if data is not None else self._mic_list_sources()
         if not sources:
             self.ui.lbl_mic_status.setText(tr("mic_status_none"))
             return
 
-        current = self._current_default_source()
+        current = data[1] if data is not None else self._current_default_source()
         groups = [
             (self._MIC_KIND_MIC,     tr("mic_grp_mics")),
             (self._MIC_KIND_VIRTUAL, tr("mic_grp_virtual")),
@@ -3964,6 +4048,7 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         "_pin_worker",              # PIN-Zeile von wivrnctl pair
         "_usb_worker",              # USB-Ampel im Dashboard
         "_obah_scan_worker",        # Controls-Tab: Spiele mit OpenVR-Bindings
+        "_mic_worker",              # Settings: Mikrofon-Quellen (pactl)
     )
 
     def closeEvent(self, event):
