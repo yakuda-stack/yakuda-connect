@@ -1,6 +1,32 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.5 — 2026-10-29
+
+#### 🇩🇪 Deutsch
+
+* **Alles für VR mit einem Klick.** Beim ersten Öffnen des Dashboards fragt die App einmal: „Sollen wir alles für maximale VR-Performance optimieren?“ Bei „Ja“ werden Firewall, Netzwerkpuffer, OpenXR-Runtime und VR-Priorität eingerichtet – mit nur einer Passwortabfrage. Ist schon alles fertig, kommt die Frage gar nicht.
+* **Aufgeräumtes Dashboard.** Firewall- und Netzwerkpuffer-Knopf sind unter **Einstellungen → VR & OpenXR** umgezogen. Im Dashboard gibt es dafür **⚡ Performance-Setup**.
+* **Fix:** „OpenXR / SteamVR Fixes & Performance“ führt jetzt wirklich zu VR & OpenXR statt zum Design-Tab.
+* **VRChat direkt in VR starten** – neuer Schalter `--launch-in-vr`.
+* **Neuer Look im Games-Tab.** Fahr mit der Maus über ein Spiel: großer ▶ zum Starten, „⚙ Einstellungen“ öffnet ein aufgeräumtes Fenster mit Proton-Version (Dropdown), spielspezifischen Sachen und Startparametern – alles auf- und zuklappbar.
+* **VRChat-Fotos gehen nicht mehr verloren.** Beim Proton-Wechsel fragt die App, ob deine alten Bilder nach `Bilder/Backup_VRchat` wandern sollen. Neue Knöpfe öffnen den Bilder- und den Backup-Ordner.
+* **Videos in VRChat ohne Extra-Programm.** Mit Proton-RTSP-Wayland-GE-Beta4 brauchst du VRCVideoCacher nicht mehr – Videoplayer Fix & Check sagen dir das jetzt und stellen es auf Wunsch ein.
+* **VRChat-Cache größer machen** – Schieberegler von 30 GB (Standard) bis 130 GB. Mehr Cache = Welten und Avatare müssen seltener neu geladen werden.
+
+#### 🇬🇧 English
+
+* **Everything for VR in one click.** The first time you open the Dashboard, the app asks once: "Should we optimize everything for maximum VR performance?" On "Yes", firewall, network buffers, OpenXR runtime and VR priority are set up – with just one password prompt. If everything is already done, the question doesn't show up at all.
+* **Tidier Dashboard.** The firewall and network buffer buttons moved to **Settings → VR & OpenXR**. The Dashboard now has **⚡ Performance Setup** instead.
+* **Fix:** "OpenXR / SteamVR fixes & performance" now really takes you to VR & OpenXR instead of the Design tab.
+* **Start VRChat straight in VR** – new `--launch-in-vr` toggle.
+* **New look in the Games tab.** Hover over a game: big ▶ to start, "⚙ Settings" opens a tidy window with the Proton version (dropdown), game-specific things and launch options – all collapsible.
+* **VRChat photos don't get lost anymore.** When you switch Proton the app asks whether your old pictures should move to `Pictures/Backup_VRchat`. New buttons open the pictures and the backup folder.
+* **Videos in VRChat without an extra program.** With Proton-RTSP-Wayland-GE-Beta4 you don't need VRCVideoCacher anymore – Video Player Fix & Check now tell you and set it up if you want.
+* **Bigger VRChat cache** – slider from 30 GB (default) up to 130 GB. More cache = worlds and avatars need re-downloading less often.
+
+---
+
 ### 🚀 v1.4.4 — 2026-10-25
 
 #### 🇩🇪 Deutsch

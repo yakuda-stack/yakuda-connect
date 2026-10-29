@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ShNKvvZu74)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.4.4-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.4.5-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -39,6 +39,7 @@
   </tr>
   <tr>
     <td><b>Controls — Editing Bindings</b><br><img src="assets/controls2.png" alt="Controls 2" width="300"/></td>
+    <td><b>Game Settings — Popup</b><br><img src="assets/games3.png" alt="Games 3" width="300"/></td>
   </tr>
 </table>
 <table>
@@ -65,6 +66,7 @@ All screenshots: [assets/README.md](assets/README.md)
 | 🕹️ | **Change controller buttons (bindings)** | Decide which button does what in a game — move functions to other buttons, or make tilting the stick count as a button press. Works for **both** kinds of games: **OpenVR** (older, made for SteamVR) and **OpenXR** (newer, e.g. Unreal games under Proton) — all in one picture of your controllers, no config files. |
 | 🎯 | **Stop stick drift (deadzone)** | Your character walks or turns on its own? Turn up the deadzone — a small area around the stick's center that counts as “not touched”. Adjustable per stick (left, right, both) in the Controls tab, for OpenVR and OpenXR games alike. |
 | 🚀 | **Start your helper apps automatically** | Apps like VRCX, WayVR or OSC tools start by themselves when your headset connects — or, with **autostart profiles** in the Streaming tab, when a specific game starts (e.g. *“when VRChat runs and the headset is on, also start VRCX”*). One after another if you like, so your game isn't slowed down while loading — and they close again afterwards. Big **Start / Stop** buttons you can easily hit from inside VR. Works with the window closed too (terminal mode). |
+| ⚡ | **Performance Setup** | One click (or the one-time question when you first open the Dashboard) sets up everything for smooth VR: firewall, network buffers, OpenXR runtime and VR priority — with just one password prompt. |
 | 📡 | **Tune the picture** | Change stream quality, video encoder and which graphics card is used, when the image stutters or looks blurry. |
 | 🧰 | **Tools hub** | Install, update and start popular Linux VR tools from one list. |
 | 💾 | **Backup & restore** | Save your working VR setup and bring it back if something breaks. |
@@ -90,6 +92,9 @@ All screenshots: [assets/README.md](assets/README.md)
 * **Centralized Dashboard:** Start and stop your WiVRn server instantly with a clean, easy-to-use interface.
 * **VR Games Library:** The Games tab auto-detects every installed Steam VR game and shows it as a cover tile — with curated Proton profiles and tested launch options for games like VRChat, auto-recommendations for everything else, and one-click **Use** (set Proton version) and **▶ Play** (launch via Steam) buttons.
 * **Wayland or X11 for VRChat:** When you open VRChat in the Games tab, the app asks once whether you use Wayland — on Wayland it recommends [Proton-RTSP-Wayland-GE](https://github.com/Go08er/Proton-RTSP-Wayland-GE), on X11 the regular [proton-rtsp](https://github.com/SpookySkeletons/proton-rtsp). Change it any time via **Session: … · change** above the Proton list.
+* **Game settings popup:** hover over a game for a big ▶ (start right away) and "⚙ Settings". Settings open in the middle of the window with collapsible sections: Proton versions (description, Wayland switch, dropdown with Use / Copy / Install), game-specific options and launch options.
+* **VRChat pictures are kept:** when you switch Proton for VRChat, the app offers to move your old pictures to `Pictures/Backup_VRchat/VRchat_<date>` so a fresh Proton prefix doesn't take them with it. Buttons open the pictures folder in the prefix and the backup folder. Video Player Fix & Check point to Proton-RTSP-Wayland-GE-Beta4, which makes VRCVideoCacher unnecessary.
+* **VRChat options:** start straight in VR with `--launch-in-vr`, and make VRChat's cache bigger with a slider — from 30 GB (default) up to 130 GB. More cache = worlds and avatars need re-downloading less often. Saved in VRChat's own `config.json` inside the Proton prefix, applies from the next VRChat start.
 * **ⓘ Proton info:** The small **ⓘ** next to a Proton version opens its website (release notes, changelog) when one is known.
 * **ProtonPlus Integration:** Install the recommended Proton builds (Proton-GE, GE-RTSP, Proton-CachyOS) straight from a game's panel via the ProtonPlus CLI.
 * **Advanced Autostart Chain:** Launch multiple VR companion tools (such as WayVR, VRCX, OpenComposite, SlimeVR, or OSC tools) automatically in a custom sequence.
@@ -109,6 +114,7 @@ All screenshots: [assets/README.md](assets/README.md)
 * **OSC Toolbox:** One-click OSC Query fix for supported OSC tools (OSC Leash, OscGoesBrrr) when VRChat OSC acts up.
 * **Help for Linux newcomers:** On Arch-based systems the Installation tab explains what happens in the terminal during an AUR install (yay/paru) — invisible password, which questions to just confirm with Enter, and how to close the long PKGBUILD text (**q**).
 * **One-Click Environment Setup:** Automated installation of essential WiVRn dependencies and network/firewall configuration (Port 9757).
+* **One-time VR optimization:** The first time you open the Dashboard, the app offers to set everything up for maximum VR performance in one go — firewall & port 9757 (rule `wivrn`), permanent network buffers, OpenXR runtime → WiVRn + runtime fix, and VR priority (`CAP_SYS_NICE`). One password prompt. Asked automatically only once (not at all if everything is already active) — any time later via the **⚡ Performance Setup** button on the Dashboard. The single **Fix Firewall** and **network buffer** buttons now live under **Settings → VR & OpenXR** (below the Steam fix).
 * **Headset Client Installer:** Easily install and sideload the companion Android client (.apk) directly onto your standalone VR headset (Pico / Quest) via USB.
 * **WiVRn version check:** With the headset on USB, the app compares the WiVRn app version on the headset with `wivrn-server` on the PC and warns if they differ — the most common reason a headset won't connect.
 * **Stream Fine-Tuning:** Configure encoders, pick the graphics card WiVRn runs on (handy when an integrated GPU keeps winning the Vulkan lottery), toggle OpenVR compatibility, and manage your OpenXR runtimes directly from the UI.
@@ -257,6 +263,7 @@ Only permissions the program actually uses are listed.
 | Permission / access | Purpose | When | Source |
 | --- | --- | --- | --- |
 | Firewall rule (`pkexec`) | Open ports 9757 and 5353 so the headset can reach the WiVRn server | Only on click on "Fix Firewall" | `core/firewall.py` |
+| One-time VR optimization (`pkexec`) | Firewall rule, permanent network buffers and `CAP_SYS_NICE` together in **one** `pkexec` call (same commands as the single buttons) | Only once, when you answer "Yes" on first opening the Dashboard | `core/vr_optimize.py` |
 | `CAP_SYS_NICE` (`pkexec setcap`) | Lets `wivrn-server` run reprojection at high priority. A capability on one file — not a permanently elevated process | Only on click on "Enable VR Priority" | `ui/vr_runtime_widget.py` |
 | `pkexec` for OpenXR config | Write `active_runtime.json` when the file or its folder belongs to root. The folder is handed back to your user afterwards, so later fixes need no root | Only as a fallback when writing without root fails | `core/openxr_manager.py` |
 | `pkexec` for restore | Copy files back to `/usr/share/openxr`, `/opt/xrizer`, `/opt/opencomposite`. A timestamped backup is made first; nothing is deleted | Only on click on "Restore" | `core/backup_manager.py` |

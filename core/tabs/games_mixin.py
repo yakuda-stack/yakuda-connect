@@ -22,13 +22,14 @@ import subprocess
 
 from PySide6.QtWidgets import (QApplication, QLabel, QMessageBox, QHBoxLayout,
                                QVBoxLayout, QLineEdit, QPushButton,
-                               QFrame, QCheckBox)
+                               QFrame, QCheckBox, QSlider)
 from PySide6.QtCore import (Qt, QTimer, QSize, QPointF, QThread, QUrl,
                             Signal as QtSignal)
 from PySide6.QtGui import (QPixmap, QIcon, QPainter, QPolygonF, QColor,
                            QDesktopServices)
 
 import games as games_db
+import vrchat_config as vrc_cfg
 from install_worker import CoverDownloadWorker, GamesDbWorker
 from proton_manual_install import ManualProtonInstallWorker
 from translations import tr, get_language
@@ -74,13 +75,32 @@ def make_play_icon(size=14, color="#21252b"):
 
 
 class ClickableFrame(QFrame):
-    """QFrame, das wie ein großer Button funktioniert (für die Spiel-Kacheln)."""
+    """QFrame, das wie ein großer Button funktioniert (für die Spiel-Kacheln).
+
+    Hat die Kachel ein ``_hover``-Widget (Play + Einstellungen), wird es nur
+    gezeigt, solange die Maus über der Kachel ist."""
     clicked = QtSignal()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
+            event.accept()
+            return
         super().mousePressEvent(event)
+
+    def enterEvent(self, event):
+        hover = getattr(self, "_hover", None)
+        if hover is not None:
+            hover.setGeometry(self.rect())
+            hover.show()
+            hover.raise_()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        hover = getattr(self, "_hover", None)
+        if hover is not None:
+            hover.hide()
+        super().leaveEvent(event)
 
 
 class GameScanWorker(QThread):
@@ -287,7 +307,7 @@ class GamesTabMixin:
 
     # --- Kachel-Grid + Akkordeon -------------------------------------- #
     GAMES_TILES_PER_ROW = 4          # Kacheln pro Zeile
-    GAMES_TILE_W, GAMES_TILE_H = 150, 240   # Kachelgröße
+    GAMES_TILE_W, GAMES_TILE_H = 150, 222   # Kachelgröße
     GAMES_COVER_W, GAMES_COVER_H = 126, 189 # Coverfläche (2:3 wie Steam-Capsule)
 
     def _clear_layout(self, layout):
@@ -369,13 +389,12 @@ class GamesTabMixin:
         self._games_tile_pos = {}
         self._games_untested_names = {}
         self._games_local_entries = {}
-        self._games_detail_widget = None
-        self._detail_params_edit = None
-        self._detail_status_lbl = None
-        self._detail_toggles = {}
-        self._detail_custom_edit = None
-        self._detail_base_params = ""
-        self._expanded_appid = None
+        # Ist das Einstellungs-Popup offen (z. B. Auto-Scan im Hintergrund),
+        # bleibt es offen und behaelt seine Verweise.
+        if self._games_overlay is None or not self._games_overlay.isVisible():
+            self._games_detail_widget = None
+            self._clear_detail_refs()
+            self._expanded_appid = None
         self._selected_proton = games_db.load_selected_protons()
 
         local = games_db.load_local_games()
@@ -533,49 +552,68 @@ class GamesTabMixin:
                 self._pending_covers[str(appid)] = lbl_cover
         box.addWidget(lbl_cover, alignment=Qt.AlignHCenter)
 
-        # Fußzeile der Kachel: [▶ Starten]  ...  [▾ aufklappen]
-        # Der ▶-Knopf startet das Spiel SOFORT (gemerkte Proton-Version +
-        # gespeicherte Startparameter), ohne dass man aufklappen muss.
-        # Der Klick bleibt am Knopf hängen und klappt die Kachel NICHT auf.
-        foot = QHBoxLayout()
-        foot.setContentsMargins(0, 0, 0, 0)
-        foot.setSpacing(4)
+        # Hover-Ebene: grosser Play-Knopf + transparenter Einstellungen-
+        # Knopf. Erscheint nur, solange die Maus ueber der Kachel ist
+        # (ClickableFrame.enterEvent/leaveEvent).
+        hover = ClickableFrame(tile)
+        hover.setObjectName("tileHover")
+        hover.setStyleSheet(
+            "QFrame#tileHover { background-color: rgba(20, 23, 28, 150);"
+            " border-radius: 8px; border: none; }")
+        hv = QVBoxLayout(hover)
+        hv.setContentsMargins(10, 10, 10, 34)
+        hv.setSpacing(10)
+        hv.addStretch()
 
-        # Grün gefüllter Knopf mit gemaltem Dreieck -> unmissverständlich "Play"
         btn_tile_play = QPushButton()
         btn_tile_play.setObjectName("tilePlay")
         btn_tile_play.setCursor(Qt.PointingHandCursor)
-        btn_tile_play.setFixedSize(34, 24)
-        btn_tile_play.setIcon(make_play_icon(13, "#21252b"))
-        btn_tile_play.setIconSize(QSize(13, 13))
+        btn_tile_play.setFixedSize(64, 64)
+        btn_tile_play.setIcon(make_play_icon(28, "#21252b"))
+        btn_tile_play.setIconSize(QSize(28, 28))
         btn_tile_play.setToolTip(self._tile_play_tooltip(appid, name))
         btn_tile_play.setStyleSheet("""
-            QPushButton#tilePlay { background-color: #a3be8c; border: none; border-radius: 4px; }
+            QPushButton#tilePlay { background-color: #a3be8c; border: none; border-radius: 32px; }
             QPushButton#tilePlay:hover { background-color: #b8d19f; }
             QPushButton#tilePlay:pressed { background-color: #8fae76; }
         """)
         btn_tile_play.clicked.connect(lambda _, a=appid: self._play_game_from_tile(a))
-        foot.addWidget(btn_tile_play)
-        foot.addStretch()
+        hv.addWidget(btn_tile_play, alignment=Qt.AlignHCenter)
+        hv.addStretch()
 
-        # Kleiner Pfeil: zeigt an, dass die Kachel aufklappbar ist
-        lbl_arrow = QLabel("▾")
-        lbl_arrow.setStyleSheet(
-            "color: #7b88a1; font-size: 12px; background: transparent; border: none;")
-        foot.addWidget(lbl_arrow)
-        foot.addStretch()
-        # Platzhalter, damit der Pfeil trotz ▶-Knopf mittig bleibt
-        spacer = QLabel("")
-        spacer.setFixedSize(34, 24)
-        spacer.setStyleSheet("background: transparent; border: none;")
-        foot.addWidget(spacer)
-
-        box.addLayout(foot)
-        tile._arrow = lbl_arrow      # zum Umschalten ▾/▴
+        btn_tile_set = QPushButton(tr("games_settings_btn"))
+        btn_tile_set.setObjectName("tileSettings")
+        btn_tile_set.setCursor(Qt.PointingHandCursor)
+        btn_tile_set.setStyleSheet("""
+            QPushButton#tileSettings { background-color: rgba(236, 239, 244, 40); color: #eceff4;
+                                       border: 1px solid rgba(236, 239, 244, 90);
+                                       border-radius: 5px; padding: 9px 12px;
+                                       font-size: 13px; font-weight: bold; }
+            QPushButton#tileSettings:hover { background-color: rgba(136, 192, 208, 110); }
+        """)
+        btn_tile_set.clicked.connect(lambda _, a=appid: self._on_game_tile_clicked(a))
+        hv.addWidget(btn_tile_set)
+        hover.clicked.connect(lambda a=appid: self._on_game_tile_clicked(a))
+        hover.hide()
+        tile._hover = hover
         tile._play_btn = btn_tile_play
+        tile._settings_btn = btn_tile_set
+        tile._name = name
 
         tile.clicked.connect(lambda a=appid: self._on_game_tile_clicked(a))
         return tile
+
+    def games_retranslate(self):
+        """Nach Sprachwechsel: Kachel-Knöpfe neu beschriften und ein
+        offenes Einstellungs-Popup in der neuen Sprache neu aufbauen."""
+        for appid, tile in getattr(self, "_games_tiles", {}).items():
+            if getattr(tile, "_settings_btn", None) is not None:
+                tile._settings_btn.setText(tr("games_settings_btn"))
+            if getattr(tile, "_play_btn", None) is not None:
+                tile._play_btn.setToolTip(
+                    self._tile_play_tooltip(appid, getattr(tile, "_name", "")))
+        if self._games_overlay is not None and self._games_overlay.isVisible():
+            self._refresh_detail()
 
     def _tile_play_tooltip(self, appid, name):
         """Tooltip des ▶-Knopfs: zeigt, mit welcher Proton-Version gestartet wird."""
@@ -628,53 +666,70 @@ class GamesTabMixin:
             data["launch_params"] = {"base": base} if base else {}
         return data
 
-    def _collapse_detail(self):
-        """Klappt das aktuell offene Inline-Panel zu (falls eines offen ist)."""
-        if self._games_detail_widget is not None:
-            self._games_detail_widget.setParent(None)
-            self._games_detail_widget.deleteLater()
-            self._games_detail_widget = None
+    def _games_overlay_widget(self):
+        """Das Einstellungs-Popup (einmal angelegt, danach wiederverwendet)."""
+        if self._games_overlay is None:
+            from ui.game_settings_overlay import GameSettingsOverlay
+            self._games_overlay = GameSettingsOverlay(self)
+            self._games_overlay.closed.connect(self._on_games_overlay_closed)
+        return self._games_overlay
+
+    def _on_games_overlay_closed(self):
+        self._games_detail_widget = None
+        self._clear_detail_refs()
+        self._expanded_appid = None
+
+    def _clear_detail_refs(self):
         self._detail_params_edit = None
         self._detail_status_lbl = None
         self._detail_toggles = {}
         self._detail_custom_edit = None
         self._detail_base_params = ""
-        for a, tile in self._games_tiles.items():
-            tile.setStyleSheet(self._tile_css(selected=False))
-            if getattr(tile, "_arrow", None):
-                tile._arrow.setText("▾")
+
+    def _collapse_detail(self):
+        """Schliesst das Einstellungs-Popup (falls offen)."""
+        if self._games_overlay is not None:
+            self._games_overlay.close_overlay()
+        self._games_detail_widget = None
+        self._clear_detail_refs()
         self._expanded_appid = None
 
-    def _expand_game(self, appid):
-        """
-        Klappt das Detail-Panel INLINE auf: es wird in dieselbe Grid-Sektion
-        gesetzt, direkt in die (reservierte ungerade) Zeile unter der Reihe
-        der angeklickten Kachel — über die volle Breite. So klebt das Panel
-        immer am richtigen Spiel, statt global unter der Liste zu hängen.
-        """
+    def _expand_game(self, appid, keep_scroll=False):
+        """Oeffnet das Einstellungs-Popup eines Spiels in der Fenstermitte."""
         game = self._game_data_for(appid)
-        pos = self._games_tile_pos.get(appid)
-        if not game or not pos:
+        if not game:
             return
-        grid, row, _col = pos
-
         self._expanded_appid = appid
-        tile = self._games_tiles.get(appid)
-        if tile:
-            tile.setStyleSheet(self._tile_css(selected=True))
-            if getattr(tile, "_arrow", None):
-                tile._arrow.setText("▴")
 
         # Spiele mit eigener X11-Empfehlung (VRChat): einmal fragen, ob
         # Wayland genutzt wird — davon haengt die empfohlene Proton-Version ab.
         if game.get("protons_x11") and games_db.get_uses_wayland() is None:
             self._ask_uses_wayland()
 
+        self._games_section_open = self._games_section_states.setdefault(str(appid), {})
+        self._clear_detail_refs()
         detail = (self._build_local_game_detail(appid, game["entry"])
                   if game.get("local")
                   else self._build_game_detail(appid, game))
         self._games_detail_widget = detail
-        grid.addWidget(detail, row * 2 + 1, 0, 1, self.GAMES_TILES_PER_ROW)
+
+        ov = self._games_overlay_widget()
+        ov.set_content(game.get("name", ""), detail, keep_scroll=keep_scroll)
+        if not game.get("local"):
+            btn_play = QPushButton(tr("games_play_btn"))
+            btn_play.setObjectName("panelPlay")
+            btn_play.setCursor(Qt.PointingHandCursor)
+            btn_play.setIcon(make_play_icon(12, "#21252b"))
+            btn_play.setIconSize(QSize(12, 12))
+            btn_play.setStyleSheet("""
+                QPushButton#panelPlay { background-color: #a3be8c; color: #21252b; border: none;
+                              font-weight: bold; padding: 5px 16px; border-radius: 4px; font-size: 12px; }
+                QPushButton#panelPlay:hover { background-color: #b8d19f; }
+            """)
+            btn_play.clicked.connect(lambda _, a=appid, g=game: self._play_game(a, g))
+            ov.add_head_widget(btn_play)
+        if not ov.isVisible():
+            ov.open_overlay()
 
     def _ask_uses_wayland(self):
         """Fragt Wayland/X11 ab und merkt sich die Antwort."""
@@ -702,32 +757,32 @@ class GamesTabMixin:
         self._refresh_detail()
 
     def _refresh_detail(self):
-        """Baut das offene Panel neu auf (z. B. nach 'Use': Aktiv-Badge)."""
+        """Baut das offene Popup neu auf (z. B. nach 'Use': Aktiv-Badge).
+        Bleibt offen, Scrollposition und Abschnitte bleiben erhalten."""
         appid = self._expanded_appid
         if appid is None:
             return
-        self._collapse_detail()
-        self._expand_game(appid)
+        self._expand_game(appid, keep_scroll=True)
 
     def _on_game_tile_clicked(self, appid):
-        """
-        Akkordeon: Klick klappt das Panel inline unter der Kachel-Reihe auf.
-        Erneuter Klick auf dieselbe Kachel (oder Klick auf eine andere)
-        klappt das alte Panel wieder zu.
-        """
-        was_expanded = (appid == self._expanded_appid)
-        self._collapse_detail()
-        if not was_expanded:
-            self._expand_game(appid)
+        """Klick auf Kachel oder „Einstellungen“: Popup dieses Spiels öffnen."""
+        if appid == self._expanded_appid and self._games_overlay is not None \
+                and self._games_overlay.isVisible():
+            self._refresh_detail()
+            return
+        self._expand_game(appid)
 
     # ------------------------------------------------------------------ #
     #  "Use" (Proton wählen) + "Play" (Spiel starten)
     # ------------------------------------------------------------------ #
     def _detail_status(self, text, color="#88c0d0"):
         if self._detail_status_lbl is not None:
-            self._detail_status_lbl.setText(text)
-            self._detail_status_lbl.setStyleSheet(
-                f"color: {color}; font-size: 11px; border: none;")
+            try:
+                self._detail_status_lbl.setText(text)
+                self._detail_status_lbl.setStyleSheet(
+                    f"color: {color}; font-size: 11px; border: none;")
+            except RuntimeError:
+                self._detail_status_lbl = None
 
     def _current_toggle_keys(self):
         return [k for k, cb in self._detail_toggles.items() if cb.isChecked()]
@@ -794,6 +849,15 @@ class GamesTabMixin:
         if not self._offer_config_backup(appid, proton):
             return          # Nutzer hat abgebrochen
 
+        # VRChat: alte Bilder aus dem Prefix retten? Verschoben wird erst,
+        # wenn der Wechsel wirklich geschrieben wurde (_apply_proton).
+        self._pending_pics_move = False
+        if str(appid) == "438100":
+            answer = self._ask_keep_vrchat_pictures()
+            if answer is None:
+                return
+            self._pending_pics_move = answer
+
         if games_db.steam_is_running():
             if not self._ask_close_steam():
                 self._detail_status(tr("games_use_cancelled_steam"), "#ebcb8b")
@@ -802,6 +866,31 @@ class GamesTabMixin:
                 lambda a=appid, p=proton, n=name: self._apply_proton(a, p, n))
             return
         self._apply_proton(appid, proton, name)
+
+    def _ask_keep_vrchat_pictures(self):
+        """True = verschieben, False = nicht, None = Abbrechen.
+        Liegen keine Bilder im Prefix, wird nicht gefragt (False)."""
+        import game_backup
+        n = game_backup.count_vrchat_pictures()
+        if not n:
+            return False
+        dest = game_backup.vrchat_backup_root(self._get_pictures_dir())
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("games_pics_keep_title"))
+        box.setIcon(QMessageBox.Question)
+        box.setText(tr("games_pics_keep_text").format(n=n, dest=dest))
+        btn_yes = box.addButton(tr("games_pics_keep_yes"), QMessageBox.AcceptRole)
+        btn_no = box.addButton(tr("games_pics_keep_no"), QMessageBox.DestructiveRole)
+        box.addButton(tr("cancel"), QMessageBox.RejectRole)
+        box.setDefaultButton(btn_yes)
+        self._widen_dialog_buttons(box)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is btn_yes:
+            return True
+        if clicked is btn_no:
+            return False
+        return None
 
     def _ask_close_steam(self, text_key="games_close_steam_text"):
         """Rückfrage: Steam beenden, damit die Änderung nicht verloren geht."""
@@ -840,6 +929,12 @@ class GamesTabMixin:
         game_name_for_tooltip = g.get("name", "") if g else ""
 
         msg = tr("games_use_applied").format(tool=name)
+        if getattr(self, "_pending_pics_move", False):
+            self._pending_pics_move = False
+            import game_backup
+            ok_m, n, dest = game_backup.move_vrchat_pictures(self._get_pictures_dir())
+            msg += " " + (tr("games_pics_moved").format(n=n, dest=dest) if ok_m
+                          else tr("games_pics_move_failed").format(dest=dest))
         # Tooltip des ▶-Knopfs auf der Kachel nachziehen (neue Proton-Version)
         tile = self._games_tiles.get(appid)
         if tile is not None and getattr(tile, "_play_btn", None):
@@ -1319,105 +1414,55 @@ class GamesTabMixin:
 
     def _build_game_detail(self, appid, game):
         """
-        Ausgeklappte Detail-Sektion einer Kachel:
-          * Proton-Versionen (auf CachyOS ohne das normale Valve-Proton)
-            mit Beschreibung, Kopieren- und ProtonPlus-Install-Knopf
-          * Startparameter passend zur erkannten GPU mit Kopieren-Knopf
-          * Spiel-spezifische Fixes (z. B. VRChat Picture Folder Fix)
+        Inhalt des Einstellungs-Popups (ui/game_settings_overlay.py):
+
+          ▾ Proton-Versionen     (offen)  Beschreibung + ⓘ, Wayland-Schalter,
+                                          Dropdown + Verwenden/Kopieren/Installieren
+          ▸ Spielspezifisch      (zu)     z. B. VRChat: Cache, Fixes, Bilder,
+                                          Config-Backup, aus Liste entfernen
+          ▸ Startparameter       (zu)     Schalter, eigene, finaler String
+
+        Der Auf/Zu-Zustand wird in self._games_section_open gemerkt, damit ein
+        Neuaufbau (z. B. nach „Verwenden“) nichts wieder zuklappt.
         """
+        from PySide6.QtWidgets import QComboBox, QWidget
+        from ui.game_settings_overlay import CollapsibleSection
+
         lang = get_language()
-        # game mitgeben: Spiele ohne eigenen CachyOS-Eintrag (VRChat seit
-        # 1.1.9) sollen dort trotzdem ein "Empfohlen" an der Liste haben.
         rec_role = games_db.recommended_role(game)
         gpu = games_db.detect_gpu_vendor()
         pp_available = games_db.find_protonplus() is not None
+        state = self._games_section_open
 
-        card = QFrame()
-        card.setObjectName("settingsCard")
-        card.setStyleSheet("""
-            QFrame#settingsCard {
-                background-color: #21252b;
-                border: 1px solid #88c0d0;
-                border-radius: 6px;
-            }
-        """)
+        card = QWidget()
+        card.setStyleSheet("background:transparent;")
         box = QVBoxLayout(card)
-        box.setContentsMargins(14, 12, 14, 12)
-        box.setSpacing(8)
+        box.setContentsMargins(0, 0, 6, 0)
+        box.setSpacing(10)
 
-        # Kopfzeile: Spielname + "Play"-Button direkt daneben.
-        # Play startet das Spiel per Steam-CLI mit der per "Use" gewählten
-        # Proton-Version und den Startparametern aus dem Textfeld unten.
-        name_row = QHBoxLayout()
-        lbl_name = QLabel(game["name"])
-        lbl_name.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 15px; border: none;")
-        name_row.addWidget(lbl_name)
-
-        btn_play = QPushButton(tr("games_play_btn"))
-        btn_play.setObjectName("panelPlay")
-        btn_play.setCursor(Qt.PointingHandCursor)
-        btn_play.setIcon(make_play_icon(12, "#21252b"))
-        btn_play.setIconSize(QSize(12, 12))
-        btn_play.setStyleSheet("""
-            QPushButton#panelPlay { background-color: #a3be8c; color: #21252b; border: none;
-                          font-weight: bold; padding: 5px 16px; border-radius: 4px; font-size: 12px; }
-            QPushButton#panelPlay:hover { background-color: #b8d19f; }
-            QPushButton#panelPlay:pressed { background-color: #8fae76; }
-        """)
-        btn_play.clicked.connect(lambda _, a=appid, g=game: self._play_game(a, g))
-        name_row.addWidget(btn_play)
-
-        # Von Hand ergaenzt? Dann sichtbar machen UND zuruecknehmbar. Ohne
-        # diesen Knopf haette ein Fehlgriff im Dialog (falsches Spiel
-        # ausgewaehlt) keine Umkehrung ausser dem Bearbeiten der Config.
+        # Von Hand ergaenzt? Dann sichtbar machen UND zuruecknehmbar.
         if str(appid) in games_db.load_manual_steam_appids():
+            man_row = QHBoxLayout()
             lbl_manual = QLabel(tr("games_manual_badge"))
-            lbl_manual.setStyleSheet(
-                "color: #88c0d0; font-size: 11px; border: none;")
+            lbl_manual.setStyleSheet("color: #88c0d0; font-size: 11px; border: none;")
             lbl_manual.setToolTip(tr("games_manual_badge_tip"))
-            name_row.addWidget(lbl_manual)
-
+            man_row.addWidget(lbl_manual)
             btn_unmanual = QPushButton(tr("games_manual_remove_btn"))
             btn_unmanual.setCursor(Qt.PointingHandCursor)
             btn_unmanual.setToolTip(tr("games_manual_remove_tip"))
-            btn_unmanual.setStyleSheet("""
-                QPushButton { background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a;
-                              padding: 3px 10px; border-radius: 4px; font-size: 11px; }
-                QPushButton:hover { background-color: #3b4252; border-color: #bf616a; }
-            """)
+            btn_unmanual.setStyleSheet(self._small_button_style())
             btn_unmanual.clicked.connect(
                 lambda _=False, a=appid: self.remove_manual_steam_game(a))
-            name_row.addWidget(btn_unmanual)
-
-        name_row.addStretch()
-        box.addLayout(name_row)
+            man_row.addWidget(btn_unmanual)
+            man_row.addStretch()
+            box.addLayout(man_row)
 
         if game.get("shortcut"):
             self._add_image_row(box, appid, "shortcut")
 
-        # --- Proton-Versionen (gefiltert + Empfehlung zuerst) ---
-        lbl_proton = QLabel(tr("games_proton_section"))
-        lbl_proton.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-        if game.get("protons_x11"):
-            proton_head = QHBoxLayout()
-            proton_head.addWidget(lbl_proton)
-            proton_head.addStretch()
-            uses_wl = games_db.get_uses_wayland() is not False
-            btn_wl = QPushButton(tr("games_wayland_switch").format(
-                session="Wayland" if uses_wl else "X11"))
-            btn_wl.setCursor(Qt.PointingHandCursor)
-            btn_wl.setToolTip(tr("games_wayland_switch_tip"))
-            btn_wl.setStyleSheet("""
-                QPushButton { background: transparent; color: #88c0d0; border: none;
-                              font-size: 11px; padding: 0; }
-                QPushButton:hover { color: #eceff4; text-decoration: underline; }
-            """)
-            btn_wl.clicked.connect(lambda _=False: self._change_uses_wayland())
-            proton_head.addWidget(btn_wl)
-            box.addLayout(proton_head)
-        else:
-            box.addWidget(lbl_proton)
-
+        # ================= Proton-Versionen ================= #
+        sec = CollapsibleSection(tr("games_proton_section").rstrip(": "), "proton", state, default_open=True)
+        protons = list(games_db.visible_protons(game))
         role_labels = {
             "main": tr("games_role_main"),
             "main_cachyos": tr("games_role_cachyos"),
@@ -1426,163 +1471,191 @@ class GamesTabMixin:
             "safe": tr("games_role_safe"),
         }
 
-        for proton in games_db.visible_protons(game):
-            row_frame = QFrame()
-            row_frame.setObjectName("protonrow")
-            is_rec = proton.get("role") == rec_role
-            row_frame.setStyleSheet(
-                "QFrame#protonrow { background-color: #2e3440; border-radius: 4px; border: none; }"
-                if is_rec else
-                "QFrame#protonrow { background-color: transparent;"
-                " border: 1px solid #2e3440; border-radius: 4px; }")
-            row = QVBoxLayout(row_frame)
-            row.setContentsMargins(10, 8, 10, 8)
-            row.setSpacing(4)
+        desc_row = QHBoxLayout()
+        lbl_desc = QLabel("")
+        lbl_desc.setStyleSheet("color: #d8dee9; font-size: 11px; border: none;")
+        lbl_desc.setWordWrap(True)
+        desc_row.addWidget(lbl_desc, 1)
+        btn_info = QPushButton("ⓘ")
+        btn_info.setCursor(Qt.PointingHandCursor)
+        btn_info.setFixedSize(22, 22)
+        btn_info.setStyleSheet("""
+            QPushButton { background: transparent; color: #88c0d0; border: none;
+                          font-size: 15px; padding: 0; }
+            QPushButton:hover { color: #eceff4; }
+        """)
+        desc_row.addWidget(btn_info, 0, Qt.AlignTop)
+        sec.body.addLayout(desc_row)
 
-            head = QHBoxLayout()
-            # Die INSTALLIERTE Version anzeigen, nicht die in der games.json
-            # eingetragene. Die Datenbank nennt zwangslaeufig einen Stand von
-            # gestern — proton-rtsp und GE erscheinen im Wochentakt. Stuende
-            # hier der gepinnte Name, waehrend ein neuerer Build daneben
-            # liegt und auch benutzt wird, zeigte die App etwas anderes an
-            # als sie tut.
-            installed_tool, _found, _kind = games_db.resolve_steam_tool(proton)
-            ver_text = installed_tool or proton.get("version", "")
+        lbl_badges = QLabel("")
+        lbl_badges.setStyleSheet("color: #ebcb8b; font-size: 11px; font-weight: bold; border: none;")
+        sec.body.addWidget(lbl_badges)
+        lbl_src = QLabel("")
+        lbl_src.setStyleSheet("color: #7b88a1; font-size: 10px; font-style: italic; border: none;")
+        lbl_src.setWordWrap(True)
+        sec.body.addWidget(lbl_src)
+
+        # Wayland-Schalter: gruen = Wayland, sonst normale Farbe (= X11).
+        if game.get("protons_x11"):
+            uses_wl = games_db.get_uses_wayland() is not False
+            wl_row = QHBoxLayout()
+            btn_wl = QPushButton("Wayland")
+            btn_wl.setCursor(Qt.PointingHandCursor)
+            btn_wl.setToolTip(tr("games_wayland_switch_tip"))
+            btn_wl.setStyleSheet(
+                "QPushButton { background-color:#a3be8c; color:#21252b; border:none;"
+                " font-weight:bold; padding:4px 14px; border-radius:4px; font-size:11px; }"
+                " QPushButton:hover { background-color:#b8d19f; }"
+                if uses_wl else self._small_button_style())
+            btn_wl.clicked.connect(lambda _=False, w=uses_wl: self._toggle_uses_wayland(w))
+            wl_row.addWidget(btn_wl)
+            lbl_wl = QLabel(tr("games_wayland_on") if uses_wl else tr("games_wayland_off"))
+            lbl_wl.setStyleSheet("color: #7b88a1; font-size: 11px; border: none;")
+            wl_row.addWidget(lbl_wl)
+            wl_row.addStretch()
+            sec.body.addLayout(wl_row)
+
+        pick_row = QHBoxLayout()
+        combo = QComboBox()
+        combo.setMinimumWidth(260)
+        active_idx, rec_idx = -1, 0
+        tool_names = []
+        for i, proton in enumerate(protons):
+            installed_tool, found, _kind = games_db.resolve_steam_tool(proton)
+            tool_names.append((installed_tool, found))
+            text = installed_tool or proton.get("version", "")
             if proton.get("untested"):
-                ver_text = f"{ver_text} {tr('games_untested_suffix')}"
-            lbl_ver = QLabel(ver_text)
-            lbl_ver.setStyleSheet(
-                "color: #a3be8c; font-family: monospace; font-size: 12px; font-weight: bold; border: none;")
-            lbl_ver.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            head.addWidget(lbl_ver)
+                text = f"{text} {tr('games_untested_suffix')}"
+            if proton.get("role") == rec_role:
+                rec_idx = i
+                text = "★ " + text
+            sel = self._selected_proton.get(appid)
+            if sel and sel in (proton.get("version"), installed_tool):
+                active_idx = i
+                text += "  ✓"
+            combo.addItem(text)
+        pick_row.addWidget(combo, 1)
 
-            # Kleines ⓘ: oeffnet die Webseite der Proton-Version (Release-
-            # Notes, Changelog), wenn eine bekannt ist.
-            info_url = games_db.proton_info_url(proton)
-            if info_url:
-                btn_info = QPushButton("ⓘ")
-                btn_info.setCursor(Qt.PointingHandCursor)
-                btn_info.setToolTip(tr("games_proton_info_tip").format(url=info_url))
-                btn_info.setFixedSize(20, 20)
-                btn_info.setStyleSheet("""
-                    QPushButton { background: transparent; color: #88c0d0; border: none;
-                                  font-size: 14px; padding: 0; }
-                    QPushButton:hover { color: #eceff4; }
-                """)
-                btn_info.clicked.connect(
-                    lambda _=False, u=info_url: QDesktopServices.openUrl(QUrl(u)))
-                head.addWidget(btn_info)
+        btn_use = QPushButton(tr("games_use_btn"))
+        btn_use.setCursor(Qt.PointingHandCursor)
+        btn_use.setStyleSheet(self._fix_button_style())
+        btn_copy_ver = QPushButton(tr("games_copy_btn"))
+        btn_copy_ver.setCursor(Qt.PointingHandCursor)
+        btn_copy_ver.setStyleSheet(self._small_button_style())
+        btn_inst = QPushButton(tr("games_install_btn"))
+        btn_inst.setCursor(Qt.PointingHandCursor)
+        btn_inst.setStyleSheet(self._fix_button_style())
+        for b in (btn_use, btn_copy_ver, btn_inst):
+            pick_row.addWidget(b)
+        sec.body.addLayout(pick_row)
 
-            badge_text = (tr("games_recommended_cachyos")
-                          if is_rec and rec_role == "main_cachyos"
-                          else tr("games_recommended")) if is_rec \
-                else role_labels.get(proton.get("role"), "")
-            lbl_badge = QLabel(badge_text)
-            lbl_badge.setStyleSheet(
-                "color: #ebcb8b; font-size: 11px; font-weight: bold; border: none;" if is_rec
-                else "color: #7b88a1; font-size: 11px; border: none;")
-            head.addWidget(lbl_badge)
+        def current():
+            i = combo.currentIndex()
+            return protons[i] if 0 <= i < len(protons) else None
 
-            # Per "Use" als aktiv gewählte Version markieren
-            is_active = self._selected_proton.get(appid) in (
-                proton.get("version"), installed_tool)
-            if is_active:
-                lbl_active = QLabel(tr("games_active_badge"))
-                lbl_active.setStyleSheet(
-                    "color: #a3be8c; font-size: 11px; font-weight: bold; border: none;")
-                head.addWidget(lbl_active)
-            head.addStretch()
-
-            # "Use": setzt diese Version als aktive Version für den Play-Button
-            # (schreibt sie in Steams CompatToolMapping und merkt sie dauerhaft)
-            btn_use = QPushButton(tr("games_use_btn"))
-            btn_use.setCursor(Qt.PointingHandCursor)
-            btn_use.setEnabled(not is_active)
-            btn_use.setStyleSheet("""
-                QPushButton { background-color: #5e81ac; color: white; border: none;
-                              font-weight: bold; padding: 3px 12px; border-radius: 4px; font-size: 11px; }
-                QPushButton:hover { background-color: #81a1c1; }
-                QPushButton:disabled { background-color: #3b4252; color: #a3be8c; }
-            """)
-            btn_use.clicked.connect(
-                lambda _, a=appid, p=proton: self._use_proton(a, p))
-            head.addWidget(btn_use)
-
-            btn_copy_ver = QPushButton(tr("games_copy_btn"))
-            btn_copy_ver.setCursor(Qt.PointingHandCursor)
-            btn_copy_ver.setStyleSheet("""
-                QPushButton { background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a;
-                              padding: 3px 10px; border-radius: 4px; font-size: 11px; }
-                QPushButton:hover { background-color: #3b4252; border-color: #5e81ac; }
-            """)
-            btn_copy_ver.clicked.connect(
-                lambda _, v=proton.get("version", ""), b=btn_copy_ver:
-                self._copy_games_text(v, b))
-            head.addWidget(btn_copy_ver)
-
-            runner_id = proton.get("protonplus_runner")
-            # Manuell verteilte Builds (weder AUR noch ProtonPlus): eigener
-            # Knopf, der Tarball laedt, Pruefsumme prueft und entpackt.
-            if proton.get("download_url"):
-                btn_dl = QPushButton(
-                    tr("games_manual_reinstall_btn") if _found
-                    else tr("games_manual_install_btn"))
-                btn_dl.setCursor(Qt.PointingHandCursor)
-                btn_dl.setStyleSheet("""
-                    QPushButton { background-color: #5e81ac; color: white; border: none;
-                                  font-weight: bold; padding: 3px 10px; border-radius: 4px; font-size: 11px; }
-                    QPushButton:hover { background-color: #81a1c1; }
-                    QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-                """)
-                btn_dl.clicked.connect(
-                    lambda _, p=proton, b=btn_dl: self.start_manual_proton_install(p, b))
-                head.addWidget(btn_dl)
-            elif runner_id and pp_available:
-                btn_pp = QPushButton(tr("games_pp_install_btn"))
-                btn_pp.setCursor(Qt.PointingHandCursor)
-                btn_pp.setStyleSheet("""
-                    QPushButton { background-color: #5e81ac; color: white; border: none;
-                                  font-weight: bold; padding: 3px 10px; border-radius: 4px; font-size: 11px; }
-                    QPushButton:hover { background-color: #81a1c1; }
-                    QPushButton:disabled { background-color: #3b4252; color: #7b88a1; }
-                """)
-                btn_pp.clicked.connect(
-                    lambda _, r=runner_id: self.start_protonplus_install(r))
-                head.addWidget(btn_pp)
-            row.addLayout(head)
-
+        def update_view(_i=None):
+            proton = current()
+            if proton is None:
+                for w in (btn_use, btn_copy_ver, btn_inst, btn_info):
+                    w.setEnabled(False)
+                return
+            i = combo.currentIndex()
+            installed_tool, found = tool_names[i]
             desc = proton.get("desc", {})
-            lbl_desc = QLabel(desc.get(lang) or desc.get("en") or desc.get("de") or "")
-            lbl_desc.setStyleSheet("color: #d8dee9; font-size: 11px; border: none;")
-            lbl_desc.setWordWrap(True)
-            row.addWidget(lbl_desc)
+            lbl_desc.setText(desc.get(lang) or desc.get("en") or desc.get("de") or "")
+            url = games_db.proton_info_url(proton)
+            btn_info.setVisible(bool(url))
+            btn_info.setToolTip(tr("games_proton_info_tip").format(url=url) if url else "")
+            btn_info._url = url
 
+            is_rec = proton.get("role") == rec_role
+            badge = ((tr("games_recommended_cachyos") if rec_role == "main_cachyos"
+                      else tr("games_recommended")) if is_rec
+                     else role_labels.get(proton.get("role"), ""))
+            if i == active_idx:
+                badge = (badge + "   " if badge else "") + tr("games_active_badge")
+            lbl_badges.setText(badge)
+
+            btn_use.setEnabled(i != active_idx)
+            runner_id = proton.get("protonplus_runner")
             if proton.get("download_url"):
-                lbl_src = QLabel(tr("games_manual_note"))
+                btn_inst.setVisible(True)
+                btn_inst.setText((tr("games_manual_reinstall_btn") if found
+                                  else tr("games_manual_install_btn")).replace("&", "&&"))
+                lbl_src.setText(tr("games_manual_note"))
                 lbl_src.setStyleSheet("color: #7b88a1; font-size: 10px; font-style: italic; border: none;")
-                lbl_src.setWordWrap(True)
-                row.addWidget(lbl_src)
-            elif runner_id is None:
-                lbl_src = QLabel(tr("games_pp_steam_note"))
-                lbl_src.setStyleSheet("color: #7b88a1; font-size: 10px; font-style: italic; border: none;")
-                row.addWidget(lbl_src)
-            elif not pp_available:
-                lbl_src = QLabel(tr("games_pp_missing"))
-                lbl_src.setStyleSheet("color: #ebcb8b; font-size: 10px; font-style: italic; border: none;")
-                lbl_src.setWordWrap(True)
-                row.addWidget(lbl_src)
+            elif runner_id and pp_available:
+                btn_inst.setVisible(True)
+                btn_inst.setText(tr("games_pp_install_btn").replace("&", "&&"))
+                lbl_src.setText("")
+            else:
+                btn_inst.setVisible(False)
+                if runner_id is None:
+                    lbl_src.setText(tr("games_pp_steam_note"))
+                    lbl_src.setStyleSheet("color: #7b88a1; font-size: 10px; font-style: italic; border: none;")
+                else:
+                    lbl_src.setText(tr("games_pp_missing"))
+                    lbl_src.setStyleSheet("color: #ebcb8b; font-size: 10px; font-style: italic; border: none;")
+            lbl_src.setVisible(bool(lbl_src.text()))
 
-            box.addWidget(row_frame)
+        def do_install():
+            proton = current()
+            if proton is None:
+                return
+            if proton.get("download_url"):
+                self.start_manual_proton_install(proton, btn_inst)
+            elif proton.get("protonplus_runner"):
+                self.start_protonplus_install(proton["protonplus_runner"])
 
-        # --- Startparameter: Basis (GPU-abhängig) + Zusatz-Optionen ---
-        # Aufbau: hinterlegte Basis-Parameter  ->  Toggle-Schalter
-        #         ->  eigene Parameter  ->  finaler, kopierbarer String.
-        # Der finale String wird live neu berechnet und ist genau das, was
-        # "Play" in Steams LaunchOptions schreibt.
+        combo.currentIndexChanged.connect(update_view)
+        btn_use.clicked.connect(lambda _=False: current() and self._use_proton(appid, current()))
+        btn_copy_ver.clicked.connect(
+            lambda _=False: current() and self._copy_games_text(current().get("version", ""), btn_copy_ver))
+        btn_inst.clicked.connect(lambda _=False: do_install())
+        btn_info.clicked.connect(
+            lambda _=False: btn_info._url and QDesktopServices.openUrl(QUrl(btn_info._url)))
+        combo.setCurrentIndex(active_idx if active_idx >= 0 else rec_idx)
+        update_view()
+        box.addWidget(sec)
+
+        # ================= Spielspezifisch ================= #
+        sec = CollapsibleSection(tr("games_specific_section"), "specific", state)
+        fixes = game.get("fixes", [])
+        self._build_fixes(sec.body, appid, fixes)
+        self._build_backup_rows(sec.body, appid)
+        box.addWidget(sec)
+
+        # ================= Startparameter ================= #
+        sec = CollapsibleSection(tr("games_params_head"), "params", state)
+        self._build_launch_params(sec.body, appid, game, gpu)
+        box.addWidget(sec)
+
+        # Statuszeile fuer Use-/Play-Feedback (Steam-Neustart-Hinweis usw.)
+        self._detail_status_lbl = QLabel("")
+        self._detail_status_lbl.setStyleSheet("color: #88c0d0; font-size: 11px; border: none;")
+        self._detail_status_lbl.setWordWrap(True)
+        box.addWidget(self._detail_status_lbl)
+        box.addStretch()
+        return card
+
+    @staticmethod
+    def _small_button_style():
+        return """
+            QPushButton { background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a;
+                          padding: 4px 10px; border-radius: 4px; font-size: 11px; }
+            QPushButton:hover { background-color: #3b4252; border-color: #5e81ac; }
+            QPushButton:disabled { color: #616b7f; }
+        """
+
+    def _toggle_uses_wayland(self, current):
+        """Wayland-Knopf im Popup: umschalten und neu aufbauen."""
+        games_db.set_uses_wayland(not current)
+        self._refresh_detail()
+
+    def _build_launch_params(self, box, appid, game, gpu):
+        """Startparameter: Basis (GPU-abhängig) + Schalter + eigene + final."""
         params = game.get("launch_params", {})
         if game.get("shortcut"):
-            # Nicht-Steam-Spiel: Basis sind die Parameter aus Steam, nicht
-            # GPU-abhaengige Vorgaben.
             lbl_params = QLabel(tr("games_params_section_shortcut"))
             self._detail_base_params = params.get("base", "")
             if self._detail_base_params:
@@ -1599,34 +1672,21 @@ class GamesTabMixin:
         lbl_params.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_params)
 
-        # Panel wird neu aufgebaut -> Pfadsuche einmal frisch machen.
-        # Dadurch reicht Panel zu / Panel auf, nachdem man
-        # VRCVideoCacher installiert hat.
         games_db.refresh_vrcvideocacher_path()
         game_toggles = games_db.resolved_toggles(game)
         self._detail_game_toggles = game_toggles
         saved_keys, saved_custom = games_db.load_launch_toggles(appid, game_toggles)
-
-        # Beim ERSTEN Öffnen (noch nichts gespeichert) greifen die Spiel-
-        # Vorgaben (z. B. gamemoderun + HW-Video-Dekodierung sind bei VRChat
-        # per Default an). Danach ist die gespeicherte Auswahl maßgeblich —
-        # der Nutzer kann die Vorgaben also ganz normal wieder abschalten.
         if games_db.has_saved_launch_toggles(appid):
             initial_keys = set(saved_keys)
         else:
             initial_keys = set(game.get("default_on", []))
             initial_keys |= {t["key"] for t in game_toggles if t.get("default")}
 
-        # Toggle-Schalter: globale (LAUNCH_TOGGLES) + spiel-eigene (game['toggles'])
         lbl_toggles = QLabel(tr("games_toggles_section"))
         lbl_toggles.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_toggles)
 
-        # Zwei Zeilen statt einer: bei schmalem Fenster schob die einzelne
-        # QHBoxLayout-Reihe die hinteren Schalter aus dem sichtbaren Bereich —
-        # "VRCVideoCacher Autostart" als letzter war praktisch nicht mehr
-        # erreichbar. Ab dem vierten Schalter wird jetzt umgebrochen.
-        TOGGLES_PER_ROW = 4
+        TOGGLES_PER_ROW = 3
         toggle_rows = [QHBoxLayout()]
         toggle_rows[0].setSpacing(16)
         self._detail_toggles = {}
@@ -1637,11 +1697,6 @@ class GamesTabMixin:
             cb.setToolTip(tr(f"games_toggle_{t['key']}_tip"))
             cb.setStyleSheet(
                 "QCheckBox { color: #d8dee9; font-size: 11px; font-family: monospace; border: none; }")
-            # Ein Schalter ohne Befehl kann nichts tun (z. B. VRCVideoCacher-
-            # Autostart, wenn das Programm gar nicht installiert ist). Ihn
-            # anklickbar zu lassen waere die schlechtere Variante: der Nutzer
-            # setzt den Haken, in den Startparametern passiert nichts, und er
-            # sucht den Fehler beim Spiel. Also ausgrauen und sagen warum.
             if not t.get("arg"):
                 cb.setChecked(False)
                 cb.setEnabled(False)
@@ -1660,11 +1715,9 @@ class GamesTabMixin:
             row.addStretch()
             box.addLayout(row)
 
-        # Eigene Parameter (auch der Platz für ungetestete Spiele ohne Profil)
         lbl_custom = QLabel(tr("games_custom_params"))
         lbl_custom.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_custom)
-
         self._detail_custom_edit = QLineEdit(saved_custom)
         self._detail_custom_edit.setPlaceholderText(tr("games_custom_placeholder"))
         self._detail_custom_edit.setStyleSheet("font-family: monospace; font-size: 11px;")
@@ -1672,45 +1725,86 @@ class GamesTabMixin:
             lambda _, a=appid: self._on_launch_opts_changed(a))
         box.addWidget(self._detail_custom_edit)
 
-        # Finaler String (schreibgeschützt, wird live gebaut) + Kopieren
         lbl_final = QLabel(tr("games_final_params"))
         lbl_final.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_final)
-
         param_row = QHBoxLayout()
         txt_params = QLineEdit()
         txt_params.setReadOnly(True)
         txt_params.setStyleSheet("font-family: monospace; font-size: 11px; color: #a3be8c;")
-        self._detail_params_edit = txt_params   # Play liest hieraus
+        self._detail_params_edit = txt_params
         param_row.addWidget(txt_params)
-
         btn_copy = QPushButton(tr("games_copy_btn"))
         btn_copy.setCursor(Qt.PointingHandCursor)
-        btn_copy.setStyleSheet("""
-            QPushButton { background-color: #5e81ac; color: white; border: none;
-                          font-weight: bold; padding: 6px 12px; border-radius: 4px; font-size: 11px; }
-            QPushButton:hover { background-color: #81a1c1; }
-        """)
+        btn_copy.setStyleSheet(self._fix_button_style())
         btn_copy.clicked.connect(
             lambda _, t=txt_params, b=btn_copy: self._copy_games_text(t.text(), b))
         param_row.addWidget(btn_copy)
         box.addLayout(param_row)
+        self._update_final_params()
 
-        self._update_final_params()   # Startwert berechnen
+    def _fix_desc_label(self, key):
+        lbl = QLabel(tr(key))
+        lbl.setStyleSheet("color: #7b88a1; font-size: 10px; border: none;")
+        lbl.setWordWrap(True)
+        return lbl
 
-        # --- Config-Backup: gilt fuer JEDES Spiel, nicht nur VRChat -------- #
-        # Steht bewusst vor den spielspezifischen Fixes: nach einem
-        # Proton-Wechsel ist "Config zurueckspielen" der naechste Schritt,
-        # den man sucht.
+    def _fix_button(self, key, slot):
+        btn = QPushButton(tr(f"{key}_btn"))
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip(tr(f"{key}_tip"))
+        btn.setStyleSheet(self._fix_button_style())
+        btn.clicked.connect(slot)
+        return btn
+
+    def _build_fixes(self, box, appid, fixes):
+        """Spielspezifische Fixes — untereinander, je mit kurzer Erklärung."""
+        if "vrchat_cache" in fixes:
+            self._build_vrchat_cache_row(box)
+
+        if "vrchat_pictures" in fixes:
+            btn_pic = self._fix_button("games_fix_pictures", self.create_vrchat_symlink)
+            self.ui.btn_vrchat_symlink = btn_pic
+            row = QHBoxLayout()
+            row.addWidget(btn_pic)
+            row.addWidget(self._fix_button("games_pics_open_proton", self.open_vrchat_pictures_folder))
+            row.addWidget(self._fix_button("games_pics_open_backup", self.open_vrchat_backup_folder))
+            row.addStretch()
+            box.addLayout(row)
+            box.addWidget(self._fix_desc_label("games_fix_pictures_desc"))
+
+        if "vrchat_videoplayer" in fixes:
+            row = QHBoxLayout()
+            row.addWidget(self._fix_button("games_fix_video", self.show_vrchat_videoplayer_fix))
+            row.addStretch()
+            box.addLayout(row)
+            box.addWidget(self._fix_desc_label("games_vci_note"))
+
+        if "vrchat_check" in fixes:
+            btn_chk = self._fix_button("games_fix_check", self.run_vrchat_check)
+            self.ui.btn_vrchat_check = btn_chk
+            row = QHBoxLayout()
+            row.addWidget(btn_chk)
+            row.addStretch()
+            box.addLayout(row)
+
+        if fixes:
+            lbl_fix_status = QLabel("")
+            lbl_fix_status.setStyleSheet("font-size: 11px; border: none;")
+            lbl_fix_status.setWordWrap(True)
+            lbl_fix_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self.ui.lbl_vrchat_status = lbl_fix_status
+            box.addWidget(lbl_fix_status)
+
+    def _build_backup_rows(self, box, appid):
+        """Config-Backup / -Restore und „Aus Liste entfernen“ (alle Spiele)."""
         import game_backup
         lbl_bk_head = QLabel(tr("backup_cfg_section"))
-        lbl_bk_head.setStyleSheet(
-            "color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
+        lbl_bk_head.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
         box.addWidget(lbl_bk_head)
 
         bk_row = QHBoxLayout()
         bk_row.setSpacing(8)
-
         btn_bk = QPushButton(tr("backup_cfg_btn"))
         btn_bk.setCursor(Qt.PointingHandCursor)
         btn_bk.setToolTip(tr("backup_cfg_btn_tip"))
@@ -1722,8 +1816,6 @@ class GamesTabMixin:
         btn_rs.setCursor(Qt.PointingHandCursor)
         btn_rs.setStyleSheet(self._fix_button_style())
         btn_rs.clicked.connect(lambda _=False, a=appid: self.restore_game_config(a))
-        # Ohne Backup gibt es nichts zurueckzuspielen -> ausgrauen statt
-        # den Nutzer auf eine Fehlermeldung laufen zu lassen.
         if game_backup.has_backup(appid):
             info = game_backup.backup_info(appid)
             btn_rs.setToolTip(tr("restore_cfg_btn_tip").format(
@@ -1733,99 +1825,88 @@ class GamesTabMixin:
             btn_rs.setToolTip(tr("restore_cfg_btn_none"))
         bk_row.addWidget(btn_rs)
 
-        # --- Aus der Liste entfernen -------------------------------------- #
-        # Steht bewusst NEBEN den Backup-Knoepfen und nicht bei den Fixes:
-        # es ist die einzige Aktion im Panel, die die Liste selbst aendert.
         btn_del = QPushButton(tr("games_remove_btn"))
         btn_del.setCursor(Qt.PointingHandCursor)
         btn_del.setToolTip(tr("games_remove_tip"))
-        btn_del.setStyleSheet("""
-            QPushButton { background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a;
-                          padding: 6px 12px; border-radius: 4px; font-size: 11px; }
-            QPushButton:hover { background-color: #3b4252; border-color: #bf616a; color: #eceff4; }
-        """)
+        btn_del.setStyleSheet(self._small_button_style())
         btn_del.clicked.connect(lambda _=False, a=appid: self.remove_game_from_list(a))
         bk_row.addWidget(btn_del)
-
         bk_row.addStretch()
         box.addLayout(bk_row)
 
-        # --- Spiel-spezifische Fixes (Umzug aus Settings -> "General") ---
-        fixes = game.get("fixes", [])
-        if fixes:
-            lbl_fix_head = QLabel(tr("games_fixes_section"))
-            lbl_fix_head.setStyleSheet("color: #7b88a1; font-size: 11px; font-weight: bold; border: none;")
-            box.addWidget(lbl_fix_head)
+    def open_vrchat_pictures_folder(self):
+        """Öffnet Pictures/VRChat im Proton-Prefix (Unterordner wie 2026-10)."""
+        import game_backup
+        path = game_backup.vrchat_pictures_src()
+        if not os.path.isdir(path):
+            self._detail_status(tr("games_pics_no_folder"), "#ebcb8b")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
-            fix_row = QHBoxLayout()
-            fix_row.setSpacing(8)
-
-            # --- Picture Fix (frueher "Symlink erstellen") ---------------- #
-            # Umbenannt, weil "Symlink erstellen" beschreibt, WIE es gemacht
-            # wird, nicht WAS es bringt. Was es bringt, steht jetzt im Tooltip.
-            if "vrchat_pictures" in fixes:
-                btn_pic = QPushButton(tr("games_fix_pictures_btn"))
-                btn_pic.setCursor(Qt.PointingHandCursor)
-                btn_pic.setToolTip(tr("games_fix_pictures_tip"))
-                btn_pic.setStyleSheet(self._fix_button_style())
-                # Die bestehende Symlink-Logik (create_vrchat_symlink) schreibt
-                # in self.ui.btn_vrchat_symlink / self.ui.lbl_vrchat_status —
-                # wir haengen die dynamischen Widgets dort ein, dann laeuft
-                # alles unveraendert weiter.
-                self.ui.btn_vrchat_symlink = btn_pic
-                btn_pic.clicked.connect(self.create_vrchat_symlink)
-                fix_row.addWidget(btn_pic)
-
-            # --- Videoplayer Fix (Info-Popup zu VRCVideoCacher) ----------- #
-            if "vrchat_videoplayer" in fixes:
-                btn_vp = QPushButton(tr("games_fix_video_btn"))
-                btn_vp.setCursor(Qt.PointingHandCursor)
-                btn_vp.setToolTip(tr("games_fix_video_tip"))
-                btn_vp.setStyleSheet(self._fix_button_style())
-                btn_vp.clicked.connect(self.show_vrchat_videoplayer_fix)
-                fix_row.addWidget(btn_vp)
-
-            # --- Videoplayer Check (Diagnose) ----------------------------- #
-            if "vrchat_check" in fixes:
-                btn_chk = QPushButton(tr("games_fix_check_btn"))
-                btn_chk.setCursor(Qt.PointingHandCursor)
-                btn_chk.setToolTip(tr("games_fix_check_tip"))
-                btn_chk.setStyleSheet(self._fix_button_style())
-                self.ui.btn_vrchat_check = btn_chk
-                btn_chk.clicked.connect(self.run_vrchat_check)
-                fix_row.addWidget(btn_chk)
-
-            fix_row.addStretch()
-            box.addLayout(fix_row)
-
-            # Hinweis statt Autostart-Schalter. Der Wrapper ueber VRChats
-            # Startparameter war unzuverlaessig und ist entfernt; stattdessen
-            # startet man VRCVideoCacher im Dashboard, VOR VRChat.
-            if "vrchat_videoplayer" in fixes:
-                lbl_vci = QLabel(tr("games_vci_note"))
-                lbl_vci.setStyleSheet("color: #7b88a1; font-size: 10px; border: none;")
-                lbl_vci.setWordWrap(True)
-                box.addWidget(lbl_vci)
-
-            # Gemeinsame Statuszeile: Symlink-Rueckmeldung UND Check-Ergebnis
-            lbl_fix_status = QLabel("")
-            lbl_fix_status.setStyleSheet("font-size: 11px; border: none;")
-            lbl_fix_status.setWordWrap(True)
-            lbl_fix_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            self.ui.lbl_vrchat_status = lbl_fix_status
-            box.addWidget(lbl_fix_status)
-
-        # Statuszeile für Use-/Play-Feedback (Steam-Neustart-Hinweis usw.)
-        self._detail_status_lbl = QLabel("")
-        self._detail_status_lbl.setStyleSheet("color: #88c0d0; font-size: 11px; border: none;")
-        self._detail_status_lbl.setWordWrap(True)
-        box.addWidget(self._detail_status_lbl)
-
-        return card
+    def open_vrchat_backup_folder(self):
+        """Öffnet <Bilder>/Backup_VRchat (wird bei Bedarf angelegt)."""
+        import game_backup
+        path = game_backup.vrchat_backup_root(self._get_pictures_dir())
+        try:
+            os.makedirs(path, exist_ok=True)
+        except OSError as exc:
+            self._detail_status(str(exc), "#bf616a")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     # ----------------------------------------------------------------- #
     #  VRChat-Fixes
     # ----------------------------------------------------------------- #
+    def _build_vrchat_cache_row(self, box):
+        """Schieberegler fuer VRChats cache_size (30–130 GB, siehe
+        core/vrchat_config.py). Gespeichert wird beim Loslassen."""
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        lbl = QLabel(tr("games_vrc_cache_label"))
+        lbl.setToolTip(tr("games_vrc_cache_tip"))
+        lbl.setStyleSheet("color: #d8dee9; font-size: 11px; border: none;")
+
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(vrc_cfg.CACHE_MIN, vrc_cfg.CACHE_MAX)
+        slider.setSingleStep(1)
+        slider.setPageStep(10)
+        slider.setToolTip(tr("games_vrc_cache_tip"))
+        slider.setValue(vrc_cfg.cache_size())
+
+        lbl_val = QLabel("")
+        lbl_val.setMinimumWidth(110)
+        lbl_val.setStyleSheet("color: #88c0d0; font-size: 11px; font-weight: bold; border: none;")
+
+        def show(val):
+            text = f"{val} GB"
+            if val == vrc_cfg.CACHE_DEFAULT:
+                text += " " + tr("games_vrc_cache_default")
+            lbl_val.setText(text)
+
+        def save():
+            val = slider.value()
+            ok = vrc_cfg.set_cache_size(val)
+            status = getattr(self, "_detail_status_lbl", None)
+            if status is not None:
+                status.setText(tr("games_vrc_cache_saved" if ok else "games_vrc_cache_failed")
+                               .format(gb=val, path=vrc_cfg.config_path()))
+
+        show(slider.value())
+        slider.valueChanged.connect(show)
+        slider.sliderReleased.connect(save)
+        slider.actionTriggered.connect(
+            lambda action: QTimer.singleShot(0, save)
+            if action != QSlider.SliderMove else None)
+
+        if not vrc_cfg.prefix_exists():
+            slider.setEnabled(False)
+            lbl_val.setText(tr("games_vrc_cache_no_prefix"))
+
+        row.addWidget(lbl)
+        row.addWidget(slider, 1)
+        row.addWidget(lbl_val)
+        box.addLayout(row)
+
     @staticmethod
     def _widen_dialog_buttons(box):
         """Verhindert abgeschnittene Beschriftungen in QMessageBox.
@@ -1863,8 +1944,12 @@ class GamesTabMixin:
         box = QMessageBox(self)
         box.setWindowTitle(tr("games_video_fix_title"))
         box.setTextFormat(Qt.RichText)
-        box.setText(tr("games_video_fix_text"))
+        box.setText(self._wayland_ge_note_html() + tr("games_video_fix_text"))
         box.setIcon(QMessageBox.Information)
+        wlge = self._vrchat_wayland_ge()
+        btn_wlge = None
+        if wlge is not None and not self._is_active_proton("438100", wlge):
+            btn_wlge = box.addButton(tr("games_wlge_use_btn"), QMessageBox.ApplyRole)
 
         import vrcvideocacher_install as vci
         btn_install = None
@@ -1878,13 +1963,52 @@ class GamesTabMixin:
         box.exec()
 
         clicked = box.clickedButton()
-        if btn_install is not None and clicked is btn_install:
+        if btn_wlge is not None and clicked is btn_wlge:
+            self._use_wayland_ge()
+        elif btn_install is not None and clicked is btn_install:
             self.install_vrcvideocacher()
         elif clicked is btn_open:
             QDesktopServices.openUrl(QUrl("https://github.com/EllyVR/VRCVideoCacher"))
         elif clicked is btn_steam:
             QDesktopServices.openUrl(
                 QUrl("https://store.steampowered.com/app/4296960/VRCVideoCacher/"))
+
+    # --- Proton-RTSP-Wayland-GE: macht VRCVideoCacher ueberfluessig ------- #
+    @staticmethod
+    def _vrchat_wayland_ge():
+        """Der Proton-RTSP-Wayland-GE-Eintrag von VRChat — oder None."""
+        game = games_db.GAMES.get("438100")
+        if not game:
+            return None
+        for p in games_db.visible_protons(game):
+            if "wayland-ge" in (p.get("version") or "").lower():
+                return p
+        return None
+
+    def _is_active_proton(self, appid, proton):
+        installed_tool, _f, _k = games_db.resolve_steam_tool(proton)
+        sel = self._selected_proton.get(appid)
+        return bool(sel) and sel in (proton.get("version"), installed_tool)
+
+    def _wayland_ge_note_html(self):
+        p = self._vrchat_wayland_ge()
+        ver = p.get("version") if p else "Proton-RTSP-Wayland-GE-Beta4"
+        active = p is not None and self._is_active_proton("438100", p)
+        text = tr("games_wlge_note").format(version=ver)
+        if active:
+            text += "<br>" + tr("games_wlge_active")
+        return f'<div style="background:#2e3440;padding:6px;">{text}</div><br>'
+
+    def _use_wayland_ge(self):
+        """Setzt Proton-RTSP-Wayland-GE fuer VRChat (normaler „Verwenden“-Weg)."""
+        p = self._vrchat_wayland_ge()
+        if p is None:
+            return
+        _tool, found, _k = games_db.resolve_steam_tool(p)
+        if not found and p.get("download_url"):
+            self.start_manual_proton_install(p)
+            return
+        self._use_proton("438100", p)
 
     def install_vrcvideocacher(self):
         """Laedt VRCVideoCacher und richtet die Verknuepfung ein."""
@@ -1923,8 +2047,7 @@ class GamesTabMixin:
         # Panel neu aufbauen -> der Autostart-Schalter wird benutzbar.
         appid = getattr(self, "_expanded_appid", None)
         if appid:
-            self._on_game_tile_clicked(appid)
-            self._on_game_tile_clicked(appid)
+            self._refresh_detail()
 
     def run_vrchat_check(self):
         """Startet die Diagnose im Hintergrund."""
@@ -1980,9 +2103,18 @@ class GamesTabMixin:
         box = QMessageBox(self)
         box.setWindowTitle(tr("games_check_title"))
         box.setTextFormat(Qt.RichText)
-        box.setText(f"<b>{head}</b><br><br>" + "".join(lines))
+        box.setText(f"<b>{head}</b><br><br>" + "".join(lines)
+                    + "<br>" + self._wayland_ge_note_html())
         box.setIcon(QMessageBox.Information if status == vc.OK else QMessageBox.Warning)
+        wlge = self._vrchat_wayland_ge()
+        btn_wlge = None
+        if wlge is not None and not self._is_active_proton("438100", wlge):
+            btn_wlge = box.addButton(tr("games_wlge_use_btn"), QMessageBox.ApplyRole)
+        box.addButton(QMessageBox.Ok)
+        self._widen_dialog_buttons(box)
         box.exec()
+        if btn_wlge is not None and box.clickedButton() is btn_wlge:
+            self._use_wayland_ge()
 
         self.ui.lbl_vrchat_status.setText(head)
         self.ui.lbl_vrchat_status.setStyleSheet(
@@ -2030,11 +2162,9 @@ class GamesTabMixin:
         ok, msg = game_backup.create_backup(
             appid, g.get("name", ""), proton.get("version", ""))
 
-        # Bei VRChat zusaetzlich die Screenshots sichern — die liegen nicht
-        # unter AppData, sondern in Pictures/VRChat im Prefix.
+        # VRChat-Bilder werden beim Proton-Wechsel separat verschoben
+        # (_ask_keep_vrchat_pictures), nicht mehr hier kopiert.
         pics = 0
-        if str(appid) == "438100":
-            _pok, pics = game_backup.backup_vrchat_pictures(self._get_pictures_dir())
 
         if ok:
             note = tr("backup_cfg_done").format(files=msg)
@@ -2056,8 +2186,7 @@ class GamesTabMixin:
             return
         self._offer_config_backup(appid, proton)
         # Restore-Knopf ist jetzt evtl. benutzbar -> Panel neu aufbauen
-        self._on_game_tile_clicked(appid)
-        self._on_game_tile_clicked(appid)
+        self._refresh_detail()
 
     def restore_game_config(self, appid):
         """'Config zurueckspielen' — additiv, es wird nichts geloescht."""
@@ -2141,8 +2270,9 @@ class GamesTabMixin:
 
     def _on_manual_progress(self, percent):
         if percent >= 0:
-            self.ui.lbl_games_status.setText(
-                f"{tr('games_manual_downloading')} {percent}%")
+            text = f"{tr('games_manual_downloading')} {percent}%"
+            self.ui.lbl_games_status.setText(text)
+            self._detail_status(text)
 
     def _on_manual_status(self, phase):
         key = {"download": "games_manual_downloading",
@@ -2150,10 +2280,14 @@ class GamesTabMixin:
                "extract":  "games_manual_extracting"}.get(phase)
         if key:
             self.ui.lbl_games_status.setText(tr(key))
+            self._detail_status(tr(key))
 
     def _on_manual_install_done(self, ok, msg):
         if getattr(self, "_manual_btn", None):
-            self._manual_btn.setEnabled(True)
+            try:
+                self._manual_btn.setEnabled(True)
+            except RuntimeError:
+                pass
             self._manual_btn = None
         if not ok:
             self.ui.lbl_games_status.setText(tr("games_manual_failed").format(error=msg))

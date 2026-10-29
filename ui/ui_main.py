@@ -491,6 +491,8 @@ class Ui_MainWindow:
         self.btn_server_check.setText(tr("dashboard_check"))
         self.btn_port_status.setText(tr_amp("dashboard_firewall"))
         self.btn_netbuffers.setText(tr_amp("dashboard_netbuffers"))
+        self.btn_performance_setup.setText(tr_amp("dashboard_perf_setup"))
+        self.btn_performance_setup.setToolTip(tr("dashboard_perf_setup_tip"))
         self.tracking_group.setTitle(tr_amp("dashboard_tracking"))
         self.check_usb_autoconnect.setText(tr("streaming_usb_autoconnect"))
         self.check_usb_autoconnect.setToolTip(tr("streaming_usb_autoconnect_tip"))
@@ -951,12 +953,17 @@ class Ui_MainWindow:
         # Untere Reihe: Firewall-Button + Server-Check NEBENEINANDER (aufgeräumter).
         action_row = QHBoxLayout()
 
-        # Der Firewall-Knopf traegt sein (ⓘ) selbst — links im Knopf, als
-        # Prefix vor der Beschriftung. Vorher stand es zwischen den beiden
-        # Knoepfen und riss dort eine Luecke in die Leiste, ohne dass klar
-        # war, auf welchen der beiden es sich bezieht.
-        self.btn_port_status = ButtonWithInfo(tr_amp("dashboard_firewall"))
-        self.btn_port_status.setStyleSheet(self._CSS_FIREWALL_IDLE)
+        # Firewall + Netzwerkpuffer liegen jetzt unter Einstellungen ->
+        # VR & OpenXR (Karte unter dem Steam-Fix). Hier bleibt nur der
+        # Performance-Setup-Knopf, der alle Fixes auf einmal anbietet
+        # (core/tabs/dashboard_optimize_mixin.py).
+        self.btn_performance_setup = QPushButton(tr_amp("dashboard_perf_setup"))
+        self.btn_performance_setup.setCursor(Qt.PointingHandCursor)
+        self.btn_performance_setup.setToolTip(tr("dashboard_perf_setup_tip"))
+        self.btn_performance_setup.setStyleSheet(
+            "QPushButton { background-color:#5e81ac; color:#eceff4; border:none;"
+            " font-weight:bold; border-radius:4px; padding:6px 12px; }"
+            " QPushButton:hover { background-color:#81a1c1; }")
 
         self.btn_server_check = QPushButton(tr("dashboard_check"))
         self.btn_server_check.setStyleSheet("""
@@ -964,28 +971,10 @@ class Ui_MainWindow:
             QPushButton:hover { background-color: #4c566a; }
         """)
 
-        # Erklaert in zwei Saetzen, WOFUER die Ports geoeffnet werden — und
-        # dass es dabei nicht um Telemetrie geht. Die Frage kam mehrfach aus
-        # der Community, und sie ist berechtigt: ein Knopf, der ungefragt die
-        # Firewall aendert, gehoert erklaert.
-        self.btn_firewall_info = self._info_button(lambda: tr("firewall_info"))
-        self.btn_port_status.attach_info(self.btn_firewall_info)
-
-        # Netzwerkpuffer-Fix. Steht bewusst hier und nicht in den
-        # Einstellungen: es ist dieselbe Sorte Problem wie die Firewall —
-        # eine Netzwerk-Voraussetzung fuers Streamen, kein Geschmacksregler.
-        # Und wer ruckelnde Bilder hat, sitzt genau auf dieser Seite.
-        self.btn_netbuffers = ButtonWithInfo(tr_amp("dashboard_netbuffers"))
-        self.btn_netbuffers.setStyleSheet(self._CSS_FIREWALL_IDLE)
-        self.btn_netbuffers_info = self._info_button(lambda: tr("netbuffers_info"))
-        self.btn_netbuffers.attach_info(self.btn_netbuffers_info)
-
-        action_row.addWidget(self.btn_port_status)
-        action_row.addWidget(self.btn_netbuffers)
+        action_row.addWidget(self.btn_performance_setup)
         action_row.addWidget(self.btn_server_check)
         action_row.addStretch()
         server_layout.addLayout(action_row)
-        server_layout.addWidget(AdvancedBox("firewall"))
         server_layout.addWidget(AdvancedBox("server"))
         layout.addWidget(self.server_group)
 
@@ -1829,6 +1818,28 @@ class Ui_MainWindow:
         cv.addWidget(AdvancedBox("openxr_fix"))
         vr_v.addWidget(card)
 
+        # -- Firewall + Netzwerkpuffer (vorher im Dashboard) --
+        # Gleiche Attributnamen wie vorher, damit main.py (Signale,
+        # _mark_firewall_done, _mark_netbuffers_done) unveraendert bleibt.
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("network_group", lambda: tr("network_desc"))
+        cv.addLayout(head)
+        net_row = QHBoxLayout()
+        self.btn_port_status = ButtonWithInfo(tr_amp("dashboard_firewall"))
+        self.btn_port_status.setStyleSheet(self._CSS_FIREWALL_IDLE)
+        self.btn_firewall_info = self._info_button(lambda: tr("firewall_info"))
+        self.btn_port_status.attach_info(self.btn_firewall_info)
+        self.btn_netbuffers = ButtonWithInfo(tr_amp("dashboard_netbuffers"))
+        self.btn_netbuffers.setStyleSheet(self._CSS_FIREWALL_IDLE)
+        self.btn_netbuffers_info = self._info_button(lambda: tr("netbuffers_info"))
+        self.btn_netbuffers.attach_info(self.btn_netbuffers_info)
+        net_row.addWidget(self.btn_port_status)
+        net_row.addWidget(self.btn_netbuffers)
+        net_row.addStretch()
+        cv.addLayout(net_row)
+        cv.addWidget(AdvancedBox("firewall"))
+        vr_v.addWidget(card)
+
         # -- Quick OSC Query Fix (eigenes Widget) --
         from ui.queryfix_widget import QueryFixWidget
         self.oscquery_widget = QueryFixWidget()
@@ -1836,6 +1847,7 @@ class Ui_MainWindow:
 
         vr_v.addStretch()
         self.settings_subtabs.addTab(page_vr, tr_amp("settings_sub_vr"))
+        self.page_settings_vr = page_vr
 
         # ==============================================================
         #  SEITE 3 — Audio

@@ -477,7 +477,7 @@ def test_nicht_steam_panel_hat_proton_und_behaelt_startparameter(app, clean_conf
     """Dieselben Einstellungen wie ein Steam-Spiel — und der Heroic-Aufruf
     steht im finalen String, auch mit abgeschalteten Schaltern."""
     from translations import tr
-    from PySide6.QtWidgets import QLabel
+    from PySide6.QtWidgets import QLabel, QPushButton
 
     monkeypatch.setattr(clean_config, "shortcut_base_options",
                         lambda appid: "--no-gui heroic://launch/x")
@@ -488,7 +488,10 @@ def test_nicht_steam_panel_hat_proton_und_behaelt_startparameter(app, clean_conf
         assert game["shortcut"] is True and game["protons"], "keine Proton-Auswahl"
         labels = " ".join(lb.text() for lb in app._games_detail_widget.findChildren(QLabel))
         assert tr("games_params_section_shortcut") in labels
-        assert tr("games_proton_section") in labels
+        # Seit v1.4.5 ist "Proton-Versionen" die Kopfzeile eines aufklappbaren
+        # Abschnitts (QPushButton, ohne Doppelpunkt), kein QLabel mehr.
+        heads = " ".join(b.text() for b in app._games_detail_widget.findChildren(QPushButton))
+        assert tr("games_proton_section").rstrip(": ") in heads
         for cb in app._detail_toggles.values():
             cb.setChecked(False)
         assert "heroic://launch/x" in app._update_final_params()

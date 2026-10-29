@@ -400,6 +400,11 @@ def build_games_from_config(cfg):
             toggles.append(game_toggle("vrc_hw_video_decoding",
                                        "--enable-hw-video-decoding",
                                        position="after", default=True))
+        if g.get("toggle_launch_in_vr"):
+            # Spiel-Argument -> hinter %command%. Startet VRChat direkt im
+            # VR-Modus statt mit der Desktop-/VR-Abfrage.
+            toggles.append(game_toggle("vrc_launch_in_vr", "--launch-in-vr",
+                                       position="after", default=False))
         if g.get("toggle_proton_log"):
             # Umgebungsvariable, kein Spiel-Argument -> muss VOR %command%
             # stehen. Schreibt ~/steam-<appid>.log mit den Wine-/GStreamer-

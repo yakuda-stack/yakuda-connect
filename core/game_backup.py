@@ -31,6 +31,7 @@ Ordner zu ersetzen. Grund ist der Fehler aus v1.1.4: ein 'rm -rf' im
 Restore-Pfad hat damals auf Fedora Steam zerlegt. Additiv ist langsamer und
 kann nicht dasselbe anrichten.
 """
+import datetime
 import os
 import shutil
 import time
@@ -277,3 +278,84 @@ def backup_vrchat_pictures(pictures_dir):
         log.warning("Bilder-Backup fehlgeschlagen: %s", exc)
         return False, copied
     return True, copied
+
+
+# --------------------------------------------------------------------------- #
+#  VRChat-Bilder bei Proton-Wechsel verschieben
+# --------------------------------------------------------------------------- #
+#  Ein Proton-Wechsel legt oft ein frisches Prefix an — die Screenshots unter
+#  Pictures/VRChat im alten Prefix waeren dann weg. Statt zu kopieren wird
+#  VERSCHOBEN, nach  <Bilder>/Backup_VRchat/VRchat_TT.MM.JJ/  (Unterordner wie
+#  2026-10 bleiben erhalten). Danach ist der Ordner im Prefix leer und VRChat
+#  faengt sauber neu an.
+def vrchat_pictures_src():
+    """Pictures/VRChat im Proton-Prefix (dort speichert VRChat)."""
+    return os.path.join(venv.vrchat_proton_prefix(), "Pictures", "VRChat")
+
+
+def vrchat_backup_root(pictures_dir):
+    """<Bilder>/Backup_VRchat"""
+    return os.path.join(str(pictures_dir), "Backup_VRchat")
+
+
+def count_vrchat_pictures():
+    """Wie viele Dateien liegen im VRChat-Bilderordner? (0 = nichts zu tun)"""
+    src = vrchat_pictures_src()
+    n = 0
+    for _root, _dirs, files in os.walk(src):
+        n += len(files)
+    return n
+
+
+def _free_name(path):
+    """bild.png -> bild (2).png, falls schon vorhanden."""
+    if not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(path)
+    i = 2
+    while os.path.exists(f"{base} ({i}){ext}"):
+        i += 1
+    return f"{base} ({i}){ext}"
+
+
+def move_vrchat_pictures(pictures_dir):
+    """
+    Verschiebt alle VRChat-Bilder aus dem Prefix ins Backup.
+    Rueckgabe: (ok, anzahl, zielordner).
+
+    Gleichnamige Dateien werden nicht ueberschrieben: ist sie gleich gross
+    (schon gesichert), bleibt nur die Kopie im Backup, sonst bekommt die neue
+    einen Zaehler angehaengt. Der Ordner Pictures/VRChat selbst bleibt stehen
+    (der Symlink des Picture-Fix zeigt darauf).
+    """
+    src = vrchat_pictures_src()
+    stamp = datetime.datetime.now().strftime("%d.%m.%y")
+    dest = os.path.join(vrchat_backup_root(pictures_dir), f"VRchat_{stamp}")
+    if not os.path.isdir(src):
+        return False, 0, dest
+    moved = 0
+    try:
+        for root, _dirs, files in os.walk(src):
+            for f in files:
+                s = os.path.join(root, f)
+                if os.path.islink(s):
+                    continue
+                t = os.path.join(dest, os.path.relpath(s, src))
+                os.makedirs(os.path.dirname(t), exist_ok=True)
+                if os.path.exists(t) and os.path.getsize(t) == os.path.getsize(s):
+                    os.remove(s)
+                else:
+                    shutil.move(s, _free_name(t))
+                moved += 1
+        for root, dirs, _files in os.walk(src, topdown=False):
+            for d in dirs:
+                p = os.path.join(root, d)
+                try:
+                    os.rmdir(p)
+                except OSError:
+                    pass
+    except Exception as exc:
+        log.warning("VRChat-Bilder verschieben fehlgeschlagen: %s", exc)
+        return False, moved, dest
+    log.info("VRChat-Bilder verschoben: %d -> %s", moved, dest)
+    return True, moved, dest

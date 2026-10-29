@@ -1,6 +1,44 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.4.5 — 2026-10-29
+
+#### 🇩🇪 Deutsch
+
+* **Neu: Einmal-Popup „VR-Performance optimieren“.** Beim ersten Öffnen des Dashboards fragt die App einmal, ob sie alles für maximale VR-Performance einrichten soll. Bei „Ja“: Firewall & Port 9757 (exakt dieselben Befehle wie der Firewall-Knopf, ufw-Profil/firewalld-Dienst `wivrn`), Netzwerkpuffer dauerhaft (`/etc/sysctl.d/99-yakuda-connect-wivrn.conf`), OpenXR-Runtime auf WiVRn + OpenXR-Runtime-Fix (inkl. Manifest-Reparatur; eine für SteamVR abgeschaltete OpenVR-Kompatibilität wird wiederhergestellt) und VR-Priorität (`setcap cap_sys_nice+ep` auf `wivrn-server`).
+  * Firewall, Puffer und setcap laufen in **einem** `pkexec` (eine Passwortabfrage); jeder Schritt in eigener `sh -c`, damit ein Fehler die anderen nicht abbricht. Ergebnis je Schritt mit ✔/✖.
+  * Nur einmal (Merker `dashboard_optimize_asked` in `config.json`), und gar nicht, wenn alle Fixes schon aktiv sind. firewalld wird ohne root über die Zonen-Datei geprüft.
+  * Neue Module: `core/vr_optimize.py` (ohne Qt), `core/tabs/dashboard_optimize_mixin.py`.
+* **Dashboard aufgeräumt.** „Firewall fixen & Port 9757 freigeben“ und „Netzwerkpuffer fixen“ sind nach **Einstellungen → VR & OpenXR** umgezogen (neue Karte „Netzwerk & Firewall“ unter dem Steam-Fix). Im Dashboard steht dafür **⚡ Performance-Setup**, der das Optimierungs-Popup jederzeit öffnet.
+* **Fix: „OpenXR / SteamVR Fixes & Performance“ landete im Design-Tab.** Der Sprung nutzte noch Index 1 — seit dem Design-Tab ist das Design. Jetzt per `setCurrentWidget(page_settings_vr)`.
+* **VRChat: neuer Schalter `--launch-in-vr`** (startet direkt im VR-Modus, standardmäßig aus).
+* **VRChat: Cache-Größe per Schieberegler (30–130 GB).** Schreibt `cache_size` in VRChats `config.json` im Proton-Prefix (`AppData/LocalLow/VRChat/VRChat`). Andere Schlüssel bleiben erhalten, beim Standard 30 wird der Schlüssel entfernt, eine kaputte Datei wird nicht überschrieben. Neues Modul `core/vrchat_config.py`.
+* **Games-Tab neu gestaltet (alle Spiele).** Kachel ohne ▶-Knopf und ▾-Pfeil; beim Drüberfahren erscheinen ein großer Play-Knopf (startet wie bisher mit gespeicherten Parametern) und ein transparenter „⚙ Einstellungen“-Knopf. Die Einstellungen öffnen sich als Popup in der Fenstermitte (✕, Esc oder Klick daneben schließt; Kind-Widget statt eigenem Fenster, damit es unter Wayland mittig sitzt — `ui/game_settings_overlay.py`).
+  * Aufklappbare Abschnitte: **Proton-Versionen** (offen: Beschreibung + ⓘ, Wayland-Knopf grün = Wayland, Dropdown mit Verwenden / Kopieren / Installieren), **Spielspezifisch** (zu: z. B. VRChat-Cache, Picture Fix mit Kurzbeschreibung, Videoplayer Fix, Videoplayer Check, Config-Backup, Entfernen), **Startparameter** (zu). Auf/Zu wird pro Spiel für die Sitzung gemerkt.
+* **VRChat: alte Bilder beim Proton-Wechsel behalten.** Vor „Verwenden“ fragt die App, ob die Bilder aus `Pictures/VRChat` im Prefix verschoben werden sollen — nach `<Bilder>/Backup_VRchat/VRchat_TT.MM.JJ/` (Unterordner wie `2026-10` bleiben). Verschoben wird erst, wenn der Wechsel wirklich geschrieben wurde; gleichnamige Dateien werden nie überschrieben. Ersetzt das bisherige Kopieren nach `VRChat_backup` beim Config-Backup.
+  * „⚙ Einstellungen“ auf der Kachel folgt beim Sprachwechsel sofort der neuen Sprache (`games_retranslate()`), ein offenes Popup wird neu aufgebaut.
+* **VRChat: Knöpfe „📂 Bilder-Ordner öffnen“** (Pictures/VRChat im Prefix) **und „🗂 Backup-Ordner öffnen“**.
+* **Videoplayer Fix & Check:** Hinweis auf Proton-RTSP-Wayland-GE-Beta4 — damit braucht man VRCVideoCacher nicht mehr; Knopf „Wayland-GE verwenden“ (installiert bei Bedarf).
+* `config/games.json` → 1.3.0. Neuer Screenshot `assets/games3.png` (Spiel-Einstellungen-Popup).
+
+#### 🇬🇧 English
+
+* **New: one-time "Optimize VR performance" popup.** The first time you open the Dashboard, the app asks once whether it should set everything up for maximum VR performance. On "Yes": firewall & port 9757 (exactly the same commands as the firewall button, ufw profile/firewalld service `wivrn`), permanent network buffers (`/etc/sysctl.d/99-yakuda-connect-wivrn.conf`), OpenXR runtime → WiVRn + OpenXR runtime fix (incl. manifest repair; an OpenVR compatibility turned off for SteamVR is restored) and VR priority (`setcap cap_sys_nice+ep` on `wivrn-server`).
+  * Firewall, buffers and setcap run in **one** `pkexec` (one password prompt); each step in its own `sh -c` so one failure doesn't stop the others. Result per step with ✔/✖.
+  * Only once (flag `dashboard_optimize_asked` in `config.json`), and not at all if every fix is already active. firewalld is checked without root via the zone file.
+  * New modules: `core/vr_optimize.py` (no Qt), `core/tabs/dashboard_optimize_mixin.py`.
+* **Dashboard cleaned up.** "Fix Firewall & Open Port 9757" and "Fix network buffers" moved to **Settings → VR & OpenXR** (new "Network & Firewall" card below the Steam fix). The Dashboard now has **⚡ Performance Setup**, which opens the optimization popup any time.
+* **Fix: "OpenXR / SteamVR fixes & performance" ended up in the Design tab.** The jump still used index 1 — which is Design since the Design tab exists. Now uses `setCurrentWidget(page_settings_vr)`.
+* **VRChat: new `--launch-in-vr` toggle** (starts straight in VR mode, off by default).
+* **VRChat: cache size slider (30–130 GB).** Writes `cache_size` into VRChat's `config.json` inside the Proton prefix (`AppData/LocalLow/VRChat/VRChat`). Other keys are kept, at the default of 30 the key is removed, a broken file is never overwritten. New module `core/vrchat_config.py`.
+* **Games tab redesigned (all games).** Tile without ▶ button and ▾ arrow; on hover a big Play button (starts as before with the saved options) and a transparent "⚙ Settings" button appear. Settings open as a popup in the middle of the window (✕, Esc or a click outside closes it; a child widget instead of its own window so it stays centred on Wayland — `ui/game_settings_overlay.py`).
+  * Collapsible sections: **Proton versions** (open: description + ⓘ, Wayland button green = Wayland, dropdown with Use / Copy / Install), **Game-specific** (closed: e.g. VRChat cache, Picture Fix with a short description, Video Player Fix, Video Player Check, config backup, remove), **Launch options** (closed). Open/closed is remembered per game for the session.
+* **VRChat: keep old pictures when switching Proton.** Before "Use" the app asks whether to move the pictures from `Pictures/VRChat` in the prefix — to `<Pictures>/Backup_VRchat/VRchat_DD.MM.YY/` (subfolders like `2026-10` are kept). They're only moved once the switch has really been written; files with the same name are never overwritten. Replaces the old copy to `VRChat_backup` during config backup.
+  * "⚙ Settings" on the tile follows a language switch immediately (`games_retranslate()`), an open popup is rebuilt.
+* **VRChat: "📂 Open pictures folder"** (Pictures/VRChat in the prefix) **and "🗂 Open backup folder" buttons**.
+* **Video Player Fix & Check:** note about Proton-RTSP-Wayland-GE-Beta4 — with it you don't need VRCVideoCacher anymore; "Use Wayland-GE" button (installs it if needed).
+* `config/games.json` → 1.3.0. New screenshot `assets/games3.png` (game settings popup).
+
 ### 🚀 v1.4.4 — 2026-10-25
 
 #### 🇩🇪 Deutsch

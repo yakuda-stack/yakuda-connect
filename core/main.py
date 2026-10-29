@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.4"
+APP_VERSION = "v1.4.5"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -95,6 +95,7 @@ from tabs.tools_mixin import ToolsTabMixin
 from tabs.controls_mixin import ControlsTabMixin
 from tabs.xr_controls_mixin import XrControlsMixin
 from tabs.autostart_profiles_mixin import AutostartProfilesMixin
+from tabs.dashboard_optimize_mixin import DashboardOptimizeMixin
 
 # Interne Importe (liegen im selben Ordner 'core')
 from install_worker import (InstallWorker, UpdateWorker, AppUpdateCheckWorker,
@@ -333,7 +334,8 @@ class PackageCheckWorker(QThread):
         self.result_signal.emit(results, updates_available)
 
 
-class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrControlsMixin,
+class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin,
+            ControlsTabMixin, XrControlsMixin,
             AutostartProfilesMixin, QMainWindow):
     """
     Hauptfenster.
@@ -381,7 +383,10 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         self._games_untested_names = {}      # appid -> Anzeigename (ungetestete Spiele)
         self._games_local_entries = {}       # local:<n> -> eigener Spieleintrag
         self._games_tile_pos = {}            # appid -> (grid, zeile, spalte) fürs Inline-Panel
-        self._games_detail_widget = None     # aktuell ausgeklapptes Inline-Panel
+        self._games_detail_widget = None     # Inhalt des offenen Einstellungs-Popups
+        self._games_overlay = None           # ui/game_settings_overlay.py (lazy)
+        self._games_section_states = {}      # appid -> {abschnitt: offen?}
+        self._games_section_open = {}        # Zustand des gerade offenen Spiels
         self._detail_params_edit = None      # Feld mit den FINALEN Parametern (für "Play")
         self._detail_status_lbl = None       # Statuszeile des offenen Panels
         self._detail_toggles = {}            # toggle_key -> QCheckBox des offenen Panels
@@ -1198,6 +1203,7 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         self.ui.btn_server_check.clicked.connect(self.manual_server_check)
         self.ui.btn_port_status.clicked.connect(self.open_port_9757_firewall)
         self.ui.btn_netbuffers.clicked.connect(self.fix_network_buffers)
+        self.ui.btn_performance_setup.clicked.connect(self.open_vr_optimize)
         # Ist der Fix schon aktiv UND ueberlebt er einen Neustart, soll der
         # Knopf das beim Start zeigen — sonst klickt man ihn jedes Mal neu,
         # nur um 'ist schon gesetzt' zu lesen.
@@ -1361,7 +1367,9 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
             self.usb_poll_timer.start()
         else:
             self.usb_poll_timer.stop()
-        if index == 1: self.refresh_headset_list()
+        if index == 1:
+            self.refresh_headset_list()
+            self.maybe_offer_vr_optimize()
         # Die OpenVR-Auswahl kann sich ausserhalb dieses Tabs geaendert haben
         # (Runtime-Umschaltung, xrizer-Automatik, WiVRn-Dashboard).
         if index == 2: self.refresh_openvr_ui()
@@ -1441,6 +1449,9 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         # Autostart-Profil-Tabs (eigene Widgets, nicht in retranslate_ui)
         if hasattr(self, "autostart_profiles_retranslate"):
             self.autostart_profiles_retranslate()
+
+        # Games-Tab: Kacheln (⚙ Einstellungen) und offenes Popup
+        self.games_retranslate()
 
         # 3) Info-Text (Willkommen / Welcome)
         self._set_welcome_text()
@@ -2931,7 +2942,7 @@ class VRApp(DashboardMixin, GamesTabMixin, ToolsTabMixin, ControlsTabMixin, XrCo
         """
         self.ui.sidebar.setCurrentRow(self.ui.pages.indexOf(self.ui.tab_settings))
         if hasattr(self.ui, "settings_subtabs"):
-            self.ui.settings_subtabs.setCurrentIndex(1)   # 1 = VR & OpenXR
+            self.ui.settings_subtabs.setCurrentWidget(self.ui.page_settings_vr)
         if hasattr(self.ui, "vr_runtime_widget"):
             self.ui.vr_runtime_widget.refresh()
 

@@ -354,12 +354,13 @@ def dashboard(qapp):
     ui = Ui_MainWindow()
     ui.setupUi(win)
     win.show()
-    # Auf die Dashboard-Seite wechseln. Ohne das bleibt sie im
-    # QStackedWidget verborgen — und fuer verborgene Widgets laesst Qt das
-    # Layout gar nicht erst anlaufen: sie haengen dann auf ihrer
-    # Standardgroesse (640x480), und jede Messung an ihnen misst nichts.
-    ui.sidebar.setCurrentRow(1)
-    ui.pages.setCurrentIndex(1)
+    # Firewall- und Netzwerkpuffer-Knopf liegen seit v1.4.5 unter
+    # Einstellungen -> VR & OpenXR. Genau diese Seite sichtbar machen: fuer
+    # verborgene Widgets laesst Qt das Layout gar nicht erst anlaufen, und
+    # ein resize() bleibt als "pending" liegen, bis die Seite gezeigt wird —
+    # jede Messung an ihnen misst dann nichts.
+    ui.pages.setCurrentWidget(ui.tab_settings)
+    ui.settings_subtabs.setCurrentWidget(ui.page_settings_vr)
     qapp.processEvents()
     yield ui
 
