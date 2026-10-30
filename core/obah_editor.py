@@ -892,3 +892,43 @@ def can_add_path_binding(manifest, set_name, kind, sources):
     action_type, direction = PATH_KIND_ACTION[kind]
     return (any(s["kind"] == kind for s in sources)
             and bool(action_choices(manifest, set_name, action_type, direction)))
+
+
+# --------------------------------------------------------------------------- #
+#  deadzone_pct fuer einen ganzen Stick (Deadzone-Knopf im Controls-Tab)
+# --------------------------------------------------------------------------- #
+def stick_sources(binding, controller_type, side):
+    """Alle Belegungen im Modus 'joystick' auf dem Stick dieser Seite —
+    ueber ALLE Action Sets (die Deadzone soll ueberall gleich sein)."""
+    paths = [d.path for d in inputs_for_side(controller_type, side) if d.type == "joystick"]
+    out = []
+    for entry in (binding.get("bindings") or {}).values():
+        for s in (entry or {}).get("sources") or []:
+            if (isinstance(s, dict) and (s.get("mode") or "").lower() == "joystick"
+                    and any(_matches(s.get("path"), p, side) for p in paths)):
+                out.append(s)
+    return out
+
+
+def stick_deadzone_pct(binding, controller_type, side):
+    """Liste der deadzone_pct-Werte (int) der Stick-Belegungen dieser Seite."""
+    vals = []
+    for s in stick_sources(binding, controller_type, side):
+        raw = (s.get("parameters") or {}).get("deadzone_pct", 0)
+        try:
+            vals.append(int(round(float(raw))))
+        except (TypeError, ValueError):
+            vals.append(0)
+    return vals
+
+
+def set_stick_deadzone_pct(binding, controller_type, side, value):
+    """deadzone_pct auf allen Stick-Belegungen dieser Seite setzen (0 = entfernen).
+    Rueckgabe: Anzahl geaenderter Belegungen."""
+    srcs = stick_sources(binding, controller_type, side)
+    for s in srcs:
+        if value > 0:
+            s.setdefault("parameters", {})["deadzone_pct"] = str(int(value))
+        else:
+            remove_draft_parameter(s, "deadzone_pct")
+    return len(srcs)

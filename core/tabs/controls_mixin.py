@@ -913,12 +913,20 @@ class ControlsTabMixin:
         set_name = ui.obah_set_tabs.tabData(ui.obah_set_tabs.currentIndex())
         set_label = ui.obah_set_tabs.tabText(ui.obah_set_tabs.currentIndex())
         before = oe.source_drafts(edit["binding"], set_name, d, side)
+        dz_app, dz = (self.xr_openvr_deadzone(self._current_obah_game())
+                      if d.type == "joystick" else (None, None))
         dlg = BindingDialog(self, manifest=edit["manifest"], binding=edit["binding"],
                             controller_type=ct, set_name=set_name, set_label=set_label,
-                            input_def=d, side=side, drafts=before)
+                            input_def=d, side=side, drafts=before, deadzone=dz)
         self._obah_open_dialog = dlg            # fuer Tests erreichbar
         accepted = dlg.exec() == BindingDialog.Accepted
         self._obah_open_dialog = None
+        if accepted and dz is not None:
+            import xr_openvr_link as link
+            if dlg.dz_steamvr != bool(dz.get("steamvr")):
+                link.set_steamvr_mode(dlg.dz_steamvr)
+            if not dlg.dz_steamvr and dz_app and dlg.dz_mappings is not None:
+                self.xr_openvr_save_deadzone(dz_app, dz["mappings"], dlg.dz_mappings)
         if not accepted or dlg.drafts == before:
             return
         oe.apply_drafts(edit["binding"], set_name, d, side, dlg.drafts)
@@ -1485,6 +1493,9 @@ class ControlsTabMixin:
             name = self._control_tool(key).get("name", key)
             QMessageBox.warning(self, tr("controls_failed_title"),
                                 tr("controls_failed_text").format(name=name))
+        # „Alles installieren“ (Tour): naechstes Werkzeug
+        if getattr(self, "_install_all_queue", None) is not None:
+            self._install_all_next()
 
     def on_control_tool_status(self, key, status):
         """Vom Tools-Tab bei jeder neuen Statusmeldung (Update-Check, Loeschen)."""

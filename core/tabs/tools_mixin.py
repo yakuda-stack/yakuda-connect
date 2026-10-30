@@ -705,9 +705,11 @@ class ToolsTabMixin:
         if success:
             self._refresh_single_tool(key)
             # Nach WayVR-Installation: Hinweis auf das bessere UI-Design in den Settings
-            if key == "wayvr":
+            if key == "wayvr" and not self.wayvr_install_finished(True):
                 QMessageBox.information(self, tr("overlay_popup_title"), tr("overlay_popup_text"))
         else:
+            if key == "wayvr":
+                self.wayvr_install_finished(False)
             msg = tr("tools_install_error")
             tool = card.get("tool", {})
             if "cargo" in appimg.supported_methods(tool) \

@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.5"
+APP_VERSION = "v1.4.6"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -96,6 +96,10 @@ from tabs.controls_mixin import ControlsTabMixin
 from tabs.xr_controls_mixin import XrControlsMixin
 from tabs.autostart_profiles_mixin import AutostartProfilesMixin
 from tabs.dashboard_optimize_mixin import DashboardOptimizeMixin
+from tabs.dashboard_wayvr_mixin import DashboardWayVRMixin
+from tabs.tour_mixin import TourMixin
+from tabs.first_run_mixin import FirstRunMixin
+from tabs.games_optimize_mixin import GamesOptimizeMixin
 
 # Interne Importe (liegen im selben Ordner 'core')
 from install_worker import (InstallWorker, UpdateWorker, AppUpdateCheckWorker,
@@ -334,7 +338,7 @@ class PackageCheckWorker(QThread):
         self.result_signal.emit(results, updates_available)
 
 
-class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin,
+class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMixin, FirstRunMixin, GamesOptimizeMixin, GamesTabMixin, ToolsTabMixin,
             ControlsTabMixin, XrControlsMixin,
             AutostartProfilesMixin, QMainWindow):
     """
@@ -827,6 +831,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
         """
         adv.set_enabled(bool(checked))
         self._refresh_advanced_boxes()
+        self.ui.firstrun_card.setVisible(bool(checked))
         if not update_json(paths.config_file("config.json"),
                            {"advanced_mode": bool(checked)}):
             log.warning("Advanced Mode konnte nicht gespeichert werden.")
@@ -1091,6 +1096,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
         else:
             self.ui.lbl_wayvr_status.setText("")
             QMessageBox.warning(self, tr("error"), tr("wayvr_install_fail").format(err=info))
+        # Erst-Einrichtung: wartete die Tour auf das Design? Dann jetzt.
+        self.first_run_after_wayvr()
 
     def reset_wayvr_design(self):
         """Löscht ~/.config/wayvr komplett (Backup vorher) — Werkseinstellung."""
@@ -1171,6 +1178,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
         self.ui.btn_community_donate.clicked.connect(self.open_kofi_link)
         self.ui.btn_changelog.clicked.connect(self.show_changelog)
         self.ui.btn_highlights.clicked.connect(self.show_highlights)
+        self.ui.btn_tour.clicked.connect(lambda: self.start_tour())
+        self.ui.btn_firstrun_reset.clicked.connect(self.reset_first_run)
         # WayVR Design (Settings): cubee-cb-Design installieren / Config löschen
         self._wayvr_worker = None
         self.ui.btn_wayvr_install.clicked.connect(self.start_wayvr_design_install)
@@ -2724,10 +2733,17 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
         completer.setCompletionMode(QCompleter.PopupCompletion)
         inp.setCompleter(completer)
 
-        chk_debug = QCheckBox("Debug")
-        chk_debug.setToolTip(tr("autostart_debug_tip"))
-        chk_debug.setFixedWidth(65)
-        chk_debug.setStyleSheet("color: #ebcb8b; font-size: 11px;")
+        # Eigener Kill-Befehl: Haken „Kill“ an -> zweites Feld neben dem
+        # Startbefehl. Laeuft vor dem normalen Beenden (SIGTERM -> SIGKILL).
+        kill_inp = QLineEdit("")
+        kill_inp.setPlaceholderText(tr("autostart_kill_placeholder"))
+        kill_inp.setToolTip(tr("autostart_kill_field_tip"))
+        kill_inp.setStyleSheet("QLineEdit { border:1px solid #bf616a; }")
+        kill_inp.setVisible(False)
+
+        from ui.ui_main import autostart_col_check, autostart_col_sep
+        chk_debug, dbg_cell = autostart_col_check(tr("autostart_debug_tip"))
+        chk_kill, kill_cell = autostart_col_check(tr("autostart_kill_tip_col"))
 
         btn_del = QPushButton("✕")
         btn_del.setFixedWidth(30)
@@ -2738,6 +2754,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
             "QPushButton:hover { background-color:#bf616a; color:white; border-color:#bf616a; }")
 
         row = {"combo": combo, "input": inp, "btn": btn, "chk_debug": chk_debug,
+               "chk_kill": chk_kill, "kill_input": kill_inp,
                "btn_del": btn_del, "widget": row_w, "completer": completer}
 
         combo.currentTextChanged.connect(
@@ -2745,18 +2762,29 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
         combo.currentTextChanged.connect(self.trigger_auto_save)
         inp.textChanged.connect(self.trigger_auto_save)
         chk_debug.stateChanged.connect(self.trigger_auto_save)
+        chk_kill.toggled.connect(lambda on, ki=kill_inp: self._autostart_kill_toggled(ki, on))
+        kill_inp.textChanged.connect(self.trigger_auto_save)
         btn.clicked.connect(
             lambda checked, le=inp, cb=combo: self._autostart_browse(le, cb))
         btn_del.clicked.connect(lambda: self._vr_remove_row(row))
 
-        for w in (combo, inp, btn, chk_debug, btn_del):
+        row_layout.setSpacing(6)
+        for w in (combo, inp, btn, kill_inp, autostart_col_sep(), dbg_cell,
+                  autostart_col_sep(), kill_cell, btn_del):
             row_layout.addWidget(w)
         row_layout.setStretch(1, 1)
+        row_layout.setStretch(3, 1)
         self.ui.autostart_container_layout.addWidget(row_w)
         self.autostart_rows.append(row)
         # Beschriftung/Zustand einmal passend zum Startmodus setzen.
         self._autostart_mode_changed(combo.currentText(), inp, btn)
         return row
+
+    def _autostart_kill_toggled(self, kill_input, on):
+        kill_input.setVisible(on)
+        if on and not kill_input.text():
+            kill_input.setFocus()
+        self.trigger_auto_save()
 
     @staticmethod
     def _vr_delete_row_widgets(row):
@@ -2951,7 +2979,9 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
         apps_data = [{
             "type":  r["combo"].currentText(),
             "cmd":   r["input"].text(),
-            "debug": r["chk_debug"].isChecked()
+            "debug": r["chk_debug"].isChecked(),
+            "kill_on": r["chk_kill"].isChecked(),
+            "kill":  r["kill_input"].text(),
         } for r in self.autostart_rows]
         hand, fbt = self.tracking_flags()
         save_all_settings(
@@ -2966,6 +2996,15 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
     def apply_loaded_settings(self):
         data = load_saved_settings()
         if not data: return
+
+        # Einmalig: alte Kill-Befehle (Erweitert) an ihre Autostart-Zeile haengen.
+        import killcmd_migrate
+        if killcmd_migrate.migrate(data):
+            from config_manager import CONFIG_FILE
+            from jsonio import write_json_atomic
+            write_json_atomic(CONFIG_FILE, data)
+            if hasattr(self.ui, "killcmd_rows"):
+                self._killcmd_load_from_config()
 
         # Sprache laden und sofort anwenden
         lang = data.get("language", "en")
@@ -2982,6 +3021,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
         # damit das Setzen beim Start nicht sofort wieder gespeichert wird.
         advanced = bool(data.get("advanced_mode", False))
         adv.set_enabled(advanced)
+        self.ui.firstrun_card.setVisible(advanced)
         self.ui.toggle_advanced.blockSignals(True)
         self.ui.toggle_advanced.setChecked(advanced)
         self.ui.toggle_advanced.sync_offset()
@@ -3011,6 +3051,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
                 self.autostart_rows[i]["combo"].setCurrentText(app.get("type", "Custom Path"))
                 self.autostart_rows[i]["input"].setText(app.get("cmd", ""))
                 self.autostart_rows[i]["chk_debug"].setChecked(app.get("debug", False))
+                self.autostart_rows[i]["kill_input"].setText(app.get("kill", ""))
+                self.autostart_rows[i]["chk_kill"].setChecked(bool(app.get("kill_on")))
 
         self.ui.chk_steamvr_tracker.blockSignals(False)
         self.ui.num_apps.blockSignals(False)
@@ -3237,6 +3279,11 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
             elif isinstance(e, str):
                 # Rückwärtskompatibel: reine String-Liste ist auch okay.
                 self._killcmd_add_row("", e)
+        # Neue Kill-Befehle gehoeren an die Autostart-Zeile im Dashboard.
+        # Die Liste hier zeigt nur noch alte Eintraege, die keiner Zeile
+        # zugeordnet werden konnten.
+        if hasattr(self.ui, "killcmd_card"):
+            self.ui.killcmd_card.setVisible(bool(entries))
 
     def _killcmd_save(self):
         """Schreibt die aktuellen Zeilen in die App-Config."""
@@ -3604,7 +3651,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, GamesTabMixin, ToolsTabMixin
     def _run_custom_kill_commands(self):
         """Führt die hinterlegten Zusatz-Kill-Befehle als Shell aus (best effort)."""
         try:
-            entries = load_saved_settings().get("custom_kill_commands", []) or []
+            import killcmd_migrate
+            entries = killcmd_migrate.all_kill_commands(load_saved_settings())
         except Exception:
             entries = []
         # Liegt in exit_guard, weil der Waechter-Prozess dieselben Befehle

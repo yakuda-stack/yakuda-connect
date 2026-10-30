@@ -151,7 +151,8 @@ class DesignInstallWorker(QThread):
                 self.status_signal.emit("install")
                 if os.path.isdir(WAYVR_DIR):
                     shutil.rmtree(WAYVR_DIR)
-                shutil.copytree(src, WAYVR_DIR)
+                os.makedirs(WAYVR_DIR, exist_ok=True)
+                shutil.copytree(src, WAYVR_DIR, dirs_exist_ok=True)
 
             self.finished_signal.emit(True, "")
         except Exception as e:

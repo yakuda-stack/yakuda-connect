@@ -11,6 +11,48 @@ from PySide6.QtCore import Qt, QPropertyAnimation, Property, QRectF, QSize
 from PySide6.QtGui import QPainter, QColor
 
 
+
+# --------------------------------------------------------------------------- #
+#  Autostart-Zeilen (Dashboard): Spalten „Debug“ und „Kill“
+# --------------------------------------------------------------------------- #
+AUTOSTART_COL_W = 52        # Breite einer Haken-Spalte
+AUTOSTART_DEL_W = 30        # Breite des ✕-Knopfs am Zeilenende
+
+
+def autostart_col_sep():
+    """Senkrechter Trennstrich zwischen den Spalten."""
+    from PySide6.QtWidgets import QFrame
+    line = QFrame()
+    line.setFrameShape(QFrame.VLine)
+    line.setFixedWidth(2)
+    line.setObjectName("autostartColSep")
+    line.setStyleSheet("QFrame#autostartColSep { color:#4c566a; background:#4c566a; border:none; }")
+    return line
+
+
+def autostart_col_label(text, tip, color):
+    from PySide6.QtWidgets import QLabel
+    lbl = QLabel(text)
+    lbl.setFixedWidth(AUTOSTART_COL_W)
+    lbl.setAlignment(Qt.AlignCenter)
+    lbl.setToolTip(tip)
+    lbl.setStyleSheet(f"color:{color}; font-size:11px; font-weight:bold;")
+    return lbl
+
+
+def autostart_col_check(tip):
+    """Haken ohne Text, mittig in einer Spalte fester Breite -> (haken, zelle)."""
+    from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QWidget
+    cell = QWidget()
+    cell.setFixedWidth(AUTOSTART_COL_W)
+    lay = QHBoxLayout(cell)
+    lay.setContentsMargins(0, 0, 0, 0)
+    chk = QCheckBox()
+    chk.setToolTip(tip)
+    chk.setCursor(Qt.PointingHandCursor)
+    lay.addWidget(chk, 0, Qt.AlignCenter)
+    return chk, cell
+
 class ToggleSwitch(QCheckBox):
     """Schiebeschalter (links = aus, rechts = an) im Stil eines iOS-Toggles.
 
@@ -510,6 +552,8 @@ class Ui_MainWindow:
         self.autostart_group.setTitle(tr("dashboard_autostart"))
         self.lbl_app_count.setText(tr("dashboard_app_count"))
         self.btn_autostart_add_vr_row.setText(tr("autostart_profile_add_row"))
+        self.lbl_autostart_col_debug.setText(tr("autostart_col_debug"))
+        self.lbl_autostart_col_kill.setText(tr("autostart_col_kill"))
         self.lbl_vr_hint.setText(tr("autostart_vr_hint"))
         self.btn_autostart_reset.setText(tr("dashboard_autostart_reset"))
         self.btn_autostart_kill.setText(tr("dashboard_autostart_kill"))
@@ -604,6 +648,10 @@ class Ui_MainWindow:
         self.btn_changelog.setToolTip(tr("changelog_tip"))
         self.btn_highlights.setText(tr("highlights_btn"))
         self.btn_highlights.setToolTip(tr("highlights_tip"))
+        self.btn_tour.setText(tr("tour_btn"))
+        self.btn_firstrun_reset.setText(tr("firstrun_reset_btn"))
+        self.lbl_firstrun_hint.setText(tr("firstrun_hint"))
+        self.btn_tour.setToolTip(tr("tour_btn_tip"))
         # Diagnose / Logdatei
         self.btn_log_open.setText(tr("diag_open_btn"))
         self.btn_log_copy.setText(tr("diag_copy_btn"))
@@ -648,6 +696,8 @@ class Ui_MainWindow:
             self.btn_obah_pick_manifest.setToolTip(tr("obah_pick_manifest_tip"))
             self.btn_obah_clear_manifest.setToolTip(tr("obah_clear_manifest_tip"))
             self.btn_obah_layout_reset.setText(tr("obah_layout_reset"))
+            self.btn_obah_deadzone.setText("◎  " + tr("xrd_deadzone"))
+            self.btn_obah_deadzone.setToolTip(tr("dzd_button_tip"))
             self.btn_obah_tidy.setText(tr("obah_tidy"))
             self.btn_obah_tidy.setToolTip(tr("obah_tidy_tip"))
             self.btn_obah_discard.setText(tr("obah_discard"))
@@ -1136,6 +1186,25 @@ class Ui_MainWindow:
         vr_layout = QVBoxLayout(vr_page)
         vr_layout.setContentsMargins(0, 0, 0, 0)
         vr_layout.addLayout(count_row)
+
+        # Spaltenkoepfe ueber den Haken der Zeilen (Debug | Kill), mit
+        # senkrechten Trennstrichen, die in den Zeilen weiterlaufen.
+        col_head = QHBoxLayout()
+        col_head.setContentsMargins(0, 4, 0, 0)
+        col_head.setSpacing(6)
+        col_head.addStretch(1)
+        self.lbl_autostart_col_debug = autostart_col_label(tr("autostart_col_debug"),
+                                                           tr("autostart_debug_tip"), "#ebcb8b")
+        self.lbl_autostart_col_kill = autostart_col_label(tr("autostart_col_kill"),
+                                                          tr("autostart_kill_tip_col"), "#bf616a")
+        col_head.addWidget(autostart_col_sep())
+        col_head.addWidget(self.lbl_autostart_col_debug)
+        col_head.addWidget(autostart_col_sep())
+        col_head.addWidget(self.lbl_autostart_col_kill)
+        # Qt setzt vor einem Platzhalter keinen Abstand — den der ✕-Spalte
+        # deshalb selbst mitrechnen, sonst stehen die Koepfe 6 px zu weit rechts.
+        col_head.addSpacing(AUTOSTART_DEL_W + col_head.spacing())
+        vr_layout.addLayout(col_head)
 
         self.autostart_container = QWidget()
         self.autostart_container_layout = QVBoxLayout(self.autostart_container)
@@ -1635,6 +1704,12 @@ class Ui_MainWindow:
         community_grid.addWidget(self.btn_community_donate, 0, 2)
         community_grid.addWidget(self.btn_changelog, 1, 0)
         community_grid.addWidget(self.btn_highlights, 1, 1)
+        # Tour durch die App jederzeit erneut starten (kommt sonst nur einmal).
+        self.btn_tour = QPushButton(tr("tour_btn"))
+        self.btn_tour.setCursor(Qt.PointingHandCursor)
+        self.btn_tour.setToolTip(tr("tour_btn_tip"))
+        self.btn_tour.setStyleSheet(self._CSS_SECONDARY)
+        community_grid.addWidget(self.btn_tour, 1, 2)
         head.addLayout(community_grid)
         cv.addLayout(head)
         self.lbl_community_version = QLabel("")
@@ -1848,6 +1923,8 @@ class Ui_MainWindow:
         vr_v.addStretch()
         self.settings_subtabs.addTab(page_vr, tr_amp("settings_sub_vr"))
         self.page_settings_vr = page_vr
+        self.page_settings_design = page_design
+        self.page_settings_general = page_gen
 
         # ==============================================================
         #  SEITE 3 — Audio
@@ -1967,7 +2044,26 @@ class Ui_MainWindow:
         adv_v.addWidget(card)
 
         # -- Eigene Kill-Befehle (kompakte Liste) --
+        # Nur noch fuer alte Eintraege, die keiner Autostart-Zeile zugeordnet
+        # werden konnten — neu: Haken „Kill“ an der Zeile im Dashboard.
+        # -- Erst-Einrichtung zuruecksetzen (nur im Advanced Mode sichtbar) --
+        fr_card, fr_cv = self._settings_card()
+        self.firstrun_card = fr_card
+        fr_head, _, _ = self._settings_header("firstrun_group", lambda: tr("firstrun_desc"))
+        self.btn_firstrun_reset = QPushButton(tr("firstrun_reset_btn"))
+        self.btn_firstrun_reset.setCursor(Qt.PointingHandCursor)
+        self.btn_firstrun_reset.setStyleSheet(self._CSS_DANGER)
+        fr_head.addWidget(self.btn_firstrun_reset)
+        fr_cv.addLayout(fr_head)
+        self.lbl_firstrun_hint = QLabel(tr("firstrun_hint"))
+        self.lbl_firstrun_hint.setWordWrap(True)
+        self.lbl_firstrun_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
+        fr_cv.addWidget(self.lbl_firstrun_hint)
+        fr_card.setVisible(False)
+        adv_v.addWidget(fr_card)
+
         card, cv = self._settings_card()
+        self.killcmd_card = card
         head, _, _ = self._settings_header(
             "killcmd_group",
             lambda: tr("killcmd_desc") + "<br><br>" + tr("killcmd_warn"))
@@ -2130,6 +2226,7 @@ class Ui_MainWindow:
 
         panel = QFrame()
         panel.setObjectName("obahpanel")
+        self.obah_panel = panel
         panel.setStyleSheet("""
             QFrame#obahpanel { background-color: #21252b; border-radius: 6px;
                                border: 1px solid #2e3440; }
@@ -2334,7 +2431,24 @@ class Ui_MainWindow:
             QTabBar::tab:hover:!selected { background:#3b4252; color:#d8dee9; }
             QTabBar::tab:selected { background:#5e81ac; color:white; font-weight:bold; }
         """)
-        ev.addWidget(self.obah_set_tabs)
+        set_row = QHBoxLayout()
+        set_row.setSpacing(10)
+        set_row.addWidget(self.obah_set_tabs)
+        # Deadzone gut sichtbar neben den Action Sets — neue Nutzer suchen
+        # sie sonst lange (Joystick-Karte -> Tab „Deadzone“).
+        self.btn_obah_deadzone = QPushButton("◎  " + tr("xrd_deadzone"))
+        self.btn_obah_deadzone.setCursor(Qt.PointingHandCursor)
+        self.btn_obah_deadzone.setToolTip(tr("dzd_button_tip"))
+        self.btn_obah_deadzone.setStyleSheet("""
+            QPushButton { background:#3b4f63; color:#eceff4; padding:6px 14px;
+                          border:1px solid #5e81ac; border-radius:5px; font-size:12px;
+                          font-weight:bold; }
+            QPushButton:hover { background:#4c6a85; }
+            QPushButton:disabled { background:#2e3440; color:#4c566a; border-color:#3b4252; }
+        """)
+        set_row.addWidget(self.btn_obah_deadzone)
+        set_row.addStretch()
+        ev.addLayout(set_row)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(8)

@@ -374,7 +374,8 @@ def cleanup_after_hard_exit(state, settings=None):
                 "— WiVRn wird wie ueber den Dashboard-Schalter gestoppt.")
     # Reihenfolge wie in stop_wivrn_server → stop_autostart_apps:
     # eigene Kill-Befehle, Autostart-Programme, dann der Server.
-    run_kill_commands(settings.get("custom_kill_commands", []))
+    import killcmd_migrate
+    run_kill_commands(killcmd_migrate.all_kill_commands(settings))
     stop_groups(state.get("groups") or [])
     stopped = wivrn_server.stop_blocking(None)
     if stopped:

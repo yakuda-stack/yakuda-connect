@@ -176,7 +176,8 @@ def kill_apps(settings):
     Gruppen. Der Waechter bleibt unangetastet. Rueckgabe: Anzahl beendeter
     Programme.
     """
-    exit_guard.run_kill_commands(settings.get("custom_kill_commands", []) or [])
+    import killcmd_migrate
+    exit_guard.run_kill_commands(killcmd_migrate.all_kill_commands(settings))
     state = load_state()
     groups = running_apps(state)
     # Profil-Programme gehoeren dazu (wie der Besen-Knopf der Oberflaeche).

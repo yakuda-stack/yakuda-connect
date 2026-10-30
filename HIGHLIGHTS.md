@@ -1,6 +1,28 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.6 — 2026-10-30
+
+#### 🇩🇪 Deutsch
+
+* **Tour durch die App.** Beim ersten Start zeigt dir die App auf Wunsch alles: erst Sprache wählen (Flaggen), dann geht es Tab für Tab – ein goldenes, pulsierendes ⓘ zeigt, wo du klicken musst. Im Controls-Schritt installiert **„Alles installieren“** alles auf einmal. Jederzeit wieder unter Einstellungen → Allgemein → 🧭 Tour starten.
+* **WayVR mit einem Klick.** Die App fragt einmal, ob du WayVR willst, um deine Desktops in VR zu verwalten – und richtet gleich das schöne Design mit ein.
+* **✨ Optimieren für Spiele.** Neben ▶ Spielen: ein paar kurze Fragen (bei VRChat z. B. Cache-Größe), dann wird alles eingestellt – die beste Proton-Version wird automatisch gewählt und bei Bedarf installiert.
+* **Stick-Drift weg – jetzt auch bei SteamVR-Spielen.** Neuer Knopf **◎ Deadzone** direkt neben den Action Sets. Klappt mit xrizer über xrBinder; wer SteamVR nutzt, setzt einen Haken und bekommt `deadzone_pct`. Gesperrte Regler? **🧩 OpenXR-Vorlage verwenden** hilft.
+* **Eigener Kill-Befehl pro Autostart-Programm** – direkt im Dashboard in der neuen Spalte **Kill**.
+* **Kein versehentlicher Tab-Wechsel mehr per Mausrad.**
+
+#### 🇬🇧 English
+
+* **App tour.** On first start the app can show you everything: pick your language (flags), then it goes tab by tab – a golden, pulsing ⓘ shows where to click. In the Controls step **"Install everything"** installs it all at once. Any time again via Settings → General → 🧭 Start tour.
+* **WayVR in one click.** The app asks once whether you want WayVR to manage your desktops in VR – and sets up the nice design right away.
+* **✨ Optimize for games.** Next to ▶ Play: a few quick questions (for VRChat e.g. cache size), then everything is set – the best Proton version is picked automatically and installed if needed.
+* **No more stick drift – now in SteamVR games too.** New **◎ Deadzone** button right next to the action sets. Works with xrizer via xrBinder; SteamVR users tick a box and get `deadzone_pct`. Locked sliders? **🧩 Use OpenXR template** helps.
+* **Custom kill command per autostart program** – right in the Dashboard in the new **Kill** column.
+* **No more accidental tab switching with the mouse wheel.**
+
+---
+
 ### 🚀 v1.4.5 — 2026-10-29
 
 #### 🇩🇪 Deutsch

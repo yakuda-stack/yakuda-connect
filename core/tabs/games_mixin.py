@@ -728,6 +728,19 @@ class GamesTabMixin:
             """)
             btn_play.clicked.connect(lambda _, a=appid, g=game: self._play_game(a, g))
             ov.add_head_widget(btn_play)
+            # „✨ Optimieren“: ein paar Fragen, dann ist alles eingerichtet
+            btn_opt = QPushButton("✨  " + tr("gopt_btn"))
+            btn_opt.setObjectName("panelOptimize")
+            btn_opt.setCursor(Qt.PointingHandCursor)
+            btn_opt.setToolTip(tr("gopt_btn_tip"))
+            btn_opt.setStyleSheet("""
+                QPushButton#panelOptimize { background-color: #ebcb8b; color: #21252b; border: none;
+                              font-weight: bold; padding: 5px 16px; border-radius: 4px; font-size: 12px; }
+                QPushButton#panelOptimize:hover { background-color: #f0d9a8; }
+            """)
+            btn_opt.clicked.connect(lambda _=False, a=appid: self.open_game_optimize(a))
+            ov.add_head_widget(btn_opt)
+            self._games_optimize_btn = btn_opt
         if not ov.isVisible():
             ov.open_overlay()
 
@@ -1518,6 +1531,8 @@ class GamesTabMixin:
         pick_row = QHBoxLayout()
         combo = QComboBox()
         combo.setMinimumWidth(260)
+        from ui.opaque_combo import make_opaque
+        make_opaque(combo)                  # sonst scheint der Inhalt durch die Liste
         active_idx, rec_idx = -1, 0
         tool_names = []
         for i, proton in enumerate(protons):
@@ -2248,6 +2263,7 @@ class GamesTabMixin:
 
     def _on_pp_install_done(self, ok):
         self.ui.lbl_games_status.setText(tr("games_pp_done") if ok else tr("games_pp_missing"))
+        self.optimize_after_proton_install(ok)
 
     def start_manual_proton_install(self, proton, button=None):
         """Laedt einen manuell verteilten Proton-Build (Tarball vom Release).
@@ -2293,6 +2309,7 @@ class GamesTabMixin:
             self.ui.lbl_games_status.setText(tr("games_manual_failed").format(error=msg))
             QMessageBox.warning(self, tr("games_manual_failed_title"),
                                 tr("games_manual_failed").format(error=msg))
+            self.optimize_after_proton_install(False)
             return
 
         self.ui.lbl_games_status.setText(tr("games_manual_done").format(tool=msg))
@@ -2304,6 +2321,7 @@ class GamesTabMixin:
         # Panel neu aufbauen, damit die Karte den Build jetzt als installiert
         # zeigt und "Use" auswaehlbar wird.
         self._refresh_detail()
+        self.optimize_after_proton_install(True)
 
     def show_games_info(self):
         """Das kleine (i): erklärt, wo man in Steam Proton-Version und

@@ -1,6 +1,56 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.4.6 — 2026-10-30
+
+#### 🇩🇪 Deutsch
+
+* **Neu: Tour durch die App.** Nach Performance-Setup und WayVR-Frage bietet die App einmal eine Tour an (Merker `tour_asked`). Erster Schritt: Sprachwahl mit Flaggen (Deutsch / English / Français) – stellt sofort die ganze App um. Danach wechselt die Tour selbst die Tabs, scrollt den Bereich ins Bild, rahmt ihn golden ein und setzt ein goldenes, pulsierendes ⓘ daneben; eine Karte erklärt ihn (Zurück / Weiter / Beenden, Esc). 18 Schritte von Installation bis Einstellungen. Alles liegt im Hauptfenster (klappt auch in WayVR).
+  * Erneut starten: **Einstellungen → Allgemein → 🧭 Tour starten**. Fehlen Grundpakete, kommt statt der Tour ein Hinweis.
+  * Controls-Schritt: **„Alles installieren“** installiert XR HOTAS und obah nacheinander (Standard-Installationsart) und baut/aktiviert xrBinder.
+  * Bilder je Schritt: `assets/tour/<id>.png` wird automatisch gezeigt (Games-Schritt: wo man auf ⚙ Settings und ✨ Optimize klickt); breite Bilder machen die Karte breiter, Klick vergrößert.
+  * Neue Module: `ui/tour.py`, `core/tour_steps.py`, `core/tabs/tour_mixin.py`.
+  * Nach „Fertig“ springt die App aufs Dashboard.
+* **Erst-Einrichtung sauber nacheinander** (`core/tabs/first_run_mixin.py`): Performance-Setup → WayVR → Tour laufen nie gleichzeitig. Ein zweiter Dashboard-Klick startet nichts doppelt; die Tour wartet, bis WayVR-Installation und Design fertig sind; während einer Tour startet die Kette nicht; jeder Schritt wartet, bis das Fenster sichtbar ist und kein anderes Fenster (z. B. „Was ist neu“) offen ist – wichtig, weil die App beim Start selbst aufs Dashboard springt.
+* **Advanced Mode: „Ersteinrichtung zurücksetzen“** unter Einstellungen → Erweitert – löscht die Merker `dashboard_optimize_asked`, `dashboard_wayvr_asked` und `tour_asked`, als wäre das Dashboard nie geöffnet worden.
+* **Neu: Einmal-Angebot „WayVR installieren?“** direkt nach dem Performance-Setup – mit Beispielbild (`assets/wayvr_preview.jpg`) und Auswahl der Installationsart. Danach wird automatisch das cubee-cb-Design eingerichtet (`~/.config/wayvr` wird bei Bedarf angelegt). Ist WayVR schon da, wird nur das Design angeboten. Merker `dashboard_wayvr_asked`. Neues Modul `core/tabs/dashboard_wayvr_mixin.py`.
+* **Neu: ✨ Optimieren im Spiel-Popup** (neben ▶ Spielen). Ein paar Fragen, dann ist das Spiel eingerichtet: VRChat-Cache-Größe (Erklärung Avatare/Welten, Standard 30 GB), Startoptionen einzeln mit Erklärung (Empfehlungen vorausgewählt), Zusammenfassung. Beim Anwenden läuft der Bilder-Fix (VRChat) automatisch und die empfohlene Proton-Version wird gesetzt – fehlt sie, wird sie vorher installiert. Neu: `ui/game_optimize_dialog.py`, `core/tabs/games_optimize_mixin.py`.
+* **Deadzone für OpenVR-Spiele.** Klick auf den Joystick in der OpenVR-Ansicht (obah) zeigt jetzt auch den Tab **◎ Deadzone**. Gespeichert wird in xrBinder (OpenXR) – nur so wirkt sie mit xrizer, das `deadzone_pct` ignoriert. Der xrBinder-Name des Spiels wird über gemerkte Zuordnung, `SteamAppId` des laufenden Prozesses oder die `.exe` im Spielordner gefunden (`core/xr_openvr_link.py`).
+  * Neuer Knopf **◎ Deadzone** direkt neben den Action-Set-Tabs: Deadzone für beide Sticks auf einmal (OpenVR und OpenXR).
+  * **🧩 OpenXR-Vorlage verwenden** unter den Reglern: Spiele ohne gemeldete Tasten (z. B. VRChat über xrizer) hatten gesperrte Regler – die Vorlage legt eine Standardbelegung an.
+  * Haken **„Ich nutze nicht xrizer (z. B. SteamVR)“** in einem gelben Kasten: schreibt stattdessen `deadzone_pct` in alle Joystick-Belegungen. Vorausgewählt, wenn WiVRns OpenVR-Kompatibilität aus ist; die Wahl wird gemerkt.
+  * Regler als eigenes Widget `ui/xr_deadzone_panel.py`, Dialog `ui/deadzone_dialog.py`.
+* **Eigener Kill-Befehl pro Autostart-Zeile.** Im Dashboard haben die Autostart-Zeilen jetzt die Spalten **Debug** und **Kill** (mit Trennstrichen und Kopfzeile). Haken „Kill“ → zweites Feld neben dem Startbefehl; läuft direkt vor dem normalen Beenden (App, Terminal-Modus und Wächter). Alte Einträge aus Einstellungen → Erweitert werden einmalig der passenden Zeile zugeordnet; nicht Zuordenbares bleibt dort. Neues Modul `core/killcmd_migrate.py`.
+* **Mausrad wechselt keine Tabs mehr** (Action Sets im Controls-Tab und alle anderen Tab-Leisten) – die Seite scrollt einfach weiter.
+* **Fix: Proton-Dropdown im Spiel-Popup war durchsichtig** (KDE/Breeze) – jetzt mit festem Hintergrund.
+* **Fix: WayVR-Angebot** griff auf die Tools-Karten zu, bevor der Tools-Tab gebaut war.
+* Tour-Text Streaming: beim allerersten VR-Start OpenComposite nutzen, danach auf xrizer umstellen.
+* Neue Tests: `test_first_run.py`, `test_tour.py`, `test_game_optimize.py`, `test_openvr_deadzone.py`, `test_killcmd_migrate.py`.
+
+#### 🇬🇧 English
+
+* **New: app tour.** After the Performance Setup and WayVR questions the app offers a tour once (flag `tour_asked`). First step: language pick with flags (Deutsch / English / Français) – switches the whole app right away. Then the tour switches tabs by itself, scrolls the area into view, frames it in gold and puts a golden, pulsing ⓘ next to it; a card explains it (Back / Next / End, Esc). 18 steps from Installation to Settings. Everything lives inside the main window (works in WayVR too).
+  * Start again: **Settings → General → 🧭 Start tour**. If base packages are missing, a notice shows instead.
+  * Controls step: **"Install everything"** installs XR HOTAS and obah one after another (default install method) and builds/turns on xrBinder.
+  * Pictures per step: `assets/tour/<id>.png` is shown automatically (Games step: where to click ⚙ Settings and ✨ Optimize); wide pictures make the card wider, a click enlarges.
+  * New modules: `ui/tour.py`, `core/tour_steps.py`, `core/tabs/tour_mixin.py`.
+  * After "Done" the app jumps to the Dashboard.
+* **First-time setup strictly one after another** (`core/tabs/first_run_mixin.py`): Performance Setup → WayVR → tour never run at the same time. A second Dashboard click doesn't start anything twice; the tour waits until the WayVR install and design are done; the chain doesn't start during a tour; each step waits until the window is visible and no other dialog (e.g. "What's new") is open – important because the app jumps to the Dashboard by itself on startup.
+* **Advanced Mode: "Reset first-time setup"** under Settings → Advanced – clears the flags `dashboard_optimize_asked`, `dashboard_wayvr_asked` and `tour_asked`, as if the Dashboard had never been opened.
+* **New: one-time "Install WayVR?" offer** right after the Performance Setup – with a preview picture (`assets/wayvr_preview.jpg`) and a choice of install method. Afterwards the cubee-cb design is set up automatically (`~/.config/wayvr` is created if needed). If WayVR is already there, only the design is offered. Flag `dashboard_wayvr_asked`. New module `core/tabs/dashboard_wayvr_mixin.py`.
+* **New: ✨ Optimize in the game popup** (next to ▶ Play). A few questions, then the game is set up: VRChat cache size (explains avatars/worlds, default 30 GB), launch options one by one with an explanation (recommendations pre-ticked), summary. On apply the picture fix (VRChat) runs automatically and the recommended Proton version is selected – installed first if missing. New: `ui/game_optimize_dialog.py`, `core/tabs/games_optimize_mixin.py`.
+* **Deadzone for OpenVR games.** Clicking the joystick in the OpenVR (obah) view now also shows the **◎ Deadzone** tab. It's saved via xrBinder (OpenXR) – the only way it works with xrizer, which ignores `deadzone_pct`. The game's xrBinder name is found via a remembered link, the running process's `SteamAppId` or the `.exe` in the game folder (`core/xr_openvr_link.py`).
+  * New **◎ Deadzone** button right next to the action-set tabs: deadzone for both sticks at once (OpenVR and OpenXR).
+  * **🧩 Use OpenXR template** below the sliders: games that report no buttons (e.g. VRChat via xrizer) had locked sliders – the template sets up a default layout.
+  * **"I don't use xrizer (e.g. SteamVR)"** checkbox in a yellow box: writes `deadzone_pct` into every joystick binding instead. Pre-ticked when WiVRn's OpenVR compat is off; the choice is remembered.
+  * Sliders as their own widget `ui/xr_deadzone_panel.py`, dialog `ui/deadzone_dialog.py`.
+* **Custom kill command per autostart row.** Dashboard autostart rows now have **Debug** and **Kill** columns (with separator lines and a header). Tick "Kill" → a second field next to the start command; runs right before the normal stop (app, terminal mode and guard). Old entries from Settings → Advanced are moved to their matching row once; anything unmatched stays there. New module `core/killcmd_migrate.py`.
+* **Mouse wheel no longer switches tabs** (action sets in the Controls tab and every other tab bar) – the page just keeps scrolling.
+* **Fix: Proton dropdown in the game popup was see-through** (KDE/Breeze) – now has a solid background.
+* **Fix: WayVR offer** accessed the tool cards before the Tools tab was built.
+* Tour text Streaming: use OpenComposite for the very first VR start, then switch to xrizer.
+* New tests: `test_first_run.py`, `test_tour.py`, `test_game_optimize.py`, `test_openvr_deadzone.py`, `test_killcmd_migrate.py`.
+
 ### 🚀 v1.4.5 — 2026-10-29
 
 #### 🇩🇪 Deutsch

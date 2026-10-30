@@ -16,9 +16,13 @@ QComboBox.wheelEvent ersetzt: kostet nichts, solange niemand ueber einer
 Combo scrollt. Gilt fuer alle Combos, die aus Python erzeugt werden (auch
 schon vorhandene); Combos in reinen Qt-Dialogen bleiben unberuehrt.
 
+Dasselbe gilt fuer Tab-Leisten (QTabBar), z. B. die Action Sets im
+Controls-Tab (Global, One Hand, Menu …): Mausrad darueber wechselte sonst
+den Tab statt die Seite zu scrollen.
+
 install(app) einmal aufrufen; mehrfacher Aufruf ist harmlos.
 """
-from PySide6.QtWidgets import QComboBox
+from PySide6.QtWidgets import QComboBox, QTabBar
 
 _INSTALLED = False
 
@@ -28,9 +32,10 @@ def _wheel_ignored(self, event):
 
 
 def install(app=None):
-    """Mausrad fuer geschlossene Aufklapplisten abschalten."""
+    """Mausrad fuer geschlossene Aufklapplisten und Tab-Leisten abschalten."""
     global _INSTALLED
     if not _INSTALLED:
         QComboBox.wheelEvent = _wheel_ignored
+        QTabBar.wheelEvent = _wheel_ignored
         _INSTALLED = True
     return _INSTALLED

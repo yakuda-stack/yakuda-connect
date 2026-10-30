@@ -42,11 +42,19 @@ class _OptimizeWorker(QThread):
 class DashboardOptimizeMixin:
 
     def maybe_offer_vr_optimize(self):
-        """Aus on_tab_changed (Dashboard). Verzoegert, damit das Fenster steht."""
-        if getattr(self, "_optimize_checked", False) or vopt.already_asked():
+        """Aus on_tab_changed (Dashboard): Start der Erst-Einrichtung
+        (Reihenfolge und Schutz siehe core/tabs/first_run_mixin.py)."""
+        if getattr(self, "_optimize_checked", False) or not self.first_run_may_start():
             return
         self._optimize_checked = True
-        QTimer.singleShot(400, self._offer_vr_optimize)
+        gen = self.first_run_begin()
+
+        def step():
+            if vopt.already_asked():
+                self._optimize_next(False)
+            else:
+                self._offer_vr_optimize()
+        QTimer.singleShot(400, lambda: self.first_run_when_ready(step, gen))
 
     def open_vr_optimize(self):
         """Knopf „Performance-Setup“ im Dashboard — oeffnet das Popup jederzeit."""
@@ -57,15 +65,18 @@ class DashboardOptimizeMixin:
 
     def _offer_vr_optimize(self, manual=False):
         vopt.mark_asked()
+        self._optimize_manual = manual
         try:
             steps = vopt.pending_steps()
         except Exception as exc:                               # noqa: BLE001
             log.warning("[Optimize] Pruefung fehlgeschlagen: %s", exc)
+            self._optimize_next(manual)
             return
         if not steps:
             log.info("[Optimize] Alle Fixes schon aktiv — kein Popup.")
             if manual:
                 QMessageBox.information(self, tr("optimize_title"), tr("optimize_all_active"))
+            self._optimize_next(manual)
             return
 
         items = "\n".join("• " + tr(f"optimize_item_{s}") for s in steps)
@@ -74,6 +85,7 @@ class DashboardOptimizeMixin:
             tr("optimize_ask_manual" if manual else "optimize_ask").format(items=items),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if answer != QMessageBox.Yes:
+            self._optimize_next(manual)
             return
 
         self._optimize_worker = _OptimizeWorker(steps)
@@ -103,3 +115,10 @@ class DashboardOptimizeMixin:
         key = "optimize_done" if all_ok else "optimize_partial"
         box = QMessageBox.information if all_ok else QMessageBox.warning
         box(self, tr("optimize_title"), tr(key).format(items="\n".join(lines)))
+        self._optimize_next(getattr(self, "_optimize_manual", False))
+
+    def _optimize_next(self, manual):
+        """Nach dem Erst-Popup geht die Kette weiter (WayVR, dann Tour)."""
+        if manual:
+            return
+        self.first_run_after_optimize()

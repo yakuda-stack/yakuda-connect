@@ -21,10 +21,10 @@ Alle Regeln stecken in core/obah_editor.py.
 import copy
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout,
-                               QInputDialog, QLabel, QLineEdit, QListWidget,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFrame, QGridLayout,
+                               QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMenu, QPushButton, QScrollArea,
-                               QToolButton, QVBoxLayout, QWidget)
+                               QSlider, QTabBar, QToolButton, QVBoxLayout, QWidget)
 
 import obah_editor as oe
 from translations import get_language, tr
@@ -116,7 +116,7 @@ class BindingDialog(QDialog):
     """Bindings EINER Eingabe (eine Seite, ein Action Set) bearbeiten."""
 
     def __init__(self, parent, *, manifest, binding, controller_type, set_name,
-                 set_label, input_def, side, drafts):
+                 set_label, input_def, side, drafts, deadzone=None):
         super().__init__(parent)
         self.setObjectName("bindingDialog")
         self.setStyleSheet(DIALOG_CSS)
@@ -131,6 +131,10 @@ class BindingDialog(QDialog):
         self.side = side
         self.drafts = [copy.deepcopy(x) for x in drafts]
         self._current = 0 if self.drafts else -1
+        self.dz = deadzone if input_def.type == "joystick" else None
+        self.dz_mappings = (copy.deepcopy(self.dz["mappings"])
+                            if self.dz and "mappings" in self.dz else None)
+        self.dz_steamvr = bool(self.dz and self.dz.get("steamvr"))
 
         name = input_def.name[:1].upper() + input_def.name[1:]
         side_txt = {"left": tr("obah_left"), "right": tr("obah_right")}.get(side, "")
@@ -153,7 +157,20 @@ class BindingDialog(QDialog):
         head.addWidget(p)
         root.addLayout(head)
 
-        body = QHBoxLayout()
+        self.tabs = None
+        if self.dz is not None:
+            from ui.xr_button_dialog import _TAB_CSS
+            self.tabs = QTabBar()
+            self.tabs.setDrawBase(False)
+            self.tabs.setExpanding(False)
+            self.tabs.setStyleSheet(_TAB_CSS)
+            self.tabs.addTab(tr("bd_bindings"))
+            self.tabs.addTab("◎  " + tr("xrd_deadzone"))
+            root.addWidget(self.tabs)
+
+        self.bind_body = QWidget()
+        body = QHBoxLayout(self.bind_body)
+        body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(12)
 
         # ---- links: Liste der Bindings
@@ -205,7 +222,13 @@ class BindingDialog(QDialog):
         self.lbl_error.setWordWrap(True)
         rv.addWidget(self.lbl_error)
         body.addWidget(right, 6)
-        root.addLayout(body, 1)
+        root.addWidget(self.bind_body, 1)
+
+        self.dz_panel = None
+        if self.dz is not None:
+            self.dz_panel = self._build_deadzone_tab()
+            self.dz_panel.hide()
+            root.addWidget(self.dz_panel, 1)
 
         # ---- unten
         foot = QHBoxLayout()
@@ -225,6 +248,132 @@ class BindingDialog(QDialog):
         root.addLayout(foot)
 
         self._fill_list()
+        if self.tabs is not None:
+            self.tabs.currentChanged.connect(self._show_tab)
+
+    # ------------------------------------------------------------------ #
+    #  Deadzone-Tab (nur Joystick)
+    #  Standard: xrBinder (OpenXR) — wirkt mit xrizer. Haken „nicht xrizer“
+    #  (z. B. SteamVR): stattdessen deadzone_pct in die SteamVR-Bindings.
+    # ------------------------------------------------------------------ #
+    def _build_deadzone_tab(self):
+        box = QWidget()
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        self.chk_steamvr = QCheckBox(tr("bd_deadzone_no_xrizer"))
+        self.chk_steamvr.setToolTip(tr("bd_deadzone_no_xrizer_tip"))
+        self.chk_steamvr.setChecked(bool(self.dz.get("steamvr")))
+        self.chk_steamvr.toggled.connect(self._dz_mode_changed)
+        from ui.xr_deadzone_panel import make_mode_box
+        lay.addWidget(make_mode_box(self.chk_steamvr))
+
+        self.dz_xr_box = QWidget()
+        xl = QVBoxLayout(self.dz_xr_box)
+        xl.setContentsMargins(0, 0, 0, 0)
+        xl.setSpacing(6)
+        if self.dz_mappings is not None:
+            from ui.xr_deadzone_panel import DeadzonePanel
+            info = QLabel(tr("bd_deadzone_xr_info").format(game=self.dz.get("game", "")))
+            info.setWordWrap(True)
+            info.setStyleSheet("color:#7b88a1; font-size:11px;")
+            xl.addWidget(info)
+            panel = DeadzonePanel(self.dz["state"], self.dz_mappings,
+                                  controller_type=self.controller)
+            self.dz_rows = panel.rows
+            xl.addWidget(panel, 1)
+        else:
+            note = QLabel(self.dz.get("note", ""))
+            note.setWordWrap(True)
+            note.setObjectName("bdpanel")
+            note.setStyleSheet("color:#ebcb8b; font-size:12px; padding:14px;")
+            note.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            xl.addWidget(note, 1)
+        lay.addWidget(self.dz_xr_box, 1)
+
+        self.dz_pct_box = self._build_pct_box()
+        lay.addWidget(self.dz_pct_box, 1)
+        self._dz_mode_changed(self.chk_steamvr.isChecked())
+        return box
+
+    def _build_pct_box(self):
+        panel = QFrame()
+        panel.setObjectName("bdpanel")
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(10)
+        info = QLabel(tr("bd_deadzone_pct_info"))
+        info.setWordWrap(True)
+        info.setStyleSheet("color:#7b88a1; font-size:11px;")
+        lay.addWidget(info)
+        row = QHBoxLayout()
+        name = QLabel("DEADZONE_PCT")
+        name.setObjectName("bdsection")
+        row.addWidget(name)
+        self.pct_slider = QSlider(Qt.Horizontal)
+        self.pct_slider.setRange(0, 100)
+        self.pct_slider.setPageStep(5)
+        self.pct_slider.valueChanged.connect(self._pct_changed)
+        row.addWidget(self.pct_slider, 1)
+        self.pct_value = QLabel()
+        self.pct_value.setObjectName("bdfield")
+        self.pct_value.setMinimumWidth(44)
+        self.pct_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        row.addWidget(self.pct_value)
+        lay.addLayout(row)
+        self.pct_hint = QLabel()
+        self.pct_hint.setWordWrap(True)
+        self.pct_hint.setStyleSheet("color:#ebcb8b; font-size:11px;")
+        lay.addWidget(self.pct_hint)
+        lay.addStretch()
+        return panel
+
+    def _stick_drafts(self):
+        return [x for x in self.drafts if (x.get("mode") or "").lower() == "joystick"]
+
+    def _sync_pct(self):
+        drafts = self._stick_drafts()
+        vals = []
+        for x in drafts:
+            raw = (x.get("parameters") or {}).get("deadzone_pct", 0)
+            try:
+                vals.append(int(round(float(raw))))
+            except (TypeError, ValueError):
+                vals.append(0)
+        v = vals[0] if vals else 0
+        self._pct_syncing = True
+        self.pct_slider.setEnabled(bool(drafts))
+        self.pct_slider.setValue(v)
+        self._pct_syncing = False
+        self.pct_value.setText(f"{v} %" if drafts else "—")
+        self.pct_hint.setText("" if drafts else tr("bd_deadzone_pct_none"))
+
+    def _pct_changed(self, value):
+        if getattr(self, "_pct_syncing", False):
+            return
+        for x in self._stick_drafts():
+            if value > 0:
+                oe.set_draft_parameter(x, "deadzone_pct", str(value), original="deadzone_pct")
+            else:
+                oe.remove_draft_parameter(x, "deadzone_pct")
+        self.pct_value.setText(f"{value} %")
+
+    def _dz_mode_changed(self, steamvr):
+        self.dz_steamvr = bool(steamvr)
+        self.dz_xr_box.setVisible(not steamvr)
+        self.dz_pct_box.setVisible(steamvr)
+        if steamvr:
+            self._sync_pct()
+
+    def _show_tab(self, index):
+        dz = index == 1
+        self.bind_body.setVisible(not dz)
+        self.dz_panel.setVisible(dz)
+        if dz and self.dz_steamvr:
+            self._sync_pct()
+        elif not dz and self._current >= 0:
+            self._build_editor()        # Parameter (deadzone_pct) auffrischen
 
     # ------------------------------------------------------------------ #
     #  Liste links

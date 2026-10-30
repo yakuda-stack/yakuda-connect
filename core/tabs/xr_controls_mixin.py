@@ -54,6 +54,7 @@ class XrControlsMixin:
         ui.xrbinder_card.enabled_changed.connect(lambda _on: self._xr_games_changed())
         ui.btn_xr_reset_all.clicked.connect(self.xr_reset_all)
         ui.btn_xr_template.clicked.connect(self.xr_apply_template)
+        ui.btn_obah_deadzone.clicked.connect(self.open_deadzone_dialog)
         ui.xrbinder_card.activate()
 
     # ------------------------------------------------------------------ #
@@ -357,6 +358,87 @@ class XrControlsMixin:
         self.ui.lbl_obah_editor_status.setText(("✔ " if ok else "") + tr(key).format(game=xb.display_app_name(name)))
         self.ui.lbl_obah_editor_status.setStyleSheet(
             f"color:{'#a3be8c' if ok else '#ebcb8b'}; font-size:11px;")
+
+    # ------------------------------------------------------------------ #
+    #  Deadzone aus der OpenVR-Ansicht (obah) — wird in xrBinder geschrieben
+    # ------------------------------------------------------------------ #
+    def xr_openvr_deadzone(self, game):
+        """(xrBinder-Name, Daten fuer den Deadzone-Tab) zum OpenVR-Spiel.
+        Ohne passenden Namen: (None, {"note": ...}) — der Tab erklaert dann,
+        was zu tun ist."""
+        import xr_openvr_link as link
+        if game is None:
+            return None, None
+        steamvr = link.steamvr_mode()
+        session = self.ui.xrbinder_session
+        if not self.ui.xrbinder_card.is_enabled():
+            return None, {"note": tr("bd_deadzone_xr_off"), "steamvr": steamvr}
+        app = link.find_app(game, session.games(), session.pid_of)
+        if not app:
+            return None, {"note": tr("bd_deadzone_xr_unknown").format(game=game.name),
+                          "steamvr": steamvr}
+        state = self._xr_read_state(app)
+        mappings = xr.mappings_from_list(state.get("mappings"))
+        return app, {"state": state, "mappings": mappings, "steamvr": steamvr,
+                     "game": xb.display_app_name(app)}
+
+    def xr_openvr_save_deadzone(self, app, before, after):
+        """Nur speichern, wenn sich etwas geaendert hat — sofort, ohne obah-Speichern."""
+        if after == before:
+            return
+        try:
+            self.ui.xrbinder_session.save(app, xr.mappings_to_list(after))
+        except (OSError, ValueError) as exc:
+            log.warning("Deadzone (xrBinder) nicht gespeichert: %s", exc)
+            QMessageBox.warning(self, tr("obah_save_failed_title"),
+                                tr("obah_save_failed_text").format(error=exc))
+            return
+        self.ui.lbl_obah_editor_status.setText(
+            "✔ " + tr("bd_deadzone_xr_saved").format(game=xb.display_app_name(app)))
+        self.ui.lbl_obah_editor_status.setStyleSheet("color:#a3be8c; font-size:11px;")
+
+    def open_deadzone_dialog(self):
+        """Knopf „◎ Deadzone“ neben den Action Sets: beide Sticks auf einmal.
+        OpenXR-Spiel: Umbelegungen wie gewohnt (Speichern im Tab).
+        OpenVR-Spiel: xrBinder sofort speichern — oder mit Haken „nicht xrizer“
+        deadzone_pct in die obah-Bindings (Speichern im Tab)."""
+        import xr_openvr_link as link
+        from ui.deadzone_dialog import DeadzoneDialog
+        edit = self._obah_edit or {}
+        ct = edit.get("controller") or xr.DEFAULT_CT
+        if self._xr_mode:
+            game = xb.display_app_name(self._xr_game)
+            dz = {"state": self._xr_state, "mappings": self._xr_mappings, "game": game}
+            dlg = DeadzoneDialog(self, dz=dz, game=game, controller_type=ct)
+            self._obah_open_dialog = dlg
+            accepted = dlg.exec() == DeadzoneDialog.Accepted
+            self._obah_open_dialog = None
+            if accepted and dlg.dz_mappings != self._xr_mappings:
+                self._xr_mappings = dlg.dz_mappings
+                self._set_obah_dirty(True)
+                self.xr_render_views()
+            return
+        binding = edit.get("binding")
+        game = self._current_obah_game()
+        if binding is None or game is None:
+            return
+        dz_app, dz = self.xr_openvr_deadzone(game)
+        dlg = DeadzoneDialog(self, dz=dz, game=game.name, binding=binding, controller_type=ct)
+        self._obah_open_dialog = dlg
+        accepted = dlg.exec() == DeadzoneDialog.Accepted
+        self._obah_open_dialog = None
+        if not accepted:
+            return
+        if dlg.dz_steamvr != bool(dz.get("steamvr")):
+            link.set_steamvr_mode(dlg.dz_steamvr)
+        if dlg.dz_steamvr:
+            if dlg.pct_changed:
+                binding.clear()
+                binding.update(dlg.binding)
+                self._set_obah_dirty(True)
+                self._render_obah_views()
+        elif dz_app and dlg.dz_mappings is not None:
+            self.xr_openvr_save_deadzone(dz_app, dz["mappings"], dlg.dz_mappings)
 
     def _xr_state_updated(self, name):
         """Frische Aktionen vom laufenden Spiel."""

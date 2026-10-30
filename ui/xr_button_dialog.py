@@ -169,98 +169,13 @@ class XrButtonDialog(QDialog):
             self._sync_deadzone()
 
     def _build_deadzone_panel(self):
-        panel = QFrame()
-        panel.setObjectName("bdpanel")
-        lay = QVBoxLayout(panel)
-        lay.setContentsMargins(14, 12, 14, 12)
-        lay.setSpacing(12)
-        intro = QLabel(tr("xrd_deadzone_tip"))
-        intro.setWordWrap(True)
-        intro.setStyleSheet("color:#a6b2c0; font-size:11px;")
-        lay.addWidget(intro)
-        self.dz_rows = {}
-        for key, label in (("left", tr("obah_left")), ("right", tr("obah_right")),
-                           ("both", tr("xrd_deadzone_both"))):
-            row = QHBoxLayout()
-            row.setSpacing(10)
-            name = QLabel(label.upper())
-            name.setObjectName("bdsection")
-            name.setMinimumWidth(80)
-            row.addWidget(name)
-            sl = QSlider(Qt.Horizontal)
-            sl.setRange(0, int(xb.DEADZONE_MAX * 100))
-            sl.setSingleStep(1)
-            sl.setPageStep(5)
-            sl.setToolTip(tr("xrd_deadzone_value_tip"))
-            sl.valueChanged.connect(lambda v, k=key: self._dz_changed(k, v))
-            row.addWidget(sl, 1)
-            val = QLabel()
-            val.setMinimumWidth(44)
-            val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            val.setObjectName("bdfield")
-            row.addWidget(val)
-            rst = QToolButton()
-            rst.setObjectName("bdx")
-            rst.setText("↺")
-            rst.setToolTip(tr("xrd_deadzone_reset_tip"))
-            rst.setCursor(Qt.PointingHandCursor)
-            rst.clicked.connect(lambda _=False, k=key: self._dz_changed(k, 0, sync=True))
-            row.addWidget(rst)
-            lay.addLayout(row)
-            info = QLabel()
-            info.setWordWrap(True)
-            info.setStyleSheet("color:#4c566a; font-size:11px; margin-left:90px;")
-            lay.addWidget(info)
-            self.dz_rows[key] = {"slider": sl, "value": val, "reset": rst, "info": info}
-        lay.addStretch()
-        self._sync_deadzone()
+        from ui.xr_deadzone_panel import DeadzonePanel
+        panel = DeadzonePanel(self.state, self.mappings, controller_type=self.ct)
+        self.dz_rows = panel.rows
         return panel
 
-    def _dz_sides(self, key):
-        return ("left", "right") if key == "both" else (key,)
-
-    def _dz_changed(self, key, value, sync=False):
-        if getattr(self, "_dz_syncing", False):
-            return
-        v = 0.0 if value <= 0 else max(xb.DEADZONE_MIN, value / 100)
-        for side in self._dz_sides(key):
-            xr.set_stick_deadzone(self.state, self.mappings, side, v)
-        self._sync_deadzone()
-
     def _sync_deadzone(self):
-        """Regler, Werte und Hinweise aus den Umbelegungen neu setzen."""
-        self._dz_syncing = True
-        try:
-            vals = {s: round(xr.stick_deadzone(self.state, self.mappings, s) * 100)
-                    for s in ("left", "right")}
-            acts = {s: xr.stick_actions(self.state, self.mappings, s) for s in ("left", "right")}
-            for key, row in self.dz_rows.items():
-                sides = self._dz_sides(key)
-                usable = [s for s in sides if acts[s]]
-                cur = [vals[s] for s in usable]
-                same = len(set(cur)) == 1
-                v = cur[0] if cur and same else 0
-                row["slider"].setEnabled(bool(usable))
-                row["slider"].setValue(v)
-                if not cur:
-                    txt = "—"
-                elif not same:
-                    txt = "≠"
-                else:
-                    txt = f"{v} %" if v else tr("xrd_deadzone_off")
-                row["value"].setText(txt)
-                row["reset"].setEnabled(any(cur))
-                if key == "both":
-                    row["info"].setText(tr("xrd_deadzone_differs") if cur and not same else "")
-                    row["info"].setVisible(bool(cur) and not same)
-                elif usable:
-                    names = ", ".join(sorted({(a.get("description") or a["name"])
-                                              for a, _h in acts[key]}))
-                    row["info"].setText(tr("xrd_deadzone_affects").format(actions=names))
-                else:
-                    row["info"].setText(tr("xrd_deadzone_none"))
-        finally:
-            self._dz_syncing = False
+        self.dz_panel.sync()
 
     # ------------------------------------------------------------------ #
     def _clear(self):
