@@ -73,7 +73,20 @@ def row_kill_commands(settings):
     return out
 
 
+def profile_kill_commands(settings):
+    """Kill-Befehle der Zeilen aller Autostart-Profile."""
+    out = []
+    for prof in (settings or {}).get("autostart_profiles") or []:
+        if not isinstance(prof, dict):
+            continue
+        for app in prof.get("apps") or []:
+            if isinstance(app, dict) and app.get("kill_on") and (app.get("kill") or "").strip():
+                out.append({"label": app.get("cmd", ""), "cmd": app["kill"].strip()})
+    return out
+
+
 def all_kill_commands(settings):
-    """Alles, was vor dem Beenden der Autostart-Programme laufen soll."""
+    """Alles, was vor dem Beenden der Autostart-Programme laufen soll
+    (Dashboard-Zeilen, Profil-Zeilen, alte Liste aus „Erweitert“)."""
     legacy = list((settings or {}).get("custom_kill_commands") or [])
-    return legacy + row_kill_commands(settings)
+    return legacy + row_kill_commands(settings) + profile_kill_commands(settings)

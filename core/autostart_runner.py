@@ -396,6 +396,8 @@ def profile_watch(settings, terminal_command=None, _sleep=time.sleep, _now=time.
                 log.info("[CLI-Profile] '%s': starte Programme.", prof["name"])
             elif action == "stop":
                 pending = [x for x in pending if x[1] != i]
+                if groups[i]:
+                    exit_guard.run_kill_commands(engine.kill_commands(prof))
                 exit_guard.stop_groups([(g, s_) for g, s_ in groups[i]])
                 groups[i] = []
                 changed = True

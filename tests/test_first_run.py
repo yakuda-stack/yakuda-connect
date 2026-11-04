@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, os.path.join(HERE, "..", "core"))
 
 import pytest  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
 from test_exit_guard import window, _FakeProc, exit_guard, wivrn_server  # noqa: E402,F401
@@ -21,7 +22,11 @@ def chain(window, monkeypatch):
     w.are_critical_packages_missing = lambda: False
     calls = []
     monkeypatch.setattr(vopt, "pending_steps", lambda: [])
-    state = {"wayvr_async": False}
+    state = {"wayvr_async": False, "installing": False}
+    # Echte Paketpruefung/Installation ist umgebungsabhaengig (Dauer, yay …)
+    # — hier zaehlt nur die Logik der Kette. installation_running() selbst
+    # testet test_installation_running_checks_workers.
+    w.installation_running = lambda: state["installing"]
 
     def fake_wayvr():
         calls.append("wayvr")
@@ -30,6 +35,8 @@ def chain(window, monkeypatch):
     w.maybe_offer_tour = lambda: calls.append("tour")
     w.resize(1200, 800)
     w.show()
+    # Die echte Paketpruefung vom Fensterstart abwarten — solange sie
+    # laeuft, gilt die Installation (richtig) als nicht fertig.
     QTest.qWait(50)
     # Springt die App beim Start selbst aufs Dashboard (alle Pakete da),
     # ist schon ein Schritt geplant — der muss verworfen werden.
@@ -149,6 +156,7 @@ def test_startup_jump_runs_chain_exactly_once(packages_present, window, monkeypa
     import json
     import vr_optimize as vopt
     w = window
+    w.installation_running = lambda: False
     calls = []
     monkeypatch.setattr(vopt, "pending_steps", lambda: [])
     w.maybe_offer_wayvr = lambda: calls.append("wayvr") or False
@@ -160,3 +168,94 @@ def test_startup_jump_runs_chain_exactly_once(packages_present, window, monkeypa
     w.ui.sidebar.setCurrentRow(1)             # … und wieder aufs Dashboard
     QTest.qWait(1500)
     assert calls == ["wayvr", "tour"]
+
+
+class _Busy:
+    def __init__(self):
+        self.on = True
+
+    def isRunning(self):
+        return self.on
+
+
+def test_no_chain_while_installation_runs(chain):
+    """Installation laeuft (z. B. xrizer im Terminal): Dashboard-Klick startet
+    nichts und merkt sich nichts. Ist sie fertig und das Dashboard offen,
+    startet die Kette von selbst — genau einmal."""
+    w, calls, state = chain
+    state["installing"] = True
+    w.ui.pages.setCurrentIndex(1)
+    w.maybe_offer_vr_optimize()
+    QTest.qWait(900)
+    assert calls == [] and not w._optimize_checked
+    state["installing"] = False
+    w.first_run_after_install()               # Paketpruefung danach fertig
+    w.first_run_after_install()               # zweite Pruefung: nichts doppelt
+    QTest.qWait(1300)
+    assert calls == ["wayvr", "tour"]
+
+
+def test_no_auto_start_when_not_on_dashboard(chain):
+    w, calls, _state = chain
+    w.ui.pages.setCurrentIndex(0)             # Installations-Tab
+    w.first_run_after_install()
+    QTest.qWait(900)
+    assert calls == [] and not w._optimize_checked
+
+
+def test_no_chain_without_wivrn(chain):
+    w, calls, _state = chain
+    w.are_critical_packages_missing = lambda: True
+    w.maybe_offer_vr_optimize()
+    QTest.qWait(900)
+    assert calls == [] and not w._optimize_checked
+
+
+def test_tour_blocked_while_installation_runs(chain):
+    w, _calls, state = chain
+    state["installing"] = True
+    w.start_tour()
+    assert getattr(w, "_tour", None) is None
+
+
+def test_installation_running_checks_workers():
+    from tabs.first_run_mixin import FirstRunMixin
+
+    class W(FirstRunMixin):
+        pass
+    w = W()
+    assert not w.installation_running()
+    for name in ("worker", "xrizer_worker", "_pkgcheck_worker"):
+        busy = _Busy()
+        setattr(w, name, busy)
+        assert w.installation_running(), name
+        busy.on = False
+        assert not w.installation_running(), name
+
+
+@pytest.mark.parametrize("lang,title", [("de", "Willkommen bei Yakuda Connect!"),
+                                        ("en", "Welcome to Yakuda Connect!"),
+                                        ("fr", "Bienvenue dans Yakuda Connect !")])
+def test_welcome_text_in_every_language(window, lang, title):
+    from translations import set_language
+    set_language(lang)
+    window._set_welcome_text()
+    window.ui.retranslate_ui()
+    text = window.ui.txt_free_info.toPlainText()
+    assert window.ui.btn_welcome_toggle.text() == title
+    assert "VR Central" not in text and title not in text      # nicht doppelt
+    set_language("en")
+
+
+def test_welcome_collapses_and_is_remembered(window):
+    import json
+    import paths
+    ui = window.ui
+    ui.btn_welcome_toggle.click()                 # zuklappen
+    assert ui.txt_free_info.isHidden() and ui.btn_welcome_toggle.arrowType() == Qt.RightArrow
+    with open(paths.config_file("config.json")) as fh:
+        assert json.load(fh)["welcome_collapsed"] is True
+    window.apply_loaded_settings()                # wie beim naechsten Start
+    assert ui.txt_free_info.isHidden()
+    ui.btn_welcome_toggle.click()                 # wieder auf
+    assert not ui.txt_free_info.isHidden() and ui.btn_welcome_toggle.arrowType() == Qt.DownArrow

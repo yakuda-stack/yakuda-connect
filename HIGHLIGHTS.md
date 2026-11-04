@@ -1,6 +1,30 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.7 — 2026-11-02
+
+#### 🇩🇪 Deutsch
+
+* **Keine Popups mehr mitten in der Installation.** Performance-Setup, WayVR-Frage und Tour kommen erst, wenn die Installation komplett fertig ist – und dann von selbst, sobald du auf dem Dashboard bist.
+* **Controls mit einem Klick einrichten.** Beim ersten Öffnen des Controls-Tabs fragt die App, was du brauchst – Deadzone gegen Stick-Drift, Tasten umbelegen, Schubhebel & Joystick für Flugspiele – und installiert es auf Wunsch.
+* **Mehr WiVRn-Einstellungen im Streaming-Tab:** 10-Bit-Farbtiefe (weniger Farbstreifen), „Nur TCP“ bei VPN oder Verbindungsabbrüchen, eigener Servername im Headset und Verbinden per IP, falls das Headset deinen PC nicht findet. Autostart-Profile lassen sich einklappen.
+* **Übersichtlicher Autostart im Dashboard:** jedes Programm als eigene Karte, der ganze Bereich lässt sich einklappen – die Anzahl der Programme steht in der Überschrift. Neu: **▶ Apps starten** zum Testen ohne Headset, und beim Kill-Feld schlägt die App gleich einen passenden Befehl vor.
+* **Sicherer mit neueren WiVRn-Versionen:** Solange ein Headset verbunden ist, verwaltet WiVRn die OpenXR-Runtime selbst – die App zeigt das jetzt richtig an („✔ Von WiVRn verwaltet“) und fasst die Runtime in der Zeit nicht an. Ein Fehler, durch den WiVRns eigene Datei überschrieben werden konnte, ist behoben.
+* **Kill-Befehle jetzt auch in den Autostart-Profilen** – gleiche Zeilen wie im Dashboard, inklusive Vorschlag. Beendet ein Profil seine Programme, läuft der Kill-Befehl mit.
+* **„Willkommen bei Yakuda Connect!“** – der Willkommenstext trägt jetzt den richtigen Namen, ist auch auf Französisch da und lässt sich per Klick auf die Überschrift einklappen.
+
+#### 🇬🇧 English
+
+* **No more popups in the middle of the installation.** Performance Setup, the WayVR question and the tour only show up once the installation is completely finished – and then by themselves as soon as you're on the Dashboard.
+* **Set up Controls in one click.** The first time you open the Controls tab, the app asks what you need – deadzone against stick drift, remapping buttons, throttle & joystick for flight games – and installs it if you want.
+* **More WiVRn settings in the Streaming tab:** 10-bit colour depth (less banding), "TCP only" for VPNs or dropping connections, your own server name in the headset and connecting by IP if the headset doesn't find your PC. Autostart profiles can be collapsed.
+* **Clearer autostart on the Dashboard:** every program as its own card, the whole section can be collapsed – the number of programs shows in the heading. New: **▶ Start apps** to test without a headset, and the kill field suggests a matching command right away.
+* **Safer with newer WiVRn versions:** while a headset is connected WiVRn manages the OpenXR runtime itself – the app now shows that correctly ("✔ Managed by WiVRn") and leaves the runtime alone during that time. A bug that could overwrite WiVRn's own file is fixed.
+* **Kill commands in the autostart profiles too** – same rows as on the Dashboard, including the suggestion. When a profile stops its programs, the kill command runs as well.
+* **"Welcome to Yakuda Connect!"** – the welcome text now carries the right name, is available in French too and can be collapsed by clicking its heading.
+
+---
+
 ### 🚀 v1.4.6 — 2026-10-30
 
 #### 🇩🇪 Deutsch

@@ -32,3 +32,11 @@ def test_all_kill_commands_uses_rows_and_rest():
          "custom_kill_commands": [{"label": "x", "cmd": "pkill x"}]}
     cmds = [e["cmd"] for e in km.all_kill_commands(s)]
     assert cmds == ["pkill x", "pkill a"]
+
+
+def test_profile_kill_commands_in_all():
+    s = {"autostart_profiles": [
+        {"apps": [{"cmd": "vrcx", "kill_on": True, "kill": "pkill -f vrcx"},
+                  {"cmd": "x", "kill_on": False, "kill": "pkill x"}]},
+        "kaputt", {"apps": None}]}
+    assert [e["cmd"] for e in km.all_kill_commands(s)] == ["pkill -f vrcx"]

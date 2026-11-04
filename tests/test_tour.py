@@ -27,6 +27,7 @@ def test_tour_walks_all_steps(window):
     from PySide6.QtWidgets import QApplication
     w = window
     w.are_critical_packages_missing = lambda: False
+    w.installation_running = lambda: False
     w.resize(1400, 900)
     w.show()
     w.start_tour()
@@ -55,6 +56,7 @@ def test_language_flags_switch_app_language(window):
     from translations import get_language, tr
     w = window
     w.are_critical_packages_missing = lambda: False
+    w.installation_running = lambda: False
     w.resize(1400, 900)
     w.show()
     w.start_tour()

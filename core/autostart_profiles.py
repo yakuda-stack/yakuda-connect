@@ -94,6 +94,13 @@ def commands(profile):
             if isinstance(a.get("cmd"), str) and a["cmd"].strip()]
 
 
+def kill_commands(profile):
+    """Eigene Kill-Befehle der Zeilen (Haken „Kill“ an, Feld nicht leer)."""
+    return [{"label": a.get("cmd", ""), "cmd": a["kill"].strip()}
+            for a in profile.get("apps", [])
+            if a.get("kill_on") and isinstance(a.get("kill"), str) and a["kill"].strip()]
+
+
 def armed(profile):
     """Hat das Profil alles, um von selbst zu arbeiten?"""
     return bool(profile.get("enabled") and profile.get("trigger", "").strip()

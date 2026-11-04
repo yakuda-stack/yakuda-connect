@@ -238,6 +238,15 @@ def sync_with_wivrn(config_data):
         else:
             wivrn_data.pop("encoders", None)
 
+    # --- Verbindung & Bildqualitaet (Streaming-Tab, core/wivrn_net.py) ----
+    # bit-depth, tcp-only, hostname, publish-service, port. Nur wenn die
+    # Karte schon einmal gespeichert hat — sonst bleibt fremde Konfiguration
+    # (von Hand gesetzt) unangetastet.
+    if isinstance(config_data.get("wivrn_net"), dict):
+        import wivrn_net
+        wivrn_net.apply(wivrn_data, config_data["wivrn_net"],
+                        config_data.get("encoder", "Auto"))
+
     # --- openvr-compat-path (setzt streaming_tab.py direkt) ---------------
     # Hier bewusst nicht anfassen.
 

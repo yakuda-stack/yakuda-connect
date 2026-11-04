@@ -179,9 +179,12 @@ class VrRuntimeWidget(QWidget):
     # ----------------------------------------------------------------------
     def check_active_openxr_runtime(self):
         """Prueft, welche OpenXR-Runtime aktuell im System aktiv ist."""
+        self._sync_session_lock()
         try:
             active_json = os.path.expanduser("~/.config/openxr/1/active_runtime.json")
-            if os.path.exists(active_json):
+            if oxr.wivrn_managed(active_json):
+                self._set_runtime_label(tr("streaming_rt_managed"), "#a3be8c")
+            elif os.path.exists(active_json):
                 with open(active_json) as f:
                     content = f.read()
                 if "wivrn" in content.lower():
@@ -194,6 +197,17 @@ class VrRuntimeWidget(QWidget):
                 self._set_runtime_label(tr("streaming_rt_none"), "#bf616a")
         except Exception as e:
             self._set_runtime_label(tr("streaming_rt_error") + str(e), "#bf616a")
+
+    def _sync_session_lock(self):
+        """Headset verbunden → WiVRn verwaltet die Runtime; Umschalten sperren
+        (WiVRn stellt beim Trennen sein Backup wieder her)."""
+        try:
+            session = oxr.session_active()
+        except Exception:                                       # noqa: BLE001
+            session = False
+        for btn in (self.btn_switch_wivrn, self.btn_switch_steamvr):
+            btn.setEnabled(not session)
+            btn.setToolTip(tr("openxr_session_locked") if session else "")
 
     def _set_runtime_label(self, text, color):
         self.lbl_active_runtime.setText(text)
@@ -250,6 +264,8 @@ class VrRuntimeWidget(QWidget):
         elif code == "not_elf":
             QMessageBox.warning(self, tr("openxr_group"),
                                 tr("openxr_fix_not_elf").format(path=detail))
+        elif code == "session":
+            QMessageBox.information(self, tr("openxr_group"), tr("openxr_session_locked"))
         else:
             QMessageBox.critical(self, tr("error"), tr("streaming_rt_switch_err") + str(detail))
         return False

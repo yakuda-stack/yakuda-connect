@@ -134,6 +134,8 @@ def runtime_needed():
     """WiVRn ist aktive Runtime UND die active_runtime.json ist korrekt."""
     if not oxr.find_wivrn_libs()[0]:
         return False
+    if oxr.session_active():
+        return False                 # WiVRn verwaltet die Runtime gerade selbst
     return not (oxr.active_runtime_name() == "wivrn" and oxr.is_openxr_fix_applied())
 
 

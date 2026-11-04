@@ -43,6 +43,76 @@ _MONADO_SO = "libmonado_wivrn.so"
 
 
 # --------------------------------------------------------------------------- #
+#  WiVRn verwaltet die Runtime selbst, solange ein Headset verbunden ist
+# --------------------------------------------------------------------------- #
+#  WiVRn (server/active_runtime.cpp) ersetzt beim Verbinden eines Headsets
+#  active_runtime.json durch eine VERKNUEPFUNG auf sein eigenes Manifest
+#  (openxr_wivrn*.json) und benennt die vorhandene Datei in
+#  „….wivrn-backup“ um; beim Trennen/Stoppen stellt es sie wieder her.
+#  Seit 26.6.1 raeumt es eine liegengebliebene Verknuepfung beim Start auf.
+#
+#  Folgen fuer diese App:
+#    * Eine solche Verknuepfung ist KEIN Fehler -> Status "managed".
+#    * Nie DURCH eine Verknuepfung schreiben (open(…, "w") folgt ihr und
+#      ueberschreibe WiVRns Manifest — mit pkexec sogar die Paketdatei unter
+#      /usr/share/openxr/1/). Vorher entfernen.
+#    * Waehrend einer Sitzung gar nicht schreiben: WiVRn stellt beim Trennen
+#      sein Backup wieder her, die Aenderung waere ohnehin weg.
+
+def wivrn_managed(path=None):
+    """Zeigt active_runtime.json per Verknuepfung auf WiVRns Manifest?"""
+    path = path or ACTIVE_RUNTIME
+    if not os.path.islink(path):
+        return False
+    try:
+        target = os.readlink(path)
+    except OSError:
+        return False
+    return os.path.basename(target).startswith("openxr_wivrn")
+
+
+def _session_port():
+    try:
+        import wivrn_net
+        from jsonio import read_json
+        return wivrn_net.read_current(read_json(venv.wivrn_config_file(), default={}))["port"]
+    except Exception:                                          # noqa: BLE001
+        return 9757
+
+
+def session_active():
+    """Laeuft gerade eine WiVRn-Sitzung (Headset verbunden)? Dann die
+    Runtime nicht anfassen."""
+    try:
+        import process_watch
+        if process_watch.headset_connected(port=_session_port()):
+            return True
+    except Exception as exc:                                   # noqa: BLE001
+        log.debug("session_active (Port): %s", exc)
+    if wivrn_managed():
+        try:
+            import wivrn_server
+            return bool(wivrn_server.is_running())
+        except Exception:                                      # noqa: BLE001
+            return True
+    return False
+
+
+def _prepare_target(target):
+    """Vor dem Schreiben: Verknuepfung entfernen (nie hindurch schreiben),
+    eine echte Datei mit Zeitstempel sichern. Rueckgabe: Sicherungspfad oder ''."""
+    if os.path.islink(target):
+        os.remove(target)
+        return ""
+    if os.path.exists(target):
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        bak = target + f".bak.{stamp}"
+        shutil.copy2(target, bak)
+        return bak
+    return ""
+
+
+# --------------------------------------------------------------------------- #
 #  Bibliotheken finden
 # --------------------------------------------------------------------------- #
 def _resolve_from_manifest():
@@ -135,7 +205,10 @@ def current_status():
       'ok'      -> active_runtime.json zeigt absolut auf eine existierende .so
       'broken'  -> Datei vorhanden, aber Pfad falsch/relativ/zeigt auf .json
       'missing' -> keine eigene active_runtime.json (System-Standard greift)
+      'managed' -> Verknuepfung von WiVRn (Headset verbunden) — kein Fehler
     """
+    if wivrn_managed():
+        return "managed", os.path.realpath(ACTIVE_RUNTIME)
     if not os.path.exists(ACTIVE_RUNTIME):
         return "missing", ""
     try:
@@ -153,7 +226,7 @@ def current_status():
 
 def is_openxr_fix_applied():
     state, _ = current_status()
-    return state == "ok"
+    return state in ("ok", "managed")
 
 
 def active_runtime_name():
@@ -167,6 +240,8 @@ def active_runtime_name():
     stillschweigend rueckgaengig machen — deshalb wird vorher gefragt.
     """
     path = venv.primary_active_runtime()
+    if wivrn_managed(path):
+        return "wivrn"
     if not os.path.exists(path):
         return "none"
     try:
@@ -202,6 +277,8 @@ def apply_steamvr_runtime():
         code: 'ok' | 'steamvr_not_found' | 'write_failed'
         detail bei Erfolg: Pfad der Sicherung (oder "")
     """
+    if session_active():
+        return False, "session", ""
     lib = venv.find_steamvr_lib()
     if not lib:
         return False, "steamvr_not_found", venv.find_steamvr_manifest()
@@ -220,12 +297,9 @@ def apply_steamvr_runtime():
         target = os.path.join(d, "active_runtime.json")
         try:
             os.makedirs(d, exist_ok=True)
-            if os.path.exists(target):
-                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                bak = target + f".bak.{stamp}"
-                shutil.copy2(target, bak)
-                if target == ACTIVE_RUNTIME:
-                    backup = bak
+            bak = _prepare_target(target)
+            if bak and target == ACTIVE_RUNTIME:
+                backup = bak
             with open(target, "w") as f:
                 json.dump(runtime, f, indent=4)
             wrote_any = True
@@ -252,6 +326,8 @@ def apply_openxr_fix():
       code: 'ok' | 'libs_not_found' | 'not_elf' | 'write_failed'
       detail bei Erfolg: Pfad der Sicherung (oder "")
     """
+    if session_active():
+        return False, "session", ""
     openxr_so, monado_so = find_wivrn_libs()
     if not openxr_so or not os.path.exists(openxr_so):
         return False, "libs_not_found", ""
@@ -277,12 +353,9 @@ def apply_openxr_fix():
         target = os.path.join(d, "active_runtime.json")
         try:
             os.makedirs(d, exist_ok=True)
-            if os.path.exists(target):
-                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                bak = target + f".bak.{stamp}"
-                shutil.copy2(target, bak)
-                if target == ACTIVE_RUNTIME:
-                    backup = bak
+            bak = _prepare_target(target)
+            if bak and target == ACTIVE_RUNTIME:
+                backup = bak
             with open(target, "w") as f:
                 json.dump(runtime, f, indent=4)
             wrote_any = True
@@ -308,6 +381,8 @@ def apply_openxr_fix_elevated():
     wieder dem Benutzer, damit künftige Fixes OHNE Root funktionieren.
     Rückgabe wie apply_openxr_fix: (erfolg, code, detail).
     """
+    if session_active():
+        return False, "session", ""
     import tempfile
     import subprocess
 
@@ -343,7 +418,10 @@ def apply_openxr_fix_elevated():
         target = os.path.join(d, "active_runtime.json")
         parts.append(f"mkdir -p '{d}'")
         # Vorhandene Datei mit Zeitstempel sichern (nichts geht verloren)
-        parts.append(f"if [ -f '{target}' ]; then cp '{target}' '{target}.bak.{stamp}'; fi")
+        # Verknuepfung (von WiVRn) entfernen statt hindurch zu kopieren —
+        # sonst landete die Datei in WiVRns Manifest unter /usr/share.
+        parts.append(f"if [ -L '{target}' ]; then rm -f '{target}'; "
+                     f"elif [ -f '{target}' ]; then cp '{target}' '{target}.bak.{stamp}'; fi")
         parts.append(f"cp '{tmp.name}' '{target}'")
         # Ordner + Datei zurück an den Benutzer, damit es künftig ohne Root geht
         parts.append(f"chown -R {uid}:{gid} '{d}'")

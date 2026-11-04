@@ -54,6 +54,8 @@ from jsonio import read_json, write_json_atomic
 from logging_setup import get_logger
 from translations import tr
 
+from ui.autostart_row import row_data  # noqa: E402
+
 log = get_logger("autostart_profiles")
 
 PROFILE_KEY = engine.PROFILE_KEY
@@ -153,8 +155,18 @@ class AutostartProfilesMixin:
         """Gruppe „Autostart-Profile“ oben in den Streaming-Tab setzen."""
         from ui.ui_main import ToggleSwitch
         ui = self.ui
-        group = QGroupBox(tr("autostart_profiles_group"))
-        v = QVBoxLayout(group)
+        from ui.collapsible import CollapsibleHeader
+        group = QGroupBox("")
+        group.setObjectName("headerlessGroup")
+        outer = QVBoxLayout(group)
+        # Ein-/ausklappbar (Zustand in config.json, ui/collapsible.py)
+        content = QWidget()
+        v = QVBoxLayout(content)
+        v.setContentsMargins(0, 0, 0, 0)
+        ui.autostart_profiles_header = CollapsibleHeader("autostart_profiles", content)
+        ui.autostart_profiles_header.setText(tr("autostart_profiles_group"))
+        outer.addWidget(ui.autostart_profiles_header, 0, Qt.AlignLeft)
+        outer.addWidget(content)
 
         head = QHBoxLayout()
         ui.toggle_profiles = ToggleSwitch()
@@ -297,9 +309,12 @@ class AutostartProfilesMixin:
         r2.addWidget(chk_enabled)
         v.addLayout(r2)
 
-        # Programme
+        # Programme — Kopfzeile Debug | Kill wie im Dashboard
+        from ui.autostart_row import column_header
+        col_head, col_labels = column_header()
+        v.addLayout(col_head)
         rows_box = QVBoxLayout()
-        rows_box.setSpacing(4)
+        rows_box.setSpacing(6)
         v.addLayout(rows_box)
 
         # Fusszeile: + Programm, Status
@@ -339,7 +354,7 @@ class AutostartProfilesMixin:
 
         prof = {
             "name": data.get("name", "Profil"),
-            "page": page, "rows_box": rows_box, "rows": [],
+            "page": page, "rows_box": rows_box, "rows": [], "col_labels": col_labels,
             "lbl_trigger": lbl_trigger, "inp_trigger": inp_trigger,
             "btn_pick": btn_pick, "btn_games": btn_games,
             "chk_enabled": chk_enabled, "btn_start_now": btn_start_now,
@@ -401,54 +416,15 @@ class AutostartProfilesMixin:
         return prof
 
     def _profile_add_row(self, prof, app):
-        """Programmzeile — gleiche Bedienung wie im VR-Tab, plus ✕."""
+        """Programmzeile — dieselbe Zeile wie im Dashboard (ui/autostart_row.py):
+        Karte, Debug | Kill, Kill-Befehl mit Vorschlag."""
+        from ui.autostart_row import build_row
         if len(prof["rows"]) >= MAX_ROWS:
             return
-        row_w = QWidget()
-        h = QHBoxLayout(row_w)
-        h.setContentsMargins(0, 0, 0, 0)
-        combo = QComboBox()
-        combo.addItems(["Custom Path", "CMD"])
-        combo.setFixedWidth(110)
-        inp = QLineEdit(app.get("cmd", ""))
-        completer = QCompleter(self._autostart_command_pool(), self)
-        completer.setCaseSensitivity(Qt.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchContains)
-        completer.setCompletionMode(QCompleter.PopupCompletion)
-        inp.setCompleter(completer)
-        btn = QPushButton()
-        btn.setMinimumWidth(95)
-        chk_debug = QCheckBox("Debug")
-        chk_debug.setToolTip(tr("autostart_debug_tip"))
-        chk_debug.setFixedWidth(65)
-        chk_debug.setStyleSheet("color: #ebcb8b; font-size: 11px;")
-        chk_debug.setChecked(bool(app.get("debug", False)))
-        btn_del = QPushButton("✕")
-        btn_del.setFixedWidth(30)
-        btn_del.setToolTip(tr("autostart_profile_row_del_tip"))
-        btn_del.setStyleSheet(
-            "QPushButton { background-color:#2e3440; color:#bf616a; border:1px solid #4c566a;"
-            " font-weight:bold; padding:4px; border-radius:4px; }"
-            "QPushButton:hover { background-color:#bf616a; color:white; border-color:#bf616a; }")
-
-        combo.setCurrentText(app.get("type", "Custom Path"))
-        for w in (combo, inp, btn, chk_debug, btn_del):
-            h.addWidget(w)
-        h.setStretch(1, 1)
-        prof["rows_box"].addWidget(row_w)
-
-        row = {"widget": row_w, "combo": combo, "input": inp,
-               "btn": btn, "chk_debug": chk_debug}
+        row = build_row(self, app, on_change=self._profiles_changed,
+                        on_delete=lambda r, p=prof: self._profile_remove_row(p, r))
+        prof["rows_box"].addWidget(row["widget"])
         prof["rows"].append(row)
-
-        combo.currentTextChanged.connect(
-            lambda text, le=inp, bb=btn: self._autostart_mode_changed(text, le, bb))
-        combo.currentTextChanged.connect(self._profiles_changed)
-        inp.textChanged.connect(self._profiles_changed)
-        chk_debug.toggled.connect(self._profiles_changed)
-        btn.clicked.connect(lambda _c=False, le=inp, cb=combo: self._autostart_browse(le, cb))
-        btn_del.clicked.connect(lambda: self._profile_remove_row(prof, row))
-        self._autostart_mode_changed(combo.currentText(), inp, btn)
 
     def _profile_remove_row(self, prof, row):
         try:
@@ -602,9 +578,7 @@ class AutostartProfilesMixin:
             "gap": prof["spin_gap"].value(),
             "stop_with": prof["chk_stop"].isChecked(),
             "enabled": prof["chk_enabled"].isChecked(),
-            "apps": [{"type": r["combo"].currentText(),
-                      "cmd": r["input"].text(),
-                      "debug": r["chk_debug"].isChecked()} for r in prof["rows"]],
+            "apps": [row_data(r) for r in prof["rows"]],
         }
 
     def _profiles_changed(self, *_args):
@@ -748,6 +722,10 @@ class AutostartProfilesMixin:
 
     def _profile_stop(self, prof):
         prof["gen"] += 1               # noch ausstehende Staffel-Starts verfallen
+        if prof["procs"] or prof["ext"]:
+            # Eigene Kill-Befehle der Zeilen zuerst (wie im Dashboard)
+            import exit_guard
+            exit_guard.run_kill_commands(engine.kill_commands(self._profile_data(prof)))
         if prof["procs"]:
             self._kill_proc_groups(prof["procs"])
             log.info("[Profile] '%s': Programme beendet.", prof["name"])
@@ -918,8 +896,10 @@ class AutostartProfilesMixin:
         prof["chk_stop"].setText(tr("autostart_profile_stop_with"))
         prof["chk_stop"].setToolTip(tr("autostart_profile_stop_with_tip"))
         prof["btn_add_row"].setText(tr("autostart_profile_add_row"))
+        from ui.autostart_row import retranslate_header, retranslate_row
+        retranslate_header(prof["col_labels"])
         for r in prof["rows"]:
-            r["chk_debug"].setToolTip(tr("autostart_debug_tip"))
+            retranslate_row(r)
             self._autostart_mode_changed(r["combo"].currentText(), r["input"], r["btn"])
         self._profile_render_status(prof)
 
@@ -946,7 +926,7 @@ class AutostartProfilesMixin:
             if prof.get("btn_close") is not None:
                 prof["btn_close"].setToolTip(tr("autostart_profile_delete_title"))
         ui = self.ui
-        ui.autostart_profiles_group.setTitle(tr("autostart_profiles_group"))
+        ui.autostart_profiles_header.setText(tr("autostart_profiles_group"))
         ui.lbl_toggle_profiles.setText(tr("autostart_profiles_toggle"))
         ui.lbl_profiles_hint.setText(tr("autostart_profiles_hint"))
         ui.lbl_profiles_empty.setText(tr("autostart_profiles_empty"))

@@ -12,6 +12,11 @@ import vr_environment as venv
 
 from logging_setup import get_logger
 
+
+def socket_hostname():
+    import socket
+    return socket.gethostname()
+
 log = get_logger("streaming_tab")
 
 
@@ -309,6 +314,9 @@ class StreamingTab(QWidget):
         moved_row.addWidget(self.btn_goto_vr_settings)
         layout.addLayout(moved_row)
 
+        # --- Verbindung & Bildqualitaet (ueber den Autostart-Profilen) ---
+        self._build_connection_group(layout)
+
         layout.addStretch()
 
         # --- SIGNALE VERKNÜPFEN ---
@@ -326,9 +334,15 @@ class StreamingTab(QWidget):
         self.combo_gpu.activated.connect(self._on_gpu_picked)
         self.combo_codec.activated.connect(self.trigger_auto_save)
         self.slider_bitrate.sliderReleased.connect(self.trigger_auto_save)
+        self.combo_encoder.activated.connect(lambda _i: self._on_connection_changed())
 
 
     def retranslate(self):
+        if hasattr(self, "conn_group"):
+            self._retranslate_connection()
+        self._retranslate_main()
+
+    def _retranslate_main(self):
         """Setzt alle statischen Texte des Streaming-Tabs neu (nach Sprachwechsel)."""
         self.lbl_title.setText(tr("streaming_title"))
         self.compat_group.setTitle(tr_amp("streaming_compat"))
@@ -712,6 +726,162 @@ class StreamingTab(QWidget):
         if self.main_app and hasattr(self.main_app, "open_vr_settings"):
             self.main_app.open_vr_settings()
 
+    # ------------------------------------------------------------------ #
+    #  Verbindung & Bildqualitaet (core/wivrn_net.py)
+    # ------------------------------------------------------------------ #
+    def _build_connection_group(self, layout):
+        """Gleicher Aufbau wie „Hardware-Encoder & Performance“:
+        Bezeichnung | Auswahl | grauer Hinweis — je eine Zeile."""
+        from PySide6.QtWidgets import QComboBox, QGroupBox, QLineEdit, QSpinBox
+        import wivrn_net
+
+        self.conn_group = QGroupBox(tr_amp("streaming_net_group"))
+        form = QFormLayout(self.conn_group)
+
+        def row(widget, hint_key):
+            w = QWidget()
+            h = QHBoxLayout(w)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(10)
+            h.addWidget(widget)
+            hint = QLabel(tr(hint_key))
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color:#7b88a1; font-size:11px;")
+            h.addWidget(hint, 1)
+            return w, hint
+
+        self.combo_bit_depth = QComboBox()
+        self.combo_bit_depth.addItem("", False)
+        self.combo_bit_depth.addItem("", True)
+        self.lbl_bit_depth = QLabel()
+        w, self.lbl_bit_depth_hint = row(self.combo_bit_depth, "streaming_net_10bit_hint")
+        form.addRow(self.lbl_bit_depth, w)
+
+        self.combo_transport = QComboBox()
+        self.combo_transport.addItem("", False)
+        self.combo_transport.addItem("", True)
+        self.lbl_transport = QLabel()
+        w, self.lbl_transport_hint = row(self.combo_transport, "streaming_net_tcp_hint")
+        form.addRow(self.lbl_transport, w)
+
+        self.edit_hostname = QLineEdit()
+        self.edit_hostname.setMaxLength(60)
+        self.edit_hostname.setMinimumWidth(220)
+        self.edit_hostname.setPlaceholderText(socket_hostname())
+        self.lbl_hostname = QLabel()
+        w, self.lbl_hostname_hint = row(self.edit_hostname, "streaming_net_hostname_hint")
+        form.addRow(self.lbl_hostname, w)
+
+        self.combo_discovery = QComboBox()
+        self.combo_discovery.addItem("", False)
+        self.combo_discovery.addItem("", True)
+        self.lbl_discovery = QLabel()
+        w, self.lbl_discovery_hint = row(self.combo_discovery, "streaming_net_manual_hint")
+        form.addRow(self.lbl_discovery, w)
+
+        # Nur bei „Manuell“: Port + was im Headset einzutragen ist
+        self.spin_port = QSpinBox()
+        self.spin_port.setRange(1024, 65535)
+        self.spin_port.setValue(wivrn_net.DEFAULT_PORT)
+        self.lbl_port = QLabel()
+        self.port_row = QWidget()
+        pr = QHBoxLayout(self.port_row)
+        pr.setContentsMargins(0, 0, 0, 0)
+        pr.setSpacing(10)
+        pr.addWidget(self.spin_port)
+        self.lbl_ip = QLabel()
+        self.lbl_ip.setStyleSheet("color:#88c0d0; font-weight:bold;")
+        self.lbl_ip.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        pr.addWidget(self.lbl_ip)
+        self.lbl_port_warn = QLabel()
+        self.lbl_port_warn.setWordWrap(True)
+        self.lbl_port_warn.setStyleSheet("color:#ebcb8b; font-size:11px;")
+        pr.addWidget(self.lbl_port_warn, 1)
+        form.addRow(self.lbl_port, self.port_row)
+
+        self.lbl_net_restart = QLabel()
+        self.lbl_net_restart.setWordWrap(True)
+        self.lbl_net_restart.setStyleSheet("color:#4c566a; font-size:11px;")
+        form.addRow(self.lbl_net_restart)
+
+        layout.addWidget(self.conn_group)
+        self._retranslate_connection()
+        self.load_connection_settings()
+
+        for combo in (self.combo_bit_depth, self.combo_transport, self.combo_discovery):
+            combo.activated.connect(lambda _i: self._on_connection_changed())
+        self.edit_hostname.editingFinished.connect(self._on_connection_changed)
+        self.spin_port.editingFinished.connect(self._on_connection_changed)
+
+    def _retranslate_connection(self):
+        self.conn_group.setTitle(tr_amp("streaming_net_group"))
+        self.lbl_bit_depth.setText(tr("streaming_net_depth"))
+        self.combo_bit_depth.setItemText(0, tr("streaming_net_depth_8"))
+        self.combo_bit_depth.setItemText(1, tr("streaming_net_depth_10"))
+        self.lbl_bit_depth_hint.setText(tr("streaming_net_10bit_hint"))
+        self.lbl_transport.setText(tr("streaming_net_transport"))
+        self.combo_transport.setItemText(0, tr("streaming_net_transport_both"))
+        self.combo_transport.setItemText(1, tr("streaming_net_transport_tcp"))
+        self.lbl_transport_hint.setText(tr("streaming_net_tcp_hint"))
+        self.lbl_hostname.setText(tr("streaming_net_hostname"))
+        self.lbl_hostname_hint.setText(tr("streaming_net_hostname_hint"))
+        self.lbl_discovery.setText(tr("streaming_net_discovery"))
+        self.combo_discovery.setItemText(0, tr("streaming_net_discovery_auto"))
+        self.combo_discovery.setItemText(1, tr("streaming_net_discovery_manual"))
+        self.lbl_discovery_hint.setText(tr("streaming_net_manual_hint"))
+        self.lbl_port.setText(tr("streaming_net_port"))
+        self.lbl_net_restart.setText(tr("streaming_net_restart"))
+        self._sync_connection_view()
+
+    @staticmethod
+    def _set_combo_bool(combo, value):
+        combo.blockSignals(True)
+        combo.setCurrentIndex(1 if value else 0)
+        combo.blockSignals(False)
+
+    def load_connection_settings(self):
+        """Stand direkt aus WiVRns config.json (dort ist er massgeblich)."""
+        import wivrn_net
+        from jsonio import read_json
+        cur = wivrn_net.read_current(read_json(venv.wivrn_config_file(), default={}))
+        self._set_combo_bool(self.combo_bit_depth, cur["bit10"])
+        self._set_combo_bool(self.combo_transport, cur["tcp_only"])
+        self._set_combo_bool(self.combo_discovery, cur["manual"])
+        for w, val in ((self.edit_hostname, cur["hostname"]), (self.spin_port, cur["port"])):
+            w.blockSignals(True)
+            (w.setText if isinstance(val, str) else w.setValue)(val)
+            w.blockSignals(False)
+        self._sync_connection_view()
+
+    def connection_settings(self):
+        return {"bit10": bool(self.combo_bit_depth.currentData()),
+                "tcp_only": bool(self.combo_transport.currentData()),
+                "hostname": self.edit_hostname.text().strip(),
+                "manual": bool(self.combo_discovery.currentData()),
+                "port": self.spin_port.value()}
+
+    def _sync_ten_bit(self):
+        import wivrn_net
+        ok = wivrn_net.ten_bit_possible(self.combo_encoder.currentText())
+        self.combo_bit_depth.setEnabled(ok)
+        self.combo_bit_depth.setToolTip("" if ok else tr("streaming_net_10bit_off"))
+
+    def _sync_connection_view(self):
+        import wivrn_net
+        self._sync_ten_bit()
+        manual = bool(self.combo_discovery.currentData())
+        form = self.conn_group.layout()
+        form.setRowVisible(self.port_row, manual)
+        ip = wivrn_net.local_ip() if manual else ""
+        port = self.spin_port.value()
+        self.lbl_ip.setText(tr("streaming_net_ip").format(ip=f"{ip}:{port}") if ip else "")
+        warn = manual and port != wivrn_net.DEFAULT_PORT
+        self.lbl_port_warn.setText(tr("streaming_net_port_warn").format(port=port) if warn else "")
+
+    def _on_connection_changed(self):
+        self._sync_connection_view()
+        self.trigger_auto_save()
+
     def trigger_auto_save(self):
         """Reicht die aktuellen Streaming-Werte an die Hauptanwendung weiter und speichert."""
         if self.main_app and hasattr(self.main_app, 'is_loading') and self.main_app.is_loading:
@@ -728,6 +898,7 @@ class StreamingTab(QWidget):
             "codec": self.combo_codec.currentText(),
             "bitrate": self.slider_bitrate.value(),
             "gpu_device": self.current_gpu_id(),
+            "wivrn_net": self.connection_settings(),
         }
 
         # Hand-/Full-Body-Tracking haben keine Schalter mehr im Dashboard —

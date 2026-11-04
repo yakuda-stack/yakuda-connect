@@ -17,6 +17,11 @@ Schutz gegen Durcheinander:
   * Jeder Start bekommt eine Nummer (_first_run_gen). Geplante Schritte
     eines aelteren Starts (z. B. vom automatischen Dashboard-Sprung beim
     Programmstart, vor einem Zuruecksetzen) verwerfen sich selbst.
+  * Erst wenn die Installation FERTIG ist (installation_ready): WiVRn da,
+    keine Installation laeuft, Paketpruefung abgeschlossen. Sonst startet
+    nichts und es wird auch nichts gemerkt — ist die Installation spaeter
+    fertig und das Dashboard offen, startet die Kette von selbst
+    (first_run_after_install aus der Paketpruefung).
   * Jeder Schritt wartet, bis das Fenster sichtbar ist, nichts mehr laedt
     und kein anderes Fenster (z. B. „Was ist neu“) offen ist. Wichtig, weil
     die App beim Start selbst aufs Dashboard springt, sobald alle Pakete da
@@ -35,9 +40,10 @@ from translations import tr
 
 log = get_logger("first_run")
 
-FIRST_RUN_KEYS = ("dashboard_optimize_asked", "dashboard_wayvr_asked", "tour_asked")
+FIRST_RUN_KEYS = ("dashboard_optimize_asked", "dashboard_wayvr_asked", "tour_asked",
+                  "controls_setup_asked")
 _SESSION_FLAGS = ("_optimize_checked", "_wayvr_offer_checked", "_tour_offer_checked",
-                  "_first_run_busy", "_tour_after_wayvr")
+                  "_first_run_busy", "_tour_after_wayvr", "_controls_setup_checked")
 RETRY_MS = 500
 
 
@@ -49,14 +55,42 @@ class FirstRunMixin:
     def tour_running(self):
         return getattr(self, "_tour", None) is not None
 
+    @staticmethod
+    def _running(worker):
+        try:
+            return worker is not None and worker.isRunning()
+        except RuntimeError:                     # Qt-Objekt schon geloescht
+            return False
+
+    def installation_running(self):
+        """Laeuft gerade eine Installation oder die Paketpruefung?"""
+        return any(self._running(getattr(self, name, None))
+                   for name in ("worker", "xrizer_worker", "_pkgcheck_worker"))
+
+    def installation_ready(self):
+        """Installation fertig: WiVRn da, nichts installiert/prueft gerade."""
+        return not self.installation_running() and not self.are_critical_packages_missing()
+
     def first_run_may_start(self):
-        return not getattr(self, "_first_run_busy", False) and not self.tour_running()
+        return (not getattr(self, "_first_run_busy", False) and not self.tour_running()
+                and self.installation_ready())
 
     def first_run_ready(self):
         """Darf jetzt ein Popup der Kette erscheinen?"""
         return (self.isVisible() and not getattr(self, "is_loading", False)
                 and QApplication.activeModalWidget() is None
-                and not self.tour_running())
+                and not self.tour_running()
+                and not self.installation_running())
+
+    def first_run_after_install(self):
+        """Nach jeder Paketpruefung: Installation jetzt fertig und das
+        Dashboard offen? Dann die (noch nicht gelaufene) Kette starten."""
+        try:
+            on_dashboard = self.ui.pages.currentIndex() == 1
+        except RuntimeError:
+            return
+        if on_dashboard and hasattr(self, "maybe_offer_vr_optimize"):
+            self.maybe_offer_vr_optimize()
 
     def first_run_begin(self):
         """Neuer Start der Kette. Rueckgabe: seine Nummer."""

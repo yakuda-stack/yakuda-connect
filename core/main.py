@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.6"
+APP_VERSION = "v1.4.7"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -99,6 +99,7 @@ from tabs.dashboard_optimize_mixin import DashboardOptimizeMixin
 from tabs.dashboard_wayvr_mixin import DashboardWayVRMixin
 from tabs.tour_mixin import TourMixin
 from tabs.first_run_mixin import FirstRunMixin
+from tabs.controls_setup_mixin import ControlsSetupMixin
 from tabs.games_optimize_mixin import GamesOptimizeMixin
 
 # Interne Importe (liegen im selben Ordner 'core')
@@ -338,7 +339,7 @@ class PackageCheckWorker(QThread):
         self.result_signal.emit(results, updates_available)
 
 
-class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMixin, FirstRunMixin, GamesOptimizeMixin, GamesTabMixin, ToolsTabMixin,
+class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMixin, FirstRunMixin, ControlsSetupMixin, GamesOptimizeMixin, GamesTabMixin, ToolsTabMixin,
             ControlsTabMixin, XrControlsMixin,
             AutostartProfilesMixin, QMainWindow):
     """
@@ -555,48 +556,23 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         QTimer.singleShot(4000, self._start_openxr_health_check)
 
     def _set_welcome_text(self):
-        """Setzt den Willkommenstext je nach aktiver Sprache."""
-        lang = get_language()
-        if lang == "de":
-            html = """
-            <p style='color: #88c0d0; font-weight: bold; font-size: 15px; margin-bottom: 8px;'>
-                Willkommen bei Linux VR Central!
-            </p>
-            <p style='margin-bottom: 12px;'>
-                Wenn du die Software zum ersten Mal startest, vergewissere dich, dass dein Headset eingeschaltet und im selben Netzwerk ist.
-                <b>Wichtig:</b> Bitte lies dir die folgenden Backup-Hinweise durch. Weiter unten findest du zudem wichtige Informationen zur Performance.
-            </p>
-            <hr style='border: none; border-top: 1px solid #3b4252; margin-bottom: 12px;' />
-            <p style='color: #d08770; font-weight: bold; margin-bottom: 4px;'>⚠️ WICHTIG: Erster Start & OpenXR-Backups</p>
-            <ul style='margin-top: 0px; margin-bottom: 14px; padding-left: 20px;'>
-                <li style='margin-bottom: 4px;'>Bitte starte diesen Launcher <b>einmal komplett neu</b>, nachdem du das erste Mal ein Spiel in VR gestartet hast.</li>
-                <li>Nach dem Neustart erscheinen hier darüber <b>zwei neue Buttons</b>. Damit kannst du ein Backup deiner OpenXR/OpenVR-Umgebung erstellen.</li>
-            </ul>
-            <p style='color: #ebcb8b; font-weight: bold; margin-bottom: 4px;'>ℹ️ Info: Erststart, Performance & OpenVR-Kompatibilität</p>
-            <ul style='margin-top: 0px; padding-left: 20px;'>
-                <li style='margin-bottom: 4px;'>Die OpenVR-Kompatibilität wird beim ersten Mal automatisch auf <b>OpenComposite</b> gestellt.</li>
-                <li>Nach dem ersten erfolgreichen Verbinden kannst du die Runtime für mehr Performance auf <b>xrizer</b> umstellen.</li>
-            </ul>"""
-        else:
-            html = """
-            <p style='color: #88c0d0; font-weight: bold; font-size: 15px; margin-bottom: 8px;'>
-                Welcome to Linux VR Central!
-            </p>
-            <p style='margin-bottom: 12px;'>
-                When starting the software for the first time, make sure your headset is powered on and connected to the same network.
-                <b>Important:</b> Please read the backup notes below. You will also find important performance information further down.
-            </p>
-            <hr style='border: none; border-top: 1px solid #3b4252; margin-bottom: 12px;' />
-            <p style='color: #d08770; font-weight: bold; margin-bottom: 4px;'>⚠️ IMPORTANT: First Launch & OpenXR Backups</p>
-            <ul style='margin-top: 0px; margin-bottom: 14px; padding-left: 20px;'>
-                <li style='margin-bottom: 4px;'>Please restart this launcher <b>once</b> after launching a VR game for the first time.</li>
-                <li>After restarting, <b>two new buttons</b> will appear above. Use them to create a backup of your OpenXR/OpenVR environment.</li>
-            </ul>
-            <p style='color: #ebcb8b; font-weight: bold; margin-bottom: 4px;'>ℹ️ Info: First Launch, Performance & OpenVR Compatibility</p>
-            <ul style='margin-top: 0px; padding-left: 20px;'>
-                <li style='margin-bottom: 4px;'>OpenVR compatibility is automatically set to <b>OpenComposite</b> on first launch.</li>
-                <li>After successfully connecting, you can switch the runtime to <b>xrizer</b> for better performance.</li>
-            </ul>"""
+        """Willkommenstext im Installations-Tab — Texte aus locales/*.json
+        (welcome_*), damit es ihn in jeder Sprache gibt."""
+        li = "<li style='margin-bottom: 4px;'>{}</li>"
+        # Der Titel steht in der Klapp-Kopfzeile darueber (btn_welcome_toggle)
+        html = (
+            f"<p style='margin-bottom: 12px;'>{tr('welcome_intro')}</p>"
+            "<hr style='border: none; border-top: 1px solid #3b4252; margin-bottom: 12px;' />"
+            "<p style='color: #d08770; font-weight: bold; margin-bottom: 4px;'>"
+            f"⚠️ {tr('welcome_backup_head')}</p>"
+            "<ul style='margin-top: 0px; margin-bottom: 14px; padding-left: 20px;'>"
+            + li.format(tr("welcome_backup_1")) + li.format(tr("welcome_backup_2")) +
+            "</ul>"
+            "<p style='color: #ebcb8b; font-weight: bold; margin-bottom: 4px;'>"
+            f"ℹ️ {tr('welcome_info_head')}</p>"
+            "<ul style='margin-top: 0px; padding-left: 20px;'>"
+            + li.format(tr("welcome_info_1")) + li.format(tr("welcome_info_2")) +
+            "</ul>")
         self.ui.txt_free_info.setHtml(html)
 
     # ------------------------------------------------------------------ #
@@ -985,7 +961,16 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             which = oxr.active_runtime_name()
         except Exception:
             state, which = "missing", "none"
-        if state == "ok" and which == "steamvr":
+        # Waehrend einer Sitzung verwaltet WiVRn die Runtime selbst — dann
+        # nichts reparieren (Knopf grau, Hinweis im Tooltip).
+        session = oxr.session_active()
+        self.ui.btn_openxr_fix.setEnabled(not session)
+        self.ui.btn_openxr_fix.setToolTip(tr("openxr_session_locked") if session else "")
+        if state == "managed":
+            self.ui.lbl_openxr_status.setText(tr("openxr_status_managed"))
+            self.ui.lbl_openxr_status.setStyleSheet(
+                "color: #a3be8c; font-size: 11px; font-weight: bold;")
+        elif state == "ok" and which == "steamvr":
             # Gueltig, aber eben nicht WiVRn. Ohne diesen Fall stand hier
             # "bereit fuer Steam" — richtig, aber nicht die Information, die
             # jemand sucht, der gerade auf SteamVR umgestellt hat.
@@ -1012,6 +997,10 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         # Der Fix schreibt IMMER WiVRn als aktive Runtime. Steht dort gerade
         # bewusst SteamVR, wuerde ein Klick hier die Auswahl stillschweigend
         # rueckgaengig machen — deshalb vorher fragen.
+        if oxr.session_active():
+            QMessageBox.information(self, tr("openxr_group"), tr("openxr_session_locked"))
+            self.refresh_openxr_status()
+            return
         if oxr.active_runtime_name() == "steamvr":
             reply = QMessageBox.question(
                 self, tr("openxr_group"), tr("openxr_fix_steamvr_ask"),
@@ -1050,6 +1039,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
                                 tr("openxr_fix_not_elf").format(path=detail))
         elif code == "cancelled":
             QMessageBox.information(self, tr("openxr_group"), tr("openxr_fix_cancelled"))
+        elif code == "session":
+            QMessageBox.information(self, tr("openxr_group"), tr("openxr_session_locked"))
         else:
             QMessageBox.critical(self, tr("openxr_group"),
                                  f"{tr('openxr_fix_error')}\n{detail}")
@@ -1179,6 +1170,9 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.ui.btn_changelog.clicked.connect(self.show_changelog)
         self.ui.btn_highlights.clicked.connect(self.show_highlights)
         self.ui.btn_tour.clicked.connect(lambda: self.start_tour())
+        # Willkommenstext auf/zu merken
+        self.ui.btn_welcome_toggle.toggled.connect(
+            lambda on: update_json(paths.config_file("config.json"), {"welcome_collapsed": not on}))
         self.ui.btn_firstrun_reset.clicked.connect(self.reset_first_run)
         # WayVR Design (Settings): cubee-cb-Design installieren / Config löschen
         self._wayvr_worker = None
@@ -1242,6 +1236,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.ui.btn_autostart_reset.clicked.connect(self.reset_autostart_readiness)
         # Besen-Button: laufende Autostart-Apps sofort beenden
         self.ui.btn_autostart_kill.clicked.connect(self.kill_autostart_apps)
+        self.ui.btn_autostart_start.clicked.connect(self._autostart_start_clicked)
 
         # Headset Management
         # "Liste aktualisieren" prueft beides: gekoppelte Headsets UND das
@@ -1388,6 +1383,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         if index == 4: self.on_games_tab_opened()
         if index == self.ui.pages.indexOf(self.ui.tab_controls):
             self.refresh_controls_status()
+            self.maybe_offer_controls_setup()
         # Runtime/Prioritaet koennen sich ausserhalb der App geaendert haben
         if index == self.ui.pages.indexOf(self.ui.tab_settings) \
                 and hasattr(self.ui, "vr_runtime_widget"):
@@ -1447,6 +1443,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
 
         # 1) Alle STATISCHEN Texte zentral neu setzen (Sidebar, alle Tabs).
         self.ui.retranslate_ui()
+        self._retranslate_autostart_rows()
         # Dropdown-Eintraege im Controls-Tab (obah) haengen an der Sprache.
         if hasattr(self, "obah_retranslate"):
             self.obah_retranslate()
@@ -1935,6 +1932,9 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         if getattr(self, "_pkgcheck_again", False):
             self._pkgcheck_again = False
             self.check_system_packages()
+            return
+        # Erst-Einrichtung wartet auf eine fertige Installation
+        self.first_run_after_install()
 
     def _on_package_check_done(self, results, updates_available):
         """Ergebnis des Hintergrund-Threads in die Oberflaeche uebertragen."""
@@ -2707,84 +2707,43 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             self._vr_add_row()
         while len(self.autostart_rows) > target_count:
             self._vr_delete_row_widgets(self.autostart_rows.pop())
+        self.ui.update_autostart_header(len(self.autostart_rows))
+        self._update_autostart_start_button()
 
         if not self.ui.num_apps.signalsBlocked(): self.trigger_auto_save()
 
     def _vr_add_row(self):
-        """Eine Programmzeile im VR-Tab — gleiches Aussehen wie in den Profilen."""
-        from PySide6.QtWidgets import QCheckBox
-        row_w = QWidget()
-        row_layout = QHBoxLayout(row_w)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        combo = QComboBox()
-        combo.addItems(["Custom Path", "CMD"])
-        combo.setFixedWidth(110)
-        inp = QLineEdit("")
-        btn = QPushButton("Browse...")
-        btn.setMinimumWidth(95)
-
-        # Autovervollstaendigung im CMD-Modus: alle ueber den
-        # Tools-Tab installierten Startbefehle plus was sonst im PATH
-        # liegt. Popup- statt Inline-Ergaenzung, weil Inline beim
-        # Tippen eigener Befehle staendig dazwischenfunkt.
-        completer = QCompleter(self._autostart_command_pool(), self)
-        completer.setCaseSensitivity(Qt.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchContains)
-        completer.setCompletionMode(QCompleter.PopupCompletion)
-        inp.setCompleter(completer)
-
-        # Eigener Kill-Befehl: Haken „Kill“ an -> zweites Feld neben dem
-        # Startbefehl. Laeuft vor dem normalen Beenden (SIGTERM -> SIGKILL).
-        kill_inp = QLineEdit("")
-        kill_inp.setPlaceholderText(tr("autostart_kill_placeholder"))
-        kill_inp.setToolTip(tr("autostart_kill_field_tip"))
-        kill_inp.setStyleSheet("QLineEdit { border:1px solid #bf616a; }")
-        kill_inp.setVisible(False)
-
-        from ui.ui_main import autostart_col_check, autostart_col_sep
-        chk_debug, dbg_cell = autostart_col_check(tr("autostart_debug_tip"))
-        chk_kill, kill_cell = autostart_col_check(tr("autostart_kill_tip_col"))
-
-        btn_del = QPushButton("✕")
-        btn_del.setFixedWidth(30)
-        btn_del.setToolTip(tr("autostart_profile_row_del_tip"))
-        btn_del.setStyleSheet(
-            "QPushButton { background-color:#2e3440; color:#bf616a; border:1px solid #4c566a;"
-            " font-weight:bold; padding:4px; border-radius:4px; }"
-            "QPushButton:hover { background-color:#bf616a; color:white; border-color:#bf616a; }")
-
-        row = {"combo": combo, "input": inp, "btn": btn, "chk_debug": chk_debug,
-               "chk_kill": chk_kill, "kill_input": kill_inp,
-               "btn_del": btn_del, "widget": row_w, "completer": completer}
-
-        combo.currentTextChanged.connect(
-            lambda text, le=inp, bb=btn: self._autostart_mode_changed(text, le, bb))
-        combo.currentTextChanged.connect(self.trigger_auto_save)
-        inp.textChanged.connect(self.trigger_auto_save)
-        chk_debug.stateChanged.connect(self.trigger_auto_save)
-        chk_kill.toggled.connect(lambda on, ki=kill_inp: self._autostart_kill_toggled(ki, on))
-        kill_inp.textChanged.connect(self.trigger_auto_save)
-        btn.clicked.connect(
-            lambda checked, le=inp, cb=combo: self._autostart_browse(le, cb))
-        btn_del.clicked.connect(lambda: self._vr_remove_row(row))
-
-        row_layout.setSpacing(6)
-        for w in (combo, inp, btn, kill_inp, autostart_col_sep(), dbg_cell,
-                  autostart_col_sep(), kill_cell, btn_del):
-            row_layout.addWidget(w)
-        row_layout.setStretch(1, 1)
-        row_layout.setStretch(3, 1)
-        self.ui.autostart_container_layout.addWidget(row_w)
+        """Eine Programmzeile im Dashboard (Aufbau: ui/autostart_row.py —
+        dieselbe Zeile wie in den Autostart-Profilen)."""
+        from ui.autostart_row import build_row
+        row = build_row(self, on_change=self.trigger_auto_save,
+                        on_delete=self._vr_remove_row)
+        row["input"].textChanged.connect(lambda _t: self._update_autostart_start_button())
+        self.ui.autostart_container_layout.addWidget(row["widget"])
         self.autostart_rows.append(row)
-        # Beschriftung/Zustand einmal passend zum Startmodus setzen.
-        self._autostart_mode_changed(combo.currentText(), inp, btn)
         return row
 
-    def _autostart_kill_toggled(self, kill_input, on):
-        kill_input.setVisible(on)
-        if on and not kill_input.text():
-            kill_input.setFocus()
-        self.trigger_auto_save()
+    def _autostart_offer_kill_suggestion(self, row):
+        from ui.autostart_row import offer_kill_suggestion
+        offer_kill_suggestion(row)
+
+    def _update_autostart_start_button(self):
+        has = any(r["input"].text().strip() for r in getattr(self, "autostart_rows", []))
+        self.ui.btn_autostart_start.setEnabled(has)
+
+    def _autostart_start_clicked(self):
+        """„▶ Apps starten“: Autostart-Programme jetzt starten (ohne Headset)."""
+        self.launch_autostart_apps()
+        self.ui.btn_autostart_start.setText(tr("autostart_start_done"))
+        QTimer.singleShot(1500, lambda: self.ui.btn_autostart_start.setText(
+            tr("dashboard_autostart_start")))
+
+    def _retranslate_autostart_rows(self):
+        """Texte der Autostart-Zeilen (entstehen dynamisch, oft vor dem
+        Laden der Sprache) an die aktuelle Sprache angleichen."""
+        from ui.autostart_row import retranslate_row
+        for r in getattr(self, "autostart_rows", []):
+            retranslate_row(r)
 
     @staticmethod
     def _vr_delete_row_widgets(row):
@@ -2798,6 +2757,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self._vr_add_row()
         self.ui.num_apps.setText(str(len(self.autostart_rows)))
         self.trigger_auto_save()
+        self.ui.update_autostart_header(len(self.autostart_rows))
+        self._update_autostart_start_button()
 
     def _vr_remove_row(self, row):
         """✕ an einer Zeile im VR-Tab — entfernt genau diese Zeile."""
@@ -2808,6 +2769,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self._vr_delete_row_widgets(row)
         self.ui.num_apps.setText(str(len(self.autostart_rows)))
         self.trigger_auto_save()
+        self.ui.update_autostart_header(len(self.autostart_rows))
+        self._update_autostart_start_button()
 
     def _autostart_mode_changed(self, mode, line_edit, button):
         """Schaltet eine Autostart-Zeile zwischen Pfad- und Befehlsmodus um.
@@ -3022,6 +2985,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         advanced = bool(data.get("advanced_mode", False))
         adv.set_enabled(advanced)
         self.ui.firstrun_card.setVisible(advanced)
+        self.ui.set_welcome_open(not data.get("welcome_collapsed", False))
         self.ui.toggle_advanced.blockSignals(True)
         self.ui.toggle_advanced.setChecked(advanced)
         self.ui.toggle_advanced.sync_offset()
@@ -3053,6 +3017,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
                 self.autostart_rows[i]["chk_debug"].setChecked(app.get("debug", False))
                 self.autostart_rows[i]["kill_input"].setText(app.get("kill", ""))
                 self.autostart_rows[i]["chk_kill"].setChecked(bool(app.get("kill_on")))
+        self._update_autostart_start_button()
 
         self.ui.chk_steamvr_tracker.blockSignals(False)
         self.ui.num_apps.blockSignals(False)

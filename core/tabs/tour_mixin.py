@@ -15,7 +15,6 @@ import datetime
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMessageBox
 
-import appimage_installer as appimg
 import vr_optimize as vopt
 from jsonio import read_json, update_json
 from logging_setup import get_logger
@@ -24,7 +23,6 @@ from translations import tr
 log = get_logger("tour")
 
 KEY_TOUR_ASKED = "tour_asked"
-INSTALL_ALL_KEYS = ("xr-hotas", "obah")
 
 
 class TourMixin:
@@ -51,7 +49,7 @@ class TourMixin:
         from ui.tour import AppTour
         # Fehlen Grundpakete, sperrt die App alle Tabs ausser Installation —
         # die Tour wuerde dann bei jedem Schritt eine Fehlermeldung ausloesen.
-        if self.are_critical_packages_missing():
+        if self.are_critical_packages_missing() or self.installation_running():
             QMessageBox.information(self, tr("tour_offer_title"), tr("tour_locked"))
             return
         old = getattr(self, "_tour", None)
@@ -88,17 +86,12 @@ class TourMixin:
     #  Controls: alles installieren
     # ------------------------------------------------------------------ #
     def controls_install_all(self):
-        """XR HOTAS + obah installieren (nacheinander), xrBinder bauen/aktivieren."""
-        missing = [k for k in INSTALL_ALL_KEYS
-                   if k in getattr(self.ui, "controls_rows", {}) and not self._control_installed(k)]
-        for k in INSTALL_ALL_KEYS:
-            if k in getattr(self.ui, "controls_rows", {}) and k not in missing:
-                self._set_control_toggle(k, True)
-                self._save_control_state(k, True)
-                self._render_control(k, True)
-        names = [self._control_tool(k).get("name", k) for k in missing]
-        if not self._xrbinder_ready():
-            names.append("xrBinder")
+        """„Alles installieren“ im Controls-Schritt der Tour: XR HOTAS, obah
+        und xrBinder — ueber denselben Weg wie die Einmal-Frage im Controls-Tab
+        (core/tabs/controls_setup_mixin.py). Gilt danach als beantwortet."""
+        from tabs.controls_setup_mixin import ORDER
+        items = self.controls_setup_items()
+        names = [n for _k, n, _d, installed, _p in items if not installed]
         if not names:
             QMessageBox.information(self, tr("tour_install_all_title"), tr("tour_install_all_none"))
             return
@@ -108,42 +101,5 @@ class TourMixin:
                                 QMessageBox.Yes | QMessageBox.No,
                                 QMessageBox.Yes) != QMessageBox.Yes:
             return
-        self._install_all_queue = list(missing)
-        self._install_all_next()
-
-    def _xrbinder_ready(self):
-        import xrbinder as xb
-        card = getattr(self.ui, "xrbinder_card", None)
-        return bool(card is not None and xb.is_built() and card.is_enabled())
-
-    def _install_all_next(self):
-        """Naechstes Werkzeug starten; am Ende xrBinder. Aus on_control_install_finished."""
-        queue = getattr(self, "_install_all_queue", None)
-        if queue is None:
-            return
-        while queue:
-            key = queue.pop(0)
-            tool = self._control_tool(key)
-            card = (getattr(self.ui, "tool_cards", {}) or {}).get(key) or {}
-            methods = card.get("methods") or appimg.detect_install_methods(tool)
-            method = appimg.default_method(methods)
-            if not method:
-                log.info("[Tour] %s: keine Installationsart.", key)
-                continue
-            self._set_control_toggle(key, True)
-            self._start_control_install(key, method)
-            if key in getattr(self, "_controls_pending", set()):
-                return                       # laeuft — weiter, wenn fertig
-        self._install_all_queue = None
-        self._install_all_xrbinder()
-
-    def _install_all_xrbinder(self):
-        import xrbinder as xb
-        card = getattr(self.ui, "xrbinder_card", None)
-        if card is None or self._xrbinder_ready():
-            return
-        if not xb.is_built() or xb.needs_rebuild():
-            card._set_toggle(True)           # nach dem Bau automatisch aktivieren
-            card.start_build()
-        elif not card.is_enabled():
-            card.toggle.setChecked(True)
+        self._mark_controls_setup_asked()
+        self.controls_install(ORDER)

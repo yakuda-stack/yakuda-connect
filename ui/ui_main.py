@@ -223,6 +223,12 @@ class Ui_MainWindow:
                 margin-top: 35px;
                 padding-top: 15px;
             }
+            /* Bereiche mit Klapp-Kopfzeile (ui/collapsible.py) statt Titel:
+               kein Platz fuer einen Titel ueber der Karte noetig */
+            QGroupBox#headerlessGroup {
+                margin-top: 12px;
+                padding-top: 6px;
+            }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
@@ -492,6 +498,20 @@ class Ui_MainWindow:
         # Alle Texte einmal zentral setzen (eine einzige Quelle der Wahrheit)
         self.retranslate_ui()
 
+    def update_autostart_header(self, count):
+        """„Autostart Applikationen (3)“ — Anzahl auch zugeklappt sichtbar."""
+        self._autostart_count = count
+        text = tr("dashboard_autostart")
+        self.autostart_header.setText(f"{text} ({count})" if count else text)
+
+    def set_welcome_open(self, is_open):
+        """Willkommenstext auf-/zuklappen (Pfeil folgt)."""
+        self.btn_welcome_toggle.blockSignals(True)
+        self.btn_welcome_toggle.setChecked(bool(is_open))
+        self.btn_welcome_toggle.blockSignals(False)
+        self.btn_welcome_toggle.setArrowType(Qt.DownArrow if is_open else Qt.RightArrow)
+        self.txt_free_info.setVisible(bool(is_open))
+
     def retranslate_ui(self):
         """
         Setzt ALLE statischen, sichtbaren Texte neu aus den Übersetzungen.
@@ -525,6 +545,8 @@ class Ui_MainWindow:
         self.btn_install.setText(tr("install_btn"))
         self.btn_update.setText(tr("update_btn"))
         self.info_group.setTitle(tr_amp("install_hints_title"))
+        self.btn_welcome_toggle.setText(tr("welcome_title"))
+        self.btn_welcome_toggle.setToolTip(tr("welcome_toggle_tip"))
         if hasattr(self, "lbl_aur_help"):
             self.lbl_aur_help.setText(tr("install_aur_help"))
 
@@ -549,9 +571,11 @@ class Ui_MainWindow:
         self.chk_pairing.setText(tr("dashboard_pair_chk"))
         self.lbl_pair_code.setText(tr("dashboard_pair_code"))
         self.txt_code.setPlaceholderText(tr("dashboard_pair_gen"))
-        self.autostart_group.setTitle(tr("dashboard_autostart"))
+        self.update_autostart_header(getattr(self, "_autostart_count", 0))
         self.lbl_app_count.setText(tr("dashboard_app_count"))
         self.btn_autostart_add_vr_row.setText(tr("autostart_profile_add_row"))
+        self.btn_autostart_start.setText(tr("dashboard_autostart_start"))
+        self.btn_autostart_start.setToolTip(tr("autostart_start_tip"))
         self.lbl_autostart_col_debug.setText(tr("autostart_col_debug"))
         self.lbl_autostart_col_kill.setText(tr("autostart_col_kill"))
         self.lbl_vr_hint.setText(tr("autostart_vr_hint"))
@@ -801,6 +825,26 @@ class Ui_MainWindow:
         self.info_group = QGroupBox(tr_amp("install_hints_title"))
         info_layout = QVBoxLayout(self.info_group)
         info_layout.setSpacing(10)
+
+        # Kopfzeile „▾ Willkommen bei Yakuda Connect!“ klappt den Text ein/aus
+        # (Zustand merkt sich main.py in config.json: welcome_collapsed).
+        from PySide6.QtWidgets import QToolButton
+        self.btn_welcome_toggle = QToolButton()
+        self.btn_welcome_toggle.setObjectName("welcomeToggle")
+        self.btn_welcome_toggle.setCheckable(True)
+        self.btn_welcome_toggle.setChecked(True)
+        self.btn_welcome_toggle.setCursor(Qt.PointingHandCursor)
+        self.btn_welcome_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.btn_welcome_toggle.setArrowType(Qt.DownArrow)
+        self.btn_welcome_toggle.setText(tr("welcome_title"))
+        self.btn_welcome_toggle.setToolTip(tr("welcome_toggle_tip"))
+        self.btn_welcome_toggle.setStyleSheet("""
+            QToolButton#welcomeToggle { background:transparent; border:none; color:#88c0d0;
+                                        font-size:15px; font-weight:bold; padding:2px 0; }
+            QToolButton#welcomeToggle:hover { color:#eceff4; }
+        """)
+        self.btn_welcome_toggle.toggled.connect(self.set_welcome_open)
+        info_layout.addWidget(self.btn_welcome_toggle, 0, Qt.AlignLeft)
 
         self.txt_free_info = QTextEdit()
         self.txt_free_info.setReadOnly(True)
@@ -1132,7 +1176,10 @@ class Ui_MainWindow:
         pairing_layout.addStretch()
         layout.addWidget(self.pairing_group)
 
-        self.autostart_group = QGroupBox(tr("dashboard_autostart"))
+        # Titel steht in der Klapp-Kopfzeile (unten, nach vr_page) — mit
+        # Anzahl der Programme, damit man auch zugeklappt sieht, was drin ist.
+        self.autostart_group = QGroupBox("")
+        self.autostart_group.setObjectName("headerlessGroup")
         autostart_layout = QVBoxLayout(self.autostart_group)
 
         # Kopfzeile: Label + Zähler links, kompakte Aktions-Buttons rechts.
@@ -1176,7 +1223,19 @@ class Ui_MainWindow:
             QPushButton:hover { background-color: #d08770; }
         """)
 
+        # Programme von Hand starten — zum Testen, ohne Headset (Gegenstueck
+        # zu „Apps schliessen“, steht direkt daneben). Neutral wie „Timer
+        # zuruecksetzen“: im Alltag selten gebraucht. Ausgegraut ohne Programme.
+        self.btn_autostart_start = QPushButton(tr("dashboard_autostart_start"))
+        self.btn_autostart_start.setToolTip(tr("autostart_start_tip"))
+        self.btn_autostart_start.setCursor(Qt.PointingHandCursor)
+        self.btn_autostart_start.setStyleSheet("""
+            QPushButton { background-color: #434c5e; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 4px 12px; }
+            QPushButton:hover { background-color: #5e81ac; }
+            QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
+        """)
         count_row.addWidget(self.btn_autostart_reset)
+        count_row.addWidget(self.btn_autostart_start)
         count_row.addWidget(self.btn_autostart_kill)
 
         # Das Dashboard zeigt nur den festen VR-Autostart (startet beim
@@ -1187,31 +1246,24 @@ class Ui_MainWindow:
         vr_layout.setContentsMargins(0, 0, 0, 0)
         vr_layout.addLayout(count_row)
 
-        # Spaltenkoepfe ueber den Haken der Zeilen (Debug | Kill), mit
-        # senkrechten Trennstrichen, die in den Zeilen weiterlaufen.
-        col_head = QHBoxLayout()
-        col_head.setContentsMargins(0, 4, 0, 0)
-        col_head.setSpacing(6)
-        col_head.addStretch(1)
-        self.lbl_autostart_col_debug = autostart_col_label(tr("autostart_col_debug"),
-                                                           tr("autostart_debug_tip"), "#ebcb8b")
-        self.lbl_autostart_col_kill = autostart_col_label(tr("autostart_col_kill"),
-                                                          tr("autostart_kill_tip_col"), "#bf616a")
-        col_head.addWidget(autostart_col_sep())
-        col_head.addWidget(self.lbl_autostart_col_debug)
-        col_head.addWidget(autostart_col_sep())
-        col_head.addWidget(self.lbl_autostart_col_kill)
-        # Qt setzt vor einem Platzhalter keinen Abstand — den der ✕-Spalte
-        # deshalb selbst mitrechnen, sonst stehen die Koepfe 6 px zu weit rechts.
-        col_head.addSpacing(AUTOSTART_DEL_W + col_head.spacing())
+        # Spaltenkoepfe ueber den Haken der Zeilen (Debug | Kill) — gleiche
+        # Kopfzeile wie in den Autostart-Profilen (ui/autostart_row.py).
+        from ui.autostart_row import column_header
+        col_head, (self.lbl_autostart_col_debug, self.lbl_autostart_col_kill) = column_header()
         vr_layout.addLayout(col_head)
 
         self.autostart_container = QWidget()
         self.autostart_container_layout = QVBoxLayout(self.autostart_container)
         self.autostart_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.autostart_container_layout.setSpacing(6)
         vr_layout.addWidget(self.autostart_container)
 
         autostart_layout.addWidget(vr_page)
+        from ui.collapsible import CollapsibleHeader
+        self.autostart_header = CollapsibleHeader("dashboard_autostart", vr_page)
+        autostart_layout.insertWidget(0, self.autostart_header, 0, Qt.AlignLeft)
+        self._autostart_count = 0
+        self.update_autostart_header(0)
         layout.addWidget(self.autostart_group)
 
         # --- Gekoppelte Headsets ------------------------------------------
