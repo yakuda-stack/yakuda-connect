@@ -71,6 +71,13 @@ def build_command(tool, status=None):
     dem Startbefehl gesucht.
     """
     status = status if isinstance(status, dict) else {}
+    if status.get("steam_installed") and not any(
+            status.get(k) for k in ("appimage_installed", "pm_installed",
+                                    "flatpak_installed", "cargo_installed")):
+        import steam_tools
+        argv = steam_tools.launch_argv(tool.get("steam_appid"))
+        if argv:
+            return argv
     cmd = (tool.get("start_cmd") or tool.get("key") or "").strip()
     binary = resolve_binary(cmd)
     if binary:

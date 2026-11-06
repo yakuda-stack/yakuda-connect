@@ -6,8 +6,8 @@ Fehler bis v1.4.1: Die Tool-Karten wurden beim ersten Oeffnen des Tools-Tabs
 immer mit ``tool["desc"]`` (Deutsch) gebaut — auch bei Englisch. Ausserdem
 bekam Franzoesisch deutsche Texte, weil nur ``lang == "en"`` Englisch lieferte.
 
-Jetzt laeuft alles ueber ``programs.tool_text()``:
-Deutsch nur bei "de", sonst Englisch (Rueckfall: Deutsch).
+Jetzt laeuft alles ueber ``programs.tool_text()``: die gewaehlte Sprache,
+sonst Englisch, zuletzt Deutsch.
 """
 import json
 import pathlib
@@ -28,9 +28,21 @@ def test_german_only_for_de():
 
 
 def test_english_for_en_and_other_languages():
-    for lang in ("en", "fr", "xx"):
+    for lang in ("en", "xx"):
         assert tool_text(TOOL, "desc", lang) == "English"
         assert tool_text(TOOL, "note", lang) == "Note"
+
+
+def test_french_when_available():
+    assert tool_text({**TOOL, "desc_fr": "Français"}, "desc", "fr") == "Français"
+    assert tool_text(TOOL, "desc", "fr") == "English"
+
+
+def test_every_tool_has_french_texts():
+    data = json.loads((ROOT / "config" / "tools.json").read_text(encoding="utf-8"))
+    tools = data.get("apps", []) + data.get("osc", [])
+    assert not [t["key"] for t in tools if t.get("desc") and not t.get("desc_fr")]
+    assert not [t["key"] for t in tools if t.get("note") and not t.get("note_fr")]
 
 
 def test_falls_back_to_german_without_english():

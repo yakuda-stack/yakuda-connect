@@ -59,6 +59,9 @@ def program_name(cmd, mode="CMD"):
 def suggest(cmd, mode="CMD"):
     """Vorschlag fuer den Kill-Befehl oder '' (nichts Sinnvolles erkennbar)."""
     toks = _tokens(cmd) if mode == "CMD" else []
+    # Ueber Steam gestartet: ein Vorschlag wuerde Steam selbst beenden.
+    if "-applaunch" in toks:
+        return ""
     # flatpak run <id> -> flatpak kill <id>
     if toks and os.path.basename(toks[0]) == "flatpak" and "run" in toks:
         rest = [t for t in toks[toks.index("run") + 1:] if not t.startswith("-")]

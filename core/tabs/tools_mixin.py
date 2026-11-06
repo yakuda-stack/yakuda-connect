@@ -19,12 +19,14 @@ from PySide6.QtCore import QThread, Signal as QtSignal
 import appimage_installer as appimg
 import programs
 import paths
+import steam_tools
+import tool_icons
 from appimage_installer import AppImageInstallWorker
 import cargo_installer
 from cargo_installer import CargoInstallWorker
 from script_installer import ScriptInstallWorker
 from install_worker import InstallWorker, RemoveWorker, RpmInstallWorker
-from jsonio import read_json, write_json_atomic
+from jsonio import read_json, update_json, write_json_atomic
 from translations import tr, get_language
 
 from logging_setup import get_logger
@@ -36,6 +38,22 @@ log = get_logger("tools_tab")
 #  Hintergrund-Worker des Tools-Tabs
 # --------------------------------------------------------------------------- #
 # Umgezogen aus core/main.py — siehe games_mixin.py zur Begruendung.
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+class IconFetchWorker(QThread):
+    """Laedt ein Tool-Icon, damit das Fenster dabei bedienbar bleibt."""
+    done = QtSignal(str, bool, bool)         # key, Erfolg, manuell
+
+    def __init__(self, tool, manual):
+        super().__init__()
+        self._tool = tool
+        self._manual = manual
+
+    def run(self):
+        self.done.emit(self._tool["key"], tool_icons.download(self._tool), self._manual)
+
 
 class ToolsStatusWorker(QThread):
     """Prüft den Status aller Tools im Hintergrund — ein Signal pro Tool (voller Bericht)."""
@@ -110,7 +128,8 @@ class ToolsTabMixin:
         """
         st = card.get("status") or {}
         installed = (st.get("appimage_installed") or st.get("pm_installed")
-                     or st.get("flatpak_installed") or st.get("cargo_installed"))
+                     or st.get("flatpak_installed") or st.get("cargo_installed")
+                     or st.get("steam_installed"))
         if not installed:
             return "missing"
         if (st.get("appimage_has_update") or st.get("pm_has_update")
@@ -167,6 +186,16 @@ class ToolsTabMixin:
             ui.lbl_tools_empty_apps.setVisible(visible.get("apps", 0) == 0)
         if hasattr(ui, "lbl_tools_empty_osc"):
             ui.lbl_tools_empty_osc.setVisible(visible.get("osc", 0) == 0)
+        self._show_tools_page_with_results(visible)
+
+    def _show_tools_page_with_results(self, visible):
+        """Ist der offene Unterreiter leer, zum anderen wechseln, wenn dort Treffer sind."""
+        tabs = self.ui.tools_subtabs
+        pages = ("apps", "osc")
+        current = tabs.currentIndex()
+        other = 1 - current
+        if not visible.get(pages[current], 0) and visible.get(pages[other], 0):
+            tabs.setCurrentIndex(other)
 
     def check_tools_status(self):
         """Lädt den Status aus dem Cache (programs.json) und zeigt ihn sofort an."""
@@ -211,6 +240,7 @@ class ToolsTabMixin:
         cargo_ver     = status.get("cargo_version", "")
         cargo_upd     = status.get("cargo_has_update", False)
         script_inst   = status.get("script_installed", False)
+        steam_inst    = status.get("steam_installed", False)
         config_ok     = status.get("config_present", False)
 
         methods = card.get("methods") or []
@@ -222,7 +252,7 @@ class ToolsTabMixin:
         # Dropdown nur zeigen, wenn Auswahl besteht UND noch installiert/aktualisiert werden kann
         show_combo = (combo is not None and len(methods) >= 2
                       and not appimage_inst and not pm_inst and not flatpak_inst
-                      and not cargo_inst and not script_inst)
+                      and not cargo_inst and not script_inst and not steam_inst)
         if combo is not None:
             combo.setVisible(show_combo)
 
@@ -284,6 +314,16 @@ class ToolsTabMixin:
             st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
             btn.setText(tr("tools_already"))
             btn.setEnabled(False)
+            card["cmd_widget"].setVisible(True)
+
+        elif steam_inst:
+            # Entfernen und Updates laufen ueber Steam.
+            card["lbl_version"].setText("")
+            card["lbl_update"].setText("")
+            st.setText(tr("tools_steam_ok"))
+            st.setStyleSheet("color: #a3be8c; font-size: 12px; font-weight: bold;")
+            btn.setText(tr("tools_delete"))
+            btn.setEnabled(True)
             card["cmd_widget"].setVisible(True)
 
         elif config_ok:
@@ -376,7 +416,7 @@ class ToolsTabMixin:
         card["methods"] = methods
         labels = {"appimage": "AppImage", "yay": "yay", "paru": "paru",
                   "flatpak": "Flatpak", "rpm": "RPM (dnf)", "cargo": "Cargo",
-                  "script": tr("tools_method_script")}
+                  "script": tr("tools_method_script"), "steam": "Steam"}
         combo.blockSignals(True)
         combo.clear()
         for mthd in methods:
@@ -415,6 +455,8 @@ class ToolsTabMixin:
         elif status.get("pm_installed"):
             # Per yay/paru installiert -> Paket entfernen
             self.remove_tool_pm(key)
+        elif status.get("steam_installed"):
+            self._open_in_steam(key, steam_tools.uninstall)
         else:
             # sonst Installieren bzw. Aktualisieren (per gewählter Methode)
             self.install_tool(key)
@@ -487,6 +529,11 @@ class ToolsTabMixin:
             if reply != QMessageBox.Yes:
                 self._render_tool_card(key, status)
                 return
+
+        if method == "steam":
+            if self._confirm_steam_beta(tool):
+                self._open_in_steam(key, steam_tools.install)
+            return
 
         card["btn_install"].setEnabled(False)
         card["btn_install"].setText(tr("tools_updating") if updating else tr("tools_installing"))
@@ -697,6 +744,71 @@ class ToolsTabMixin:
         card["lbl_status"].setText(msg)
         card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
 
+    def _open_in_steam(self, key, action):
+        """Installieren/Entfernen an Steam abgeben, das zeigt seinen eigenen Dialog."""
+        card = self.ui.tool_cards[key]
+        if action(card["tool"]["steam_appid"]):
+            card["lbl_status"].setText(tr("tools_steam_opened"))
+            card["lbl_status"].setStyleSheet("color: #ebcb8b; font-size: 12px;")
+        else:
+            QMessageBox.warning(self, card["tool"].get("name", key), tr("tools_steam_failed"))
+
+    def _confirm_steam_beta(self, tool):
+        """Hinweis mit Bild, wenn man in Steam einen Beta-Zweig waehlen muss."""
+        beta = tool.get("steam_beta")
+        if not beta:
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle(tool.get("name", ""))
+        box.setText(tr("tools_steam_beta_text").format(name=tool.get("name", ""), beta=beta))
+        picture = os.path.join(ROOT_DIR, "assets", "steam_vrcft_beta.png")
+        if os.path.isfile(picture):
+            box.setInformativeText(f'<img src="{picture}" width="520">')
+        btn_open = box.addButton(tr("tools_steam_open_btn"), QMessageBox.AcceptRole)
+        box.addButton(tr("cancel"), QMessageBox.RejectRole)
+        box.exec()
+        return box.clickedButton() is btn_open
+
+    def fetch_tool_icon(self, key, manual=False):
+        """Icon in die Warteschlange legen und laden."""
+        self._icon_queue.append((key, manual))
+        self._start_next_icon()
+
+    def _start_next_icon(self):
+        if self._icon_worker is not None or not self._icon_queue:
+            return
+        key, manual = self._icon_queue.pop(0)
+        tool = next((t for t in programs.all_tools() if t.get("key") == key), None)
+        if tool is None or not tool_icons.has_url(tool):
+            self._start_next_icon()
+            return
+        worker = IconFetchWorker(tool, manual)
+        worker.done.connect(self._on_icon_fetched)
+        worker.finished.connect(self._on_icon_worker_finished)
+        self._icon_worker = worker
+        worker.start()
+
+    def _on_icon_fetched(self, _key, success, manual):
+        self._refresh_autostart_rows()
+        if manual and not success:
+            QMessageBox.warning(self, tr("autostart_row_icon"), tr("autostart_icon_failed"))
+
+    def _on_icon_worker_finished(self):
+        """Erst nach wait() freigeben: ein laufender QThread darf nicht abgeraeumt werden."""
+        worker = self._icon_worker
+        if worker is not None:
+            worker.wait()
+        self._icon_worker = None
+        self._start_next_icon()
+
+    def on_show_autostart_icons_toggled(self, checked):
+        """Schalter unter Einstellungen -> Erweitert / System."""
+        self._show_autostart_icons = bool(checked)
+        if not update_json(paths.config_file("config.json"),
+                           {"show_autostart_icons": bool(checked)}):
+            log.warning("'Icons anzeigen' konnte nicht gespeichert werden.")
+        self._refresh_autostart_rows()
+
     def on_tool_installed(self, key, success):
         """Callback nach abgeschlossener Tool-Installation/-Aktualisierung."""
         card = self.ui.tool_cards.get(key)
@@ -704,6 +816,7 @@ class ToolsTabMixin:
             return
         if success:
             self._refresh_single_tool(key)
+            self.fetch_tool_icon(key)
             # Nach WayVR-Installation: Hinweis auf das bessere UI-Design in den Settings
             if key == "wayvr" and not self.wayvr_install_finished(True):
                 QMessageBox.information(self, tr("overlay_popup_title"), tr("overlay_popup_text"))

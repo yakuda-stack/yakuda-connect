@@ -41,11 +41,16 @@ from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal as QtSignal
 from PySide6.QtGui import QDesktopServices
 
 import adb_doctor as adbdoc
+import autostart_runner
+import config_manager
+import paths
 import proc
+import process_watch
 import usb_headsets as usbhs
 import wivrn_dashboard as wivrn_dash
 import wivrn_server
 import wivrn_apk as wapk
+from jsonio import update_json
 from translations import tr
 
 from logging_setup import get_logger
@@ -773,6 +778,209 @@ class DashboardMixin:
         else:
             self.ui.lbl_apk_status.setStyleSheet(
                 "color: #bf616a; font-size: 11px;")
+
+    # ------------------------------------------------------------------ #
+    #  Server mit der App starten + Timer Server Check                    #
+    # ------------------------------------------------------------------ #
+    _SERVER_TIMER_MIN_S = 30
+    _SERVER_TIMER_MAX_S = 300
+
+    def on_start_server_with_app_toggled(self, checked):
+        """Schalter unter Einstellungen -> Erweitert / System."""
+        if not update_json(paths.config_file("config.json"),
+                           {"start_server_with_app": bool(checked)}):
+            log.warning("'Server mit der App starten' konnte nicht gespeichert werden.")
+
+    def on_autostart_external_toggled(self, checked):
+        """Schalter unter Einstellungen -> Erweitert / System."""
+        if not update_json(paths.config_file("config.json"),
+                           {"autostart_external_server": bool(checked)}):
+            log.warning("'Autostart bei fremdem Server' konnte nicht gespeichert werden.")
+        if checked:
+            self._arm_autostart_for_external_server()
+        elif self._external_autostart:
+            self.autostart_timer.stop()
+
+    def _arm_autostart_for_external_server(self):
+        """
+        Autostart scharfschalten, wenn der Server ausserhalb der App laeuft.
+
+        start_wivrn_server macht das fuer den eigenen Server selbst. Laufen
+        schon Programme oder der Waechter des Terminal-Modus, bleibt alles,
+        wie es ist: launch_autostart_apps wuerde sie sonst erst beenden.
+        """
+        if not self._server_running or self._server_stopping:
+            return
+        if not config_manager.load_saved_settings().get("autostart_external_server", True):
+            return
+        if self.server_process is not None and self.server_process.poll() is None:
+            return
+        if self.autostart_timer.isActive():
+            return
+        if any(p.poll() is None for p in self._autostart_procs):
+            return
+        state = autostart_runner.load_state()
+        if autostart_runner.watcher_running(state) or autostart_runner.running_apps(state):
+            return
+        log.info("[Autostart] Server wurde ausserhalb der App gestartet.")
+        self._external_autostart = True
+        self.arm_autostart_timer()
+
+    def _check_autostart_rearm(self):
+        """Headset weg: Autostart fuers naechste Verbinden wieder scharfschalten.
+
+        Laufen noch Programme, werden sie nur auf Wunsch beendet. Ohne diese
+        Option bleibt alles, wie es ist, bis der Nutzer sie selbst schliesst.
+        """
+        if not wivrn_server.is_running(self.server_process):
+            self._autostart_rearm_timer.stop()
+            return
+        peers = self._live_headset_peers()
+        if peers is None:
+            self._disconnect_count = 0
+            return
+        self._disconnect_count += 1
+        if self._disconnect_count < self._disconnect_grace:
+            return
+        self._disconnect_count = 0
+        self._dead_peers |= set(peers)
+        if peers and self._restart_server_on_poweroff and self._own_server_running():
+            self._restart_server_after_poweroff()
+            return
+        if any(p.poll() is None for p in self._autostart_procs):
+            if not self._stop_apps_on_disconnect:
+                return
+            log.info("[Autostart] Headset getrennt – beende Programme.")
+            self.stop_autostart_apps()
+        log.info("[Autostart] Headset getrennt – wieder scharf.")
+        self.arm_autostart_timer()
+
+    def _own_server_running(self):
+        return self.server_process is not None and self.server_process.poll() is None
+
+    def _restart_server_after_poweroff(self):
+        """Headset wurde ausgeschaltet: alte Sitzung raeumen, Server neu starten.
+
+        Nur beim eigenen Server: einen fremden wuerde die App durch einen mit
+        anderem Start ersetzen. Der Stopp beendet auch die Autostart-Programme.
+        """
+        log.info("[Server] Headset ausgeschaltet – Server wird neu gestartet.")
+        self._restart_after_stop = True
+        self._set_toggle_silently(False)
+        self.stop_wivrn_server()
+
+    def _restart_server_now(self):
+        if not self._server_running and not self._server_stopping:
+            self.ui.toggle_server.setChecked(True)
+
+    def _live_headset_peers(self):
+        """None = Headset ist da. Sonst die Verbindungen, die nur noch tot dastehen.
+
+        Wird das Headset ausgeschaltet, schliesst niemand die TCP-Verbindung.
+        Darum wird es zusaetzlich direkt angefragt. Schweigen zaehlt nur, wenn
+        das Geraet in dieser Sitzung schon geantwortet hat: sonst koennte es
+        Anfragen einfach ignorieren, und die App wuerde mitten in VR alles beenden.
+        """
+        peers = [p for p in autostart_runner.headset_peers() if p not in self._dead_peers]
+        for ip, _port in peers:
+            if ip.startswith("127.") or ip == "::1":            # USB (adb reverse)
+                return None
+            if process_watch.host_answers(ip):
+                self._answering_ips.add(ip)
+                return None
+            if ip not in self._answering_ips:
+                return None
+        return peers
+
+    def _show_autostart_notice_once(self):
+        """Hinweis auf das neue Beenden beim Trennen, nur beim ersten Start."""
+        if config_manager.load_saved_settings().get("autostart_disconnect_notice_seen"):
+            return
+        self.ui.lbl_autostart_notice.setVisible(True)
+        update_json(paths.config_file("config.json"), {"autostart_disconnect_notice_seen": True})
+
+    def on_restart_on_poweroff_toggled(self, checked):
+        """Schalter unter Einstellungen -> Erweitert / System."""
+        self._restart_server_on_poweroff = bool(checked)
+        if not update_json(paths.config_file("config.json"),
+                           {"restart_server_on_poweroff": bool(checked)}):
+            log.warning("'Server neu starten' konnte nicht gespeichert werden.")
+
+    def on_stop_apps_on_disconnect_toggled(self, checked):
+        """Schalter unter Einstellungen -> Erweitert / System."""
+        self._stop_apps_on_disconnect = bool(checked)
+        if not update_json(paths.config_file("config.json"),
+                           {"stop_apps_on_disconnect": bool(checked)}):
+            log.warning("'Programme beim Trennen beenden' konnte nicht gespeichert werden.")
+
+    def _external_server_changed(self, running):
+        """Server ist ausserhalb der App an- oder ausgegangen."""
+        if running:
+            self._arm_autostart_for_external_server()
+        elif self._external_autostart:
+            self._external_autostart = False
+            self.autostart_timer.stop()
+            self.stop_autostart_apps()
+
+    def _start_server_on_launch(self):
+        """Startet den Server beim App-Start, wenn das eingestellt ist."""
+        # Die Autostart-Zeilen sind erst jetzt geladen. Bei der ersten Pruefung
+        # im Start waren sie noch leer.
+        self._arm_autostart_for_external_server()
+        if not config_manager.load_saved_settings().get("start_server_with_app", False):
+            return
+        if self.are_critical_packages_missing():
+            log.info("[Server] Autostart uebersprungen: WiVRn ist nicht installiert.")
+            return
+        if self._server_running or self._server_stopping:
+            return
+        log.info("[Server] Wird mit der App gestartet.")
+        self.ui.toggle_server.setChecked(True)
+
+    def _init_server_timer(self):
+        """Timer anlegen und den gespeicherten Stand uebernehmen."""
+        settings = config_manager.load_saved_settings()
+        self._server_timer = QTimer(self)
+        self._server_timer.timeout.connect(self._check_server_and_refresh)
+        self._server_timer_on = bool(settings.get("server_check_timer", False))
+        self._server_timer_seconds = self._clamp_server_timer(
+            settings.get("server_check_interval", 30))
+        self._apply_server_timer()
+
+    def _clamp_server_timer(self, seconds):
+        """Abstand in Sekunden; ein kaputter Wert in der Config faellt auf 30."""
+        try:
+            value = int(seconds)
+        except (TypeError, ValueError):
+            value = 30
+        return max(self._SERVER_TIMER_MIN_S, min(self._SERVER_TIMER_MAX_S, value))
+
+    def _apply_server_timer(self):
+        """Timer und Knopf an den gemerkten Stand angleichen."""
+        self.ui.set_server_timer_state(self._server_timer_on, self._server_timer_seconds)
+        if self._server_timer_on:
+            self._server_timer.start(self._server_timer_seconds * 1000)
+        else:
+            self._server_timer.stop()
+
+    def _check_server_and_refresh(self):
+        """Status pruefen; die Headset-Liste nur anfassen, wenn er sich geaendert hat."""
+        if self.manual_server_check():
+            self.refresh_headset_list()
+
+    def open_server_timer_dialog(self):
+        """Popup zum Knopf "Timer Server Check"."""
+        from ui.server_check_dialog import ServerCheckDialog
+        dialog = ServerCheckDialog(self._server_timer_on, self._server_timer_seconds,
+                                   self._SERVER_TIMER_MIN_S, self._SERVER_TIMER_MAX_S, self)
+        if not dialog.exec():
+            return
+        self._server_timer_on, self._server_timer_seconds = dialog.values()
+        if not update_json(paths.config_file("config.json"),
+                           {"server_check_timer": self._server_timer_on,
+                            "server_check_interval": self._server_timer_seconds}):
+            log.warning("'Timer Server Check' konnte nicht gespeichert werden.")
+        self._apply_server_timer()
 
     def refresh_headset_list(self):
         """

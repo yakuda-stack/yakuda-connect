@@ -41,6 +41,8 @@ import autostart_profiles as engine
 import exit_guard
 import paths
 import process_watch
+import vr_environment as venv
+import wivrn_net
 import wivrn_server
 from jsonio import read_json, write_json_atomic
 from logging_setup import get_logger
@@ -52,33 +54,25 @@ POLL_S = 1.0
 
 
 # --------------------------------------------------------------------------- #
-#  Headset erkannt?  (dieselben zwei Signale wie VRApp.is_headset_connected)
+#  Headset erkannt?
 # --------------------------------------------------------------------------- #
 def headset_connected():
-    """
-    Ist AKTUELL ein Headset mit dem Server verbunden? Nur Live-Signale, die
-    beim Trennen wieder verschwinden:
-      A) WiVRns virtuelles Audiogeraet "WiVRn" (pactl)
-      B) aktive TCP-Verbindung auf Port 9757 (ss)
-    """
+    """Ist AKTUELL ein Headset verbunden? Liest nur /proc, auch im Sekundentakt
+    guenstig. Der Port kommt aus WiVRns config.json, er laesst sich aendern."""
+    return process_watch.headset_connected(port=_wivrn_port())
+
+
+def headset_peers():
+    """Gegenstellen der WiVRn-Sitzungen, siehe process_watch.headset_peers."""
+    return process_watch.headset_peers(port=_wivrn_port())
+
+
+def _wivrn_port():
     try:
-        for kind in ("sinks", "sources"):
-            res = subprocess.run(["pactl", "list", "short", kind],
-                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                 text=True, timeout=2)
-            if "wivrn" in res.stdout.lower():
-                return True
+        return wivrn_net.read_current(read_json(venv.wivrn_config_file(), default={}))["port"]
     except Exception as exc:  # noqa: BLE001
-        log.debug("headset_connected (pactl): %s", exc)
-    try:
-        res = subprocess.run(["ss", "-Htan"], stdout=subprocess.PIPE,
-                             stderr=subprocess.DEVNULL, text=True, timeout=2)
-        for line in res.stdout.splitlines():
-            if "ESTAB" in line and ":9757" in line:
-                return True
-    except Exception as exc:  # noqa: BLE001
-        log.debug("headset_connected (ss): %s", exc)
-    return False
+        log.debug("WiVRn-Port nicht lesbar: %s", exc)
+        return wivrn_net.DEFAULT_PORT
 
 
 # --------------------------------------------------------------------------- #
@@ -336,7 +330,7 @@ def arm_profiles(settings, launch_argv, env=None):
 
 
 def profile_watch(settings, terminal_command=None, _sleep=time.sleep, _now=time.monotonic,
-                  _snapshot=process_watch.snapshot, _headset=process_watch.headset_connected,
+                  _snapshot=process_watch.snapshot, _headset=headset_connected,
                   _server_running=wivrn_server.is_running, _max_ticks=None):
     """
     Der Profil-Waechter (laeuft im Hintergrund, solange der Server laeuft).

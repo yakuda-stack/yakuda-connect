@@ -20,8 +20,10 @@ Verglichen wird der Programmname ohne Pfad, ohne Gross/Klein und ohne
 zueinander. Bewusst KEIN Teilstring-Vergleich: sonst wuerde „vrchat“ auch
 auf „vrchat-osc-tool“ oder einen Texteditor mit „vrchat.log“ anspringen.
 """
+import errno
 import os
 import re
+import socket
 
 PROC_ROOT = "/proc"
 
@@ -154,18 +156,27 @@ def list_programs(proc_root=PROC_ROOT):
 # --------------------------------------------------------------------------- #
 #  Headset verbunden?  (ohne Subprozess)
 # --------------------------------------------------------------------------- #
-# WiVRn haelt waehrend einer Sitzung eine TCP-Verbindung auf Port 9757.
-# autostart_runner.headset_connected() fragt dafuer ``ss`` und ``pactl`` —
-# drei Prozessstarts pro Pruefung. Hier steht dieselbe Information direkt
-# aus /proc/net/tcp{,6}: Spalte 2 = lokale Adresse "IP:PORT" (hex),
+# WiVRn haelt waehrend einer Sitzung eine TCP-Verbindung auf seinem Port.
+# Die Information steht ohne Prozessstart in
+# /proc/net/tcp{,6}: Spalte 2 = lokale Adresse "IP:PORT" (hex),
 # Spalte 4 = Zustand, 01 = ESTABLISHED. Der WiVRn-Flatpak teilt das Netz mit
 # dem Host (--share=network), seine Verbindung steht also auch hier.
 WIVRN_PORT = 9757
 
 
-def headset_connected(proc_root=PROC_ROOT, port=WIVRN_PORT):
-    """True, wenn eine WiVRn-Sitzung (TCP, Port 9757) aufgebaut ist."""
+def _hex_ip(text):
+    """Adresse aus /proc/net/tcp{,6} als Text (Bytes je 32-Bit-Wort vertauscht)."""
+    words = [bytes.fromhex(text[i:i + 8])[::-1] for i in range(0, len(text), 8)]
+    raw = b"".join(words)
+    if len(raw) == 16 and raw[:12] == b"\0" * 10 + b"\xff\xff":
+        raw = raw[12:]                               # IPv4 im IPv6-Socket
+    return socket.inet_ntop(socket.AF_INET if len(raw) == 4 else socket.AF_INET6, raw)
+
+
+def headset_peers(proc_root=PROC_ROOT, port=WIVRN_PORT):
+    """Gegenstellen aufgebauter WiVRn-Sitzungen als [(ip, port), ...]."""
     want = f"{port:04X}"
+    peers = []
     for name in ("tcp", "tcp6"):
         try:
             with open(os.path.join(proc_root, "net", name)) as fh:
@@ -174,8 +185,32 @@ def headset_connected(proc_root=PROC_ROOT, port=WIVRN_PORT):
                     parts = line.split()
                     if len(parts) < 4 or parts[3] != "01":
                         continue
-                    if parts[1].rsplit(":", 1)[-1] == want:
-                        return True
-        except OSError:
+                    if parts[1].rsplit(":", 1)[-1] != want:
+                        continue
+                    ip_hex, remote_port = parts[2].rsplit(":", 1)
+                    peers.append((_hex_ip(ip_hex), int(remote_port, 16)))
+        except (OSError, ValueError):
             continue
-    return False
+    return peers
+
+
+def headset_connected(proc_root=PROC_ROOT, port=WIVRN_PORT):
+    """True, wenn eine WiVRn-Sitzung (TCP) aufgebaut ist."""
+    return bool(headset_peers(proc_root, port))
+
+
+def host_answers(ip, timeout=0.7):
+    """Antwortet das Geraet im Netz? Ein abgewiesener Verbindungsversuch zaehlt
+    als Antwort: das Geraet ist an. Stille heisst aus oder nicht erreichbar.
+
+    Fuer ein ausgeschaltetes Headset: dessen TCP-Verbindung bleibt auf dem PC
+    noch lange als aufgebaut stehen, weil niemand sie sauber schliesst.
+    """
+    family = socket.AF_INET6 if ":" in ip else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        probe.settimeout(timeout)
+        try:
+            code = probe.connect_ex((ip, 9))
+        except OSError:
+            return False
+    return code in (0, errno.ECONNREFUSED)

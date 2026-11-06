@@ -432,9 +432,9 @@ def test_vr_tab_add_and_remove_rows(app, clean, cfg):
     while app.autostart_rows:
         app._vr_remove_row(app.autostart_rows[0])
     assert app.ui.num_apps.text() == "0"
-    app.ui.btn_autostart_add_vr_row.click()
-    app.ui.btn_autostart_add_vr_row.click()
-    app.ui.btn_autostart_add_vr_row.click()
+    app._vr_append_row()
+    app._vr_append_row()
+    app._vr_append_row()
     assert len(app.autostart_rows) == 3 and app.ui.num_apps.text() == "3"
     for i, r in enumerate(app.autostart_rows):
         r["input"].setText(f"cmd{i}")

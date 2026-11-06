@@ -11,12 +11,17 @@ Ein paar kurze Fragen, dann richtet die App alles fuer das Spiel ein:
 
 Nur Oberflaeche — angewendet wird in core/tabs/games_optimize_mixin.py.
 """
+import os
+
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel, QPushButton,
                                QScrollArea, QSlider, QStackedWidget, QVBoxLayout, QWidget)
 
 from translations import tr
 from ui.binding_dialog import DIALOG_CSS
+
+ASSETS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
 
 
 def _muted(text, size=11):
@@ -33,9 +38,10 @@ class GameOptimizeDialog(QDialog):
     cache:   None (kein VRChat / kein Prefix) oder (wert, min, max, standard)
     plan:    Zeilen fuer die Zusammenfassung, die nicht von den Fragen abhaengen
              (z. B. Proton-Version, Bilder-Fix)
+    steam_hint: Empfehlung mit Bild, die Startoption in Steam fest einzustellen
     """
 
-    def __init__(self, parent, *, game, toggles, cache=None, plan=()):
+    def __init__(self, parent, *, game, toggles, cache=None, plan=(), steam_hint=False):
         super().__init__(parent)
         self.setObjectName("gameOptimizeDialog")
         self.setStyleSheet(DIALOG_CSS)
@@ -44,6 +50,7 @@ class GameOptimizeDialog(QDialog):
         self.setWindowTitle(tr("gopt_title").format(game=game))
         self.cache = cache
         self.plan = list(plan)
+        self.steam_hint = steam_hint
         self.checks = {}
 
         root = QVBoxLayout(self)
@@ -177,6 +184,16 @@ class GameOptimizeDialog(QDialog):
         self.lbl_summary = _muted("", 12)
         self.lbl_summary.setStyleSheet("color:#d8dee9; font-size:12px;")
         lay.addWidget(self.lbl_summary)
+        if self.steam_hint:
+            hint_head = QLabel(tr("gopt_steam_hint_head"))
+            hint_head.setObjectName("bdsection")
+            lay.addWidget(hint_head)
+            lay.addWidget(_muted(tr("gopt_steam_hint_text")))
+            picture = QPixmap(os.path.join(ASSETS, "steam_launch_option.png"))
+            if not picture.isNull():
+                image = QLabel()
+                image.setPixmap(picture.scaledToWidth(540, Qt.SmoothTransformation))
+                lay.addWidget(image)
         lay.addStretch()
         return panel
 

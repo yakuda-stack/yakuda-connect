@@ -5,7 +5,8 @@ core/tabs/games_optimize_mixin.py — „✨ Optimieren“ neben „Play“
 Ein Klick, ein paar Fragen, fertig eingerichtet:
 
   * VRChat: Cache-Groesse (Standard 30 GB), Bilder-Fix laeuft automatisch
-  * Startoptionen: jede mit Erklaerung, Empfehlung vorausgewaehlt
+  * Startoptionen: jede mit Erklaerung, nur die Empfehlungen sind
+    vorausgewaehlt — nicht, was bisher an war, das kann Fehler mitschleppen
   * Proton: die empfohlene Version wird automatisch gewaehlt — fehlt sie,
     wird sie vorher installiert und danach gesetzt
 
@@ -31,17 +32,19 @@ class GamesOptimizeMixin:
         is_vrc = str(appid) == VRCHAT_APPID
         fixes = game.get("fixes", [])
 
-        # Startoptionen: gespeicherte Auswahl, sonst die Vorgaben des Spiels
+        # Startoptionen: immer nur die Empfehlungen des Spiels. Eigene
+        # Parameter bleiben, sie stehen nicht zur Auswahl.
         games_db.refresh_vrcvideocacher_path()
         game_toggles = games_db.resolved_toggles(game)
         saved, custom = games_db.load_launch_toggles(appid, game_toggles)
-        if games_db.has_saved_launch_toggles(appid):
-            initial = set(saved)
-        else:
-            initial = set(game.get("default_on", []))
-            initial |= {t["key"] for t in game_toggles if t.get("default")}
+        initial = set(game.get("default_on", []))
+        initial |= {t["key"] for t in game_toggles if t.get("default")}
         toggles = []
+        # Schalter nur fuer die Spiel-Einstellungen: bleiben, wie sie sind.
+        kept = [t["key"] for t in game_toggles if t.get("panel_only") and t["key"] in saved]
         for t in list(games_db.LAUNCH_TOGGLES) + list(game_toggles):
+            if t.get("panel_only") or (is_vrc and t["key"] == "gamemoderun"):
+                continue
             enabled = bool(t.get("arg"))
             tip = tr(f"games_toggle_{t['key']}_tip") if enabled \
                 else tr(f"games_toggle_{t['key']}_missing")
@@ -64,10 +67,10 @@ class GamesOptimizeMixin:
             plan.append(tr("gopt_sum_pictures"))
 
         dlg = GameOptimizeDialog(self, game=game.get("name", ""), toggles=toggles,
-                                 cache=cache, plan=plan)
+                                 cache=cache, plan=plan, steam_hint=is_vrc)
         if dlg.exec() != GameOptimizeDialog.Accepted:
             return
-        self._apply_game_optimize(appid, game, dlg.enabled_keys(), custom,
+        self._apply_game_optimize(appid, game, list(dlg.enabled_keys()) + kept, custom,
                                   dlg.cache_value(), rec)
 
     @staticmethod

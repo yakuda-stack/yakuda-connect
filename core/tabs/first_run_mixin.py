@@ -33,6 +33,7 @@ loescht die drei Merker, als waere das Dashboard nie geoeffnet worden.
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+import app_reset
 import vr_optimize as vopt
 from jsonio import read_json, write_json_atomic
 from logging_setup import get_logger
@@ -152,6 +153,24 @@ class FirstRunMixin:
         for attr in _SESSION_FLAGS:
             setattr(self, attr, False)
         self._first_run_gen = getattr(self, "_first_run_gen", 0) + 1
+
+    def reset_whole_app(self):
+        """Einstellungen loeschen und neu starten, als waere die App neu installiert.
+
+        Der Neustart gehoert dazu: die laufende App wuerde ihre Einstellungen
+        sonst beim naechsten Speichern wieder anlegen.
+        """
+        if QMessageBox.warning(self, tr("app_reset_group"), tr("app_reset_confirm"),
+                               QMessageBox.Yes | QMessageBox.No,
+                               QMessageBox.No) != QMessageBox.Yes:
+            return
+        self.is_loading = True
+        if not app_reset.reset_app():
+            self.is_loading = False
+            QMessageBox.warning(self, tr("app_reset_group"), tr("app_reset_failed"))
+            return
+        log.info("[Reset] Einstellungen geloescht, App startet neu.")
+        self._restart_app()
 
     def reset_first_run(self):
         if QMessageBox.question(self, tr("firstrun_group"), tr("firstrun_reset_confirm"),

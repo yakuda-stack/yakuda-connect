@@ -47,6 +47,21 @@ DEFAULT_SETTINGS = {
     # Einstellungen -> Erweitert / System -> "WiVRn-Server mit der App
     # beenden". Schluessel und Standard kommen aus core/exit_guard.py.
     "stop_server_with_app": True,
+    # Einstellungen -> Erweitert / System -> "WiVRn-Server mit der App starten".
+    "start_server_with_app": False,
+    # Einstellungen -> Erweitert / System -> Autostart-Apps auch bei einem
+    # ausserhalb der App gestarteten Server.
+    "autostart_external_server": True,
+    # Einstellungen -> Erweitert / System -> Icons in der Autostart-Liste.
+    "show_autostart_icons": True,
+    # Einstellungen -> Erweitert / System -> Programme beim Trennen beenden.
+    "stop_apps_on_disconnect": True,
+    # Einstellungen -> Erweitert / System -> Server neu starten, wenn das
+    # Headset ausgeschaltet wurde.
+    "restart_server_on_poweroff": True,
+    # Dashboard -> "Timer Server Check": Serverstatus regelmaessig pruefen.
+    "server_check_timer": False,
+    "server_check_interval": 30,
 }
 
 

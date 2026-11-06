@@ -119,8 +119,8 @@ def test_dashboard_autostart_collapsible_with_count(window):
     while window.autostart_rows:
         window._vr_remove_row(window.autostart_rows[0])
     assert ui.autostart_header.text() == tr("dashboard_autostart").replace("&", "&&")
-    window._vr_add_row_clicked()
-    window._vr_add_row_clicked()
+    window._vr_append_row()
+    window._vr_append_row()
     assert ui.autostart_header.text().endswith("(2)")
     assert not ui.autostart_header.body.isHidden()          # Standard: offen
     ui.autostart_header.click()

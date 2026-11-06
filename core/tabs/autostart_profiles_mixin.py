@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QCompleter, QDialog,
                                QVBoxLayout, QWidget)
 
 import autostart_profiles as engine
+import autostart_runner
 import process_watch
 from config_manager import CONFIG_FILE, load_saved_settings
 from jsonio import read_json, write_json_atomic
@@ -136,7 +137,7 @@ class AutostartProfilesMixin:
         tabs.tabBarDoubleClicked.connect(self._profile_rename)
 
         # Austauschbar fuer Tests. Kein Subprozess (siehe process_watch).
-        self._profile_headset = process_watch.headset_connected
+        self._profile_headset = autostart_runner.headset_connected
 
         self.ui.toggle_profiles.blockSignals(True)
         self.ui.toggle_profiles.setChecked(engine.master_enabled())
@@ -309,10 +310,7 @@ class AutostartProfilesMixin:
         r2.addWidget(chk_enabled)
         v.addLayout(r2)
 
-        # Programme — Kopfzeile Debug | Kill wie im Dashboard
-        from ui.autostart_row import column_header
-        col_head, col_labels = column_header()
-        v.addLayout(col_head)
+        # Programme — dieselben Zeilen wie im Dashboard
         rows_box = QVBoxLayout()
         rows_box.setSpacing(6)
         v.addLayout(rows_box)
@@ -354,7 +352,7 @@ class AutostartProfilesMixin:
 
         prof = {
             "name": data.get("name", "Profil"),
-            "page": page, "rows_box": rows_box, "rows": [], "col_labels": col_labels,
+            "page": page, "rows_box": rows_box, "rows": [],
             "lbl_trigger": lbl_trigger, "inp_trigger": inp_trigger,
             "btn_pick": btn_pick, "btn_games": btn_games,
             "chk_enabled": chk_enabled, "btn_start_now": btn_start_now,
@@ -390,8 +388,7 @@ class AutostartProfilesMixin:
         spin_gap.valueChanged.connect(self._profiles_changed)
         chk_stop.toggled.connect(self._profiles_changed)
         btn_pick.clicked.connect(lambda: self._profile_pick_running(prof))
-        btn_add_row.clicked.connect(lambda: (self._profile_add_row(prof, {}),
-                                             self._profiles_changed()))
+        btn_add_row.clicked.connect(lambda: self._profile_add_program(prof))
 
         tabs = self.ui.autostart_tabs
         idx = tabs.addTab(page, prof["name"])
@@ -416,15 +413,23 @@ class AutostartProfilesMixin:
         return prof
 
     def _profile_add_row(self, prof, app):
-        """Programmzeile — dieselbe Zeile wie im Dashboard (ui/autostart_row.py):
-        Karte, Debug | Kill, Kill-Befehl mit Vorschlag."""
+        """Programmzeile — dieselbe Zeile wie im Dashboard (ui/autostart_row.py)."""
         from ui.autostart_row import build_row
         if len(prof["rows"]) >= MAX_ROWS:
-            return
+            return None
         row = build_row(self, app, on_change=self._profiles_changed,
                         on_delete=lambda r, p=prof: self._profile_remove_row(p, r))
         prof["rows_box"].addWidget(row["widget"])
         prof["rows"].append(row)
+        return row
+
+    def _profile_add_program(self, prof):
+        """„+ Programm“ im Profil: erst auswaehlen, dann die Zeile anlegen."""
+        from ui.autostart_row import add_program
+        if len(prof["rows"]) >= MAX_ROWS:
+            return
+        if add_program(self, lambda app: self._profile_add_row(prof, app)):
+            self._profiles_changed()
 
     def _profile_remove_row(self, prof, row):
         try:
@@ -896,11 +901,9 @@ class AutostartProfilesMixin:
         prof["chk_stop"].setText(tr("autostart_profile_stop_with"))
         prof["chk_stop"].setToolTip(tr("autostart_profile_stop_with_tip"))
         prof["btn_add_row"].setText(tr("autostart_profile_add_row"))
-        from ui.autostart_row import retranslate_header, retranslate_row
-        retranslate_header(prof["col_labels"])
+        from ui.autostart_row import retranslate_row
         for r in prof["rows"]:
             retranslate_row(r)
-            self._autostart_mode_changed(r["combo"].currentText(), r["input"], r["btn"])
         self._profile_render_status(prof)
 
     def _profile_style_timer_btn(self, prof):

@@ -818,6 +818,32 @@ class GamesTabMixin:
         custom = self._detail_custom_edit.text() if self._detail_custom_edit else ""
         games_db.save_launch_toggles(appid, self._current_toggle_keys(), custom)
 
+    def _save_launch_opts(self, appid):
+        """Knopf „Speichern": Auswahl merken und in Steam eintragen.
+
+        Laeuft Steam, muss es zuerst zu: es wuerde die Datei sonst beim Beenden
+        ueberschreiben (siehe core/steam_close.py).
+        """
+        final = self._update_final_params()
+        custom = self._detail_custom_edit.text() if self._detail_custom_edit else ""
+        games_db.save_launch_toggles(appid, self._current_toggle_keys(), custom)
+
+        def write():
+            ok, err = games_db.set_steam_launch_options(appid, (final or "").strip())
+            if ok:
+                self._detail_status("✔ " + tr("games_save_done"), "#a3be8c")
+            else:
+                self._detail_status(tr("games_options_failed").format(err=err), "#bf616a")
+
+        if not games_db.steam_is_running():
+            write()
+        elif self._ask_close_steam("games_save_close_steam"):
+            self._close_steam_then(write, keys={"waiting": "games_save_waiting",
+                                                "timeout": "games_save_timeout",
+                                                "failed": "games_save_failed"})
+        else:
+            self._detail_status(tr("games_save_only_app"), "#ebcb8b")
+
     # Wie lange auf das Ende von Steam gewartet wird. Steam speichert beim
     # Beenden Bibliothek und Cloud-Stand — auf langsamen Platten dauert das.
     STEAM_SHUTDOWN_TIMEOUT_MS = 30000
@@ -974,7 +1000,7 @@ class GamesTabMixin:
         game_toggles = games_db.resolved_toggles(game)
         keys, custom = games_db.load_launch_toggles(appid, game_toggles)
         # Noch nie gespeichert -> Spiel-Vorgaben anwenden (gleiche Logik wie im Panel),
-        # damit z. B. VRChat auch über den ▶-Knopf mit gamemoderun + HW-Dekodierung startet.
+        # damit z. B. VRChat auch über den ▶-Knopf mit --force-openxr + HW-Dekodierung startet.
         if not games_db.has_saved_launch_toggles(appid):
             keys = list(game.get("default_on", [])) + \
                    [t["key"] for t in game_toggles if t.get("default")]
@@ -1757,6 +1783,19 @@ class GamesTabMixin:
         param_row.addWidget(btn_copy)
         box.addLayout(param_row)
         self._update_final_params()
+
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        btn_save = QPushButton(tr("games_save_btn"))
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.setToolTip(tr("games_save_tip"))
+        btn_save.setStyleSheet(
+            "QPushButton { background-color:#5e81ac; color:#eceff4; border:none;"
+            " font-weight:bold; border-radius:4px; padding:6px 16px; }"
+            " QPushButton:hover { background-color:#81a1c1; }")
+        btn_save.clicked.connect(lambda _c=False, a=appid: self._save_launch_opts(a))
+        save_row.addWidget(btn_save)
+        box.addLayout(save_row)
 
     def _fix_desc_label(self, key):
         lbl = QLabel(tr(key))

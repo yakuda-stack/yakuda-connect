@@ -8,12 +8,13 @@ Felder:
   pkg       : AUR-Paketname (für yay/paru)
   desc      : Beschreibung (Deutsch)
   desc_eng  : Beschreibung (Englisch)
+  desc_fr   : Beschreibung (Franzoesisch)
   start_cmd : Startbefehl
   link      : Webseite
 
 Installationsmethoden (distro-abhängig automatisch gefiltert):
   install_methods : Liste erlaubter Methoden, Teilmenge von
-                    {"appimage", "aur", "flatpak", "rpm", "cargo", "script"}. Fehlt das Feld, wird aus
+                    {"appimage", "aur", "flatpak", "rpm", "cargo", "script", "steam"}. Fehlt das Feld, wird aus
                     install_type/Feldern abgeleitet.
                       * "aur"     -> nur auf Arch-Distros, wenn yay oder paru da ist
                       * "appimage"-> überall, wenn github_repo/appimage_url gesetzt
@@ -37,6 +38,10 @@ Installationsmethoden (distro-abhängig automatisch gefiltert):
   cargo_git        : Git-URL -> "cargo install --git <url>" statt crates.io
   cargo_sys_deps   : {"arch": [...], "fedora": [...], "debian": [...], "suse": [...]}
                      Systempakete, die vor dem Cargo-Build da sein muessen
+  steam_appid      : AppID für "steam": installiert über den Steam-Client
+                     (core/steam_tools.py), überall, wo Steam vorhanden ist
+  steam_beta       : Beta-Zweig, den man in Steam auswählen muss — vor dem
+                     Installieren erscheint dazu ein Hinweis mit Bild
   script_url       : Roh-URL des install.sh für "script"
   script_uninstall_args : Argumente zum Entfernen per Skript (Standard: "uninstall")
   config_dirs      : Ordnernamen in ~/.config zur Erkennung/zum Löschen
@@ -51,7 +56,7 @@ Installationsmethoden (distro-abhängig automatisch gefiltert):
                      Gestartet wird über core/tool_launcher.py.
   remove_entries   : Vom Programm selbst angelegte .desktop-/Autostart-Dateien,
                      die bei Installation/Deinstallation entfernt werden (Pfade mit ~).
-  note / note_eng  : Optionaler Hinweis (klein, kursiv, gelb) unter der
+  note / note_eng / note_fr : Optionaler Hinweis (klein, kursiv, gelb) unter der
                      Beschreibung — z. B. Installations-Hinweise für Nutzer,
                      denen keine Methode zur Verfügung steht (kein AppImage
                      auf Nicht-Arch-Systemen o. Ä.).
@@ -382,14 +387,14 @@ def reload_tools_config():
 def tool_text(tool, field, lang):
     """Beschreibung/Hinweis eines Tools in der gewaehlten Sprache.
 
-    tools.json kennt nur Deutsch (``desc``) und Englisch (``desc_eng``).
-    Deutsch gibt es deshalb NUR bei ``lang == "de"`` — alle anderen Sprachen
-    (en, fr, ...) bekommen Englisch, und fehlt das, den deutschen Text.
+    tools.json kennt Deutsch (``desc``), Englisch (``desc_eng``) und
+    Franzoesisch (``desc_fr``). Fehlt eine Sprache, gilt Englisch und zuletzt
+    Deutsch.
     """
     de = tool.get(field, "") or ""
     if lang == "de":
         return de
-    return tool.get(field + "_eng") or de
+    return tool.get(f"{field}_{lang}") or tool.get(field + "_eng") or de
 
 
 def all_tools():

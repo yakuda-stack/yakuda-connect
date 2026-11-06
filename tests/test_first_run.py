@@ -259,3 +259,26 @@ def test_welcome_collapses_and_is_remembered(window):
     assert ui.txt_free_info.isHidden()
     ui.btn_welcome_toggle.click()                 # wieder auf
     assert not ui.txt_free_info.isHidden() and ui.btn_welcome_toggle.arrowType() == Qt.DownArrow
+
+
+def test_installations_tab_klappt_und_zeigt_ganzen_text(window):
+    from PySide6.QtWidgets import QScrollArea
+    ui = window.ui
+    assert ui.tab_installation.findChild(QScrollArea) is not None
+    ui.apk_header.click()
+    assert ui.btn_apk_install.parentWidget().isHidden()
+    ui.apk_header.click()
+    assert not ui.btn_apk_install.parentWidget().isHidden()
+    ui.aur_help_header.click()
+    assert ui.lbl_aur_help.isHidden()
+    ui.aur_help_header.click()
+    assert not ui.lbl_aur_help.isHidden()
+    assert ui.btn_apk_meta.text()
+
+
+def test_meta_store_knopf_oeffnet_store(window, monkeypatch):
+    from PySide6.QtGui import QDesktopServices
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", staticmethod(lambda u: opened.append(u)))
+    window.ui.btn_apk_meta.click()
+    assert "meta.com/experiences/wivrn" in opened[0].toString()

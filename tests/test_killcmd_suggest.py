@@ -33,7 +33,7 @@ def test_suggest(cmd, mode, expected):
 
 def test_kill_field_gets_suggestion(window):
     w = window
-    w._vr_add_row_clicked()
+    w._vr_append_row()
     r = w.autostart_rows[-1]
     r["combo"].setCurrentText("Custom Path")
     r["input"].setText("/home/u/Apps/VRCX.AppImage")
@@ -49,7 +49,7 @@ def test_kill_field_gets_suggestion(window):
 def test_start_button_launches_rows(window, monkeypatch):
     called = []
     monkeypatch.setattr(type(window), "launch_autostart_apps", lambda self: called.append(1))
-    window._vr_add_row_clicked()
+    window._vr_append_row()
     window.autostart_rows[-1]["input"].setText("wayvr")
     window._update_autostart_start_button()
     assert window.ui.btn_autostart_start.isEnabled()
@@ -72,7 +72,7 @@ def test_profile_rows_have_kill_and_run_it_on_stop(window, monkeypatch):
     prof = w._profile_add({"name": "T", "trigger": "VRChat.exe", "apps": []})
     w._profile_add_row(prof, {"type": "CMD", "cmd": "vrcx"})
     r = prof["rows"][-1]
-    assert r["widget"].objectName() == "autostartRowCard" and prof["col_labels"]
+    assert r["widget"].objectName() == "autostartRowCard"
     r["chk_kill"].setChecked(True)
     w._autostart_offer_kill_suggestion(r)
     assert r["kill_input"].text() == "pkill -f vrcx"

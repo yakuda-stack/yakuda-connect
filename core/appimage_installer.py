@@ -385,6 +385,10 @@ def detect_install_methods(tool):
         import script_installer
         if script_installer.available(tool):
             methods.append("script")
+    if "steam" in supported and tool.get("steam_appid"):
+        import steam_tools
+        if steam_tools.available():
+            methods.append("steam")
     return methods
 
 
@@ -694,6 +698,10 @@ def compute_status(tool):
     if "script" in supported:
         import script_installer
         st["script_installed"] = script_installer.local_status(tool)[0]
+
+    if "steam" in supported and tool.get("steam_appid"):
+        import steam_tools
+        st["steam_installed"] = steam_tools.is_installed(tool["steam_appid"])
 
     st["config_present"] = native_installed(tool)
     return st

@@ -86,3 +86,55 @@ def test_apply_installs_then_uses_proton(monkeypatch):
     state["found"] = True
     f.optimize_after_proton_install(True)
     assert ("use", "RTSP") in f.calls
+
+
+def test_steam_hint_only_when_requested(qapp):
+    from translations import tr
+    from ui.game_optimize_dialog import GameOptimizeDialog
+    from PySide6.QtWidgets import QLabel
+    plain = GameOptimizeDialog(None, game="Other", toggles=TOGGLES)
+    hinted = GameOptimizeDialog(None, game="VRChat", toggles=TOGGLES, steam_hint=True)
+    head = tr("gopt_steam_hint_head")
+    assert head not in [l.text() for l in plain.findChildren(QLabel)]
+    assert head in [l.text() for l in hinted.findChildren(QLabel)]
+
+
+def _open_with(monkeypatch, game, saved_keys):
+    """Oeffnet den Assistenten und liefert die Vorauswahl je Schalter."""
+    import games as games_db
+    import ui.game_optimize_dialog as dialog
+    from tabs.games_optimize_mixin import GamesOptimizeMixin
+    seen = {}
+
+    class Dialog:
+        Accepted = 1
+
+        def __init__(self, _parent, **kwargs):
+            seen.update({t[0]: t[3] for t in kwargs["toggles"]})
+            seen["_hint"] = kwargs["steam_hint"]
+
+        def exec(self):
+            return 0
+
+    class Host(GamesOptimizeMixin):
+        def _game_data_for(self, _appid):
+            return game
+
+        def _optimize_recommended_proton(self, _game):
+            return None
+
+    monkeypatch.setattr(dialog, "GameOptimizeDialog", Dialog)
+    monkeypatch.setattr(games_db, "refresh_vrcvideocacher_path", lambda: None)
+    monkeypatch.setattr(games_db, "load_launch_toggles", lambda a, t: (saved_keys, "eigen"))
+    Host().open_game_optimize("438100")
+    return seen
+
+
+def test_vrchat_nur_empfehlungen_vorausgewaehlt(monkeypatch):
+    import games as games_db
+    game = games_db.GAMES["438100"]
+    seen = _open_with(monkeypatch, game, ["proton_use_wayland", "vrc_launch_in_vr", "gamemoderun"])
+    assert seen.pop("_hint") is True
+    assert sorted(k for k, on in seen.items() if on) == ["force_openxr", "vrc_hw_video_decoding"]
+    assert "gamemoderun" not in seen
+    assert "vrc_avpro_proton" not in seen and "vrc_amd_stutter" not in seen

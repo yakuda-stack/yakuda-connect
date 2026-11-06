@@ -11,6 +11,7 @@
       "pkg": "wayvr",
       "desc": "Ein Desktop-Overlay für Wayland desktops mit integriertem Playspace Mover (wie XSOverlay).",
       "desc_eng": "A desktop overlay for Wayland with integrated Playspace Mover (like XSOverlay).",
+      "desc_fr": "Un overlay de bureau pour Wayland avec Playspace Mover intégré (comme XSOverlay).",
       "start_cmd": "wayvr",
       "link": "https://github.com/wayvr-org/wayvr",
       "install_methods": [
@@ -32,6 +33,7 @@
       "pkg": "vrcx",
       "desc": "Freundschafts-Verwaltungstool für VRChat (basiert auf Electron).",
       "desc_eng": "Friendship management tool for VRChat (built with Electron).",
+      "desc_fr": "Outil de gestion des amis pour VRChat (basé sur Electron).",
       "start_cmd": "vrcx",
       "link": "https://github.com/vrcx-team/VRCX",
       "install_methods": [
@@ -58,6 +60,7 @@
       "pkg": "protonplus",
       "desc": "Damit viele Spiele gut und performance-freundlich laufen. Für VRChat ist Proton GE RTSP empfohlen.",
       "desc_eng": "Helps many games run well and performance-friendly. Proton GE RTSP is recommended for VRChat.",
+      "desc_fr": "Aide de nombreux jeux à bien tourner, avec de bonnes performances. Proton GE RTSP est recommandé pour VRChat.",
       "start_cmd": "protonplus",
       "link": "https://github.com/Vysp3r/ProtonPlus",
       "install_methods": [
@@ -73,6 +76,7 @@
       "pkg": "slimevr-bin",
       "desc": "VR Full Body Tracking System.",
       "desc_eng": "VR Full Body Tracking System.",
+      "desc_fr": "Système de suivi du corps entier en VR.",
       "start_cmd": "slimevr",
       "link": "https://slimevr.dev/",
       "install_methods": [
@@ -91,6 +95,7 @@
       "pkg": "linuxvr-viewshot",
       "desc": "Fotos in VR per Hand-Rahmen-Geste – Linux-Alternative zu VRHandsFrame (OpenXR-Layer für WiVRn/Monado + Desktop-App für deine Fotos).",
       "desc_eng": "Take photos in VR with a hand-frame gesture – Linux alternative to VRHandsFrame (OpenXR layer for WiVRn/Monado + desktop app for your photos).",
+      "desc_fr": "Prends des photos en VR avec un geste de cadre des mains : alternative Linux à VRHandsFrame (couche OpenXR pour WiVRn/Monado et application de bureau pour tes photos).",
       "start_cmd": "linuxvr-viewshot",
       "link": "https://github.com/yakuda-stack/LinuxVR-ViewShot",
       "install_methods": [
@@ -108,6 +113,7 @@
       ],
       "note": "Nach der Installation einmal öffnen – das Willkommen-Fenster richtet VR-Layer und Hintergrund-Dienst ein. Skript braucht git, PyQt6 und Rust ≥ 1.88.",
       "note_eng": "Open it once after installing – the welcome window sets up the VR layer and background service. The script needs git, PyQt6 and Rust ≥ 1.88.",
+      "note_fr": "Ouvre-le une fois après l'installation : la fenêtre d'accueil configure la couche VR et le service en arrière-plan. Le script nécessite git, PyQt6 et Rust ≥ 1.88.",
       "category": "misc"
     },
     {
@@ -116,6 +122,7 @@
       "pkg": "unityhub",
       "desc": "Der offizielle Unity Hub – wird zwingend für die Nutzung von Alcom benötigt.",
       "desc_eng": "The official Unity Hub — required for using Alcom.",
+      "desc_fr": "Le Unity Hub officiel, nécessaire pour utiliser Alcom.",
       "start_cmd": "unityhub",
       "link": "https://docs.unity.com/en-us/hub",
       "install_methods": [
@@ -131,6 +138,7 @@
       "pkg": "alcom",
       "desc": "Eine schnelle, quelloffene Alternative zum offiziellen VRChat Creator Companion (VCC).",
       "desc_eng": "A fast, open-source alternative to the official VRChat Creator Companion (VCC).",
+      "desc_fr": "Une alternative rapide et open source au VRChat Creator Companion (VCC) officiel.",
       "start_cmd": "alcom",
       "link": "https://vrc-get.anatawa12.com/de/alcom/",
       "install_methods": [
@@ -147,6 +155,7 @@
       "pkg": "intiface-central",
       "desc": "Steuerzentrale für deine Toys. Kann alternativ auf dem Handy installiert werden: Handy-IP in OscGoesBrrr eintragen.",
       "desc_eng": "Control hub for your toys. Can also run on your phone — just enter the phone IP in OscGoesBrrr.",
+      "desc_fr": "Centre de contrôle pour tes jouets. Fonctionne aussi sur ton téléphone : il suffit d'entrer son adresse IP dans OscGoesBrrr.",
       "start_cmd": "intiface-central",
       "link": "https://intiface.com/#intiface-central",
       "install_methods": [
@@ -162,6 +171,7 @@
       "pkg": "android-tools",
       "desc": "VR-App per Kabel auf dem Headset installieren (Android-basiert).",
       "desc_eng": "Install VR apps directly on your headset via USB cable (Android-based).",
+      "desc_fr": "Installe des apps VR directement sur ton casque via un câble USB (casques sous Android).",
       "start_cmd": "android-tools",
       "terminal": true,
       "link": "https://developer.android.com/tools?hl=de",
@@ -180,13 +190,18 @@
       "category": "tracking",
       "desc": "Richtet VR-Geraete aus verschiedenen Tracking-Systemen ueber die Monado-Runtime in einen gemeinsamen Raum aus — z. B. Headset per WiVRn zusammen mit Lighthouse-Controllern oder Vive-Trackern. Kalibrieren, Boden setzen, neu zentrieren.",
       "desc_eng": "Aligns VR devices from different tracking systems into one shared space through the Monado runtime — e.g. a WiVRn headset together with lighthouse controllers or Vive trackers. Calibrate, set floor, recenter.",
+      "desc_fr": "Aligne des appareils VR de différents systèmes de suivi dans un même espace via le runtime Monado, p. ex. un casque WiVRn avec des manettes lighthouse ou des trackers Vive. Calibrer, définir le sol, recentrer.",
       "start_cmd": "spacecal-for-monado",
       "link": "https://github.com/99oblivius/spacecal-for-monado",
       "install_methods": [
-        "aur"
+        "aur",
+        "rpm"
       ],
-      "note": "Braucht eine laufende Monado-basierte Runtime (WiVRn oder Monado). Nicht-Arch-Nutzer: .deb/.rpm aus dem GitHub-Release oder  nix run github:99oblivius/spacecal-for-monado",
-      "note_eng": "Requires a running Monado-based runtime (WiVRn or Monado). Non-Arch users: .deb/.rpm from the GitHub release, or  nix run github:99oblivius/spacecal-for-monado"
+      "github_repo": "99oblivius/spacecal-for-monado",
+      "rpm_asset_match": ".rpm",
+      "note": "Braucht eine laufende Monado-basierte Runtime (WiVRn oder Monado). Debian/Ubuntu: .deb aus dem GitHub-Release, NixOS:  nix run github:99oblivius/spacecal-for-monado",
+      "note_eng": "Requires a running Monado-based runtime (WiVRn or Monado). Debian/Ubuntu: .deb from the GitHub release, NixOS:  nix run github:99oblivius/spacecal-for-monado",
+      "note_fr": "Nécessite un runtime basé sur Monado en cours d'exécution (WiVRn ou Monado). Debian/Ubuntu : .deb depuis la release GitHub, NixOS :  nix run github:99oblivius/spacecal-for-monado"
     },
     {
       "key": "obah",
@@ -195,6 +210,7 @@
       "category": "input",
       "desc": "Terminal-Oberflaeche zum Bearbeiten von OpenVR-Bindings fuer xrizer, VapoR und OpenComposite — statt die JSON-Dateien von Hand zu schreiben. Findet Steam-Titel selbst; fuer Nicht-Steam-Titel den Spielordner uebergeben.",
       "desc_eng": "Terminal UI for editing OpenVR bindings for xrizer, VapoR and OpenComposite instead of writing the JSON by hand. Finds Steam titles on its own; pass the game folder for non-Steam titles.",
+      "desc_fr": "Interface terminal pour modifier les bindings OpenVR de xrizer, VapoR et OpenComposite sans écrire le JSON à la main. Trouve les jeux Steam tout seul ; pour les autres, indique le dossier du jeu.",
       "start_cmd": "obah",
       "terminal": true,
       "link": "https://github.com/galister/obah",
@@ -204,7 +220,8 @@
       ],
       "crate": "obah",
       "note": "Laeuft im Terminal (TUI), nicht als Fenster — fuer Autostart daher wenig sinnvoll. Methode \"Cargo\" funktioniert auf jeder Distro: baut obah nach ~/.config/yakuda-connect/tools/cargo/obah und installiert Rust bei Bedarf mit.",
-      "note_eng": "Runs in the terminal (TUI), not as a window — so it makes little sense for autostart. The \"Cargo\" method works on any distro: builds obah into ~/.config/yakuda-connect/tools/cargo/obah and installs Rust if needed."
+      "note_eng": "Runs in the terminal (TUI), not as a window — so it makes little sense for autostart. The \"Cargo\" method works on any distro: builds obah into ~/.config/yakuda-connect/tools/cargo/obah and installs Rust if needed.",
+      "note_fr": "S'exécute dans le terminal (TUI), pas dans une fenêtre : peu utile en autostart. La méthode « Cargo » fonctionne sur toutes les distributions : elle compile obah dans ~/.config/yakuda-connect/tools/cargo/obah et installe Rust si besoin."
     },
     {
       "key": "xr-hotas",
@@ -213,6 +230,7 @@
       "category": "input",
       "desc": "Macht die VR-Controller zu Schubhebel und Joystick fuer Spiele, die keine Motion-Controller, aber Gamepads unterstuetzen (Elite: Dangerous, DCS World). Griff halten aktiviert die Achsen.",
       "desc_eng": "Turns your VR motion controllers into throttle and joystick for games that support gamepads but not motion controllers (Elite: Dangerous, DCS World). Hold grip to activate the axes.",
+      "desc_fr": "Transforme tes manettes VR en manette des gaz et joystick pour les jeux qui gèrent les manettes de jeu mais pas le suivi des mouvements (Elite: Dangerous, DCS World). Maintiens la poignée pour activer les axes.",
       "start_cmd": "xr-hotas",
       "terminal": true,
       "link": "https://github.com/galister/xr-hotas",
@@ -235,7 +253,8 @@
         ]
       },
       "note": "Wird per Cargo direkt aus dem GitHub-Repo gebaut (OpenXR-Bibliothek und Rust werden bei Bedarf mitinstalliert). Braucht Schreibzugriff auf /dev/uinput — den bringen Steams udev-Regeln mit (Paket steam-devices bzw. steam).",
-      "note_eng": "Built with Cargo straight from the GitHub repo (OpenXR library and Rust are installed if needed). Needs write access to /dev/uinput — Steam's udev rules provide it (package steam-devices or steam)."
+      "note_eng": "Built with Cargo straight from the GitHub repo (OpenXR library and Rust are installed if needed). Needs write access to /dev/uinput — Steam's udev rules provide it (package steam-devices or steam).",
+      "note_fr": "Compilé avec Cargo directement depuis le dépôt GitHub (la bibliothèque OpenXR et Rust sont installés si besoin). Nécessite l'accès en écriture à /dev/uinput : les règles udev de Steam le fournissent (paquet steam-devices ou steam)."
     },
     {
       "key": "vivehub-linux",
@@ -244,11 +263,13 @@
       "category": "tracking",
       "desc": "HTCs Desktop-App fuer die VIVE Ultimate Tracker unter Linux: Tracker mit dem Dongle koppeln, Tracking-Map bauen, Posen ueber ein C++-SDK bereitstellen. Beta, kein HMD-Support.",
       "desc_eng": "HTC's desktop app for VIVE Ultimate Trackers on Linux: pair trackers with the dongle, build the tracking map, expose poses through a C++ SDK. Beta, no HMD support.",
+      "desc_fr": "L'application de bureau de HTC pour les VIVE Ultimate Trackers sous Linux : associer les trackers au dongle, créer la carte de suivi et exposer les positions via un SDK C++. Bêta, sans prise en charge des casques.",
       "start_cmd": "run-vivehub.sh",
       "link": "https://github.com/ViveRoboticsSoftware/vivehub-linux",
       "install_methods": [],
       "note": "Nur als Tarball von HTC, daher nicht von hier installierbar: Release entpacken, einmalig  sudo ./install-udev.sh  ausfuehren, Dongle neu einstecken, dann mit  ./run-vivehub.sh  starten. Proprietaer (VIVE Product EULA), entwickelt auf Ubuntu.",
-      "note_eng": "Tarball from HTC only, so it cannot be installed from here: extract the release, run  sudo ./install-udev.sh  once, replug the dongle, then start it with  ./run-vivehub.sh . Proprietary (VIVE Product EULA), developed on Ubuntu."
+      "note_eng": "Tarball from HTC only, so it cannot be installed from here: extract the release, run  sudo ./install-udev.sh  once, replug the dongle, then start it with  ./run-vivehub.sh . Proprietary (VIVE Product EULA), developed on Ubuntu.",
+      "note_fr": "Archive fournie uniquement par HTC, donc pas d'installation depuis ici : extrais la release, lance une fois  sudo ./install-udev.sh , rebranche le dongle, puis démarre avec  ./run-vivehub.sh . Propriétaire (VIVE Product EULA), développé sous Ubuntu."
     }
   ],
   "osc": [
@@ -258,6 +279,7 @@
       "pkg": "osc-dreamchatbox",
       "desc": "Native Linux-Alternative zu MagicChatbox (VRCOSC) – VRChat-OSC-Chatbox-Begleiter: Status-Rotation, Now-Playing, Hardware-Monitor, Speech-to-Text und OSCQuery.",
       "desc_eng": "Native Linux alternative to MagicChatbox (VRCOSC) — VRChat OSC chatbox companion (status, now-playing, hardware, speech-to-text, OSCQuery).",
+      "desc_fr": "Alternative Linux native à MagicChatbox (VRCOSC) : compagnon de chatbox OSC pour VRChat (statut, lecture en cours, matériel, reconnaissance vocale, OSCQuery).",
       "start_cmd": "osc-dreamchatbox",
       "link": "https://github.com/yakuda-stack/OSC-DreamChatbox",
       "featured": true,
@@ -280,6 +302,7 @@
       "pkg": "oscleash",
       "desc": "OSC-Tool, um dich an einer virtuellen Leine hinterherzuziehen. Erfordert eine entsprechende Funktion im Avatar.",
       "desc_eng": "OSC tool to pull you around on a virtual leash. Requires a compatible avatar setup.",
+      "desc_fr": "Outil OSC pour te faire tirer par une laisse virtuelle. Nécessite un avatar compatible.",
       "start_cmd": "oscleash_app",
       "link": "https://github.com/yakuda-stack/OSCLeash",
       "install_methods": [
@@ -299,6 +322,7 @@
       "pkg": "oscgoesbrrr",
       "desc": "Echtes haptisches Feedback für VRChat. Unterstützt Lovense-Toys (kompatibel mit VRCFury).",
       "desc_eng": "Real haptic feedback for VRChat. Supports Lovense toys (compatible with VRCFury).",
+      "desc_fr": "Vrai retour haptique pour VRChat. Prend en charge les jouets Lovense (compatible avec VRCFury).",
       "start_cmd": "oscgoesbrrr",
       "link": "https://github.com/OscToys/OscGoesBrrr/releases",
       "install_methods": [
@@ -322,12 +346,16 @@
       "pkg": "vrcft-avalonia-bin",
       "desc": "Cross-Plattform-Port von VRCFaceTracking (Avalonia/.NET) — die Brücke zwischen Face-/Eye-Tracking-Hardware und VRChat. Für Project Babble hier das VRCFT-Babble-Modul installieren.",
       "desc_eng": "Cross-platform port of VRCFaceTracking (Avalonia/.NET) — the bridge between face/eye-tracking hardware and VRChat. For Project Babble, install the VRCFT-Babble module inside it.",
+      "desc_fr": "Portage multiplateforme de VRCFaceTracking (Avalonia/.NET) : le lien entre le matériel de suivi du visage et des yeux et VRChat. Pour Project Babble, installe-y le module VRCFT-Babble.",
       "start_cmd": "vrcft",
       "link": "https://github.com/dfgHiatus/VRCFaceTracking.Avalonia",
       "install_methods": [
         "appimage",
-        "aur"
+        "aur",
+        "steam"
       ],
+      "steam_appid": "3329480",
+      "steam_beta": "avalonia",
       "github_repo": "dfgHiatus/VRCFaceTracking.Avalonia",
       "asset_match": ".AppImage",
       "include_prerelease": false,
@@ -342,16 +370,20 @@
       "pkg": "baballonia",
       "desc": "Quelloffenes Eye-/Face-Tracking für Social VR (VRChat, Resonite, ChilloutVR). Füttert VRCFaceTracking über das VRCFT-Babble-Modul.",
       "desc_eng": "Open-source eye/face tracking for social VR (VRChat, Resonite, ChilloutVR). Feeds VRCFaceTracking via the VRCFT-Babble module.",
+      "desc_fr": "Suivi des yeux et du visage open source pour la VR sociale (VRChat, Resonite, ChilloutVR). Alimente VRCFaceTracking via le module VRCFT-Babble.",
       "start_cmd": "baballonia",
       "link": "https://github.com/Project-Babble/Baballonia",
       "install_methods": [
-        "aur"
+        "aur",
+        "steam"
       ],
+      "steam_appid": "4091970",
       "config_dirs": [
         "Baballonia"
       ],
-      "note": "Kein AppImage/Flatpak vorhanden. Nicht-Arch-Nutzer: Release-Tarball von GitHub entpacken und starten, oder per Nix:  nix run github:Project-Babble/Baballonia",
-      "note_eng": "No AppImage/Flatpak available. Non-Arch users: download & extract the release tarball from GitHub, or run via Nix:  nix run github:Project-Babble/Baballonia",
+      "note": "Kein AppImage/Flatpak vorhanden. Ohne yay/paru: über Steam installieren, Release-Tarball von GitHub entpacken oder per Nix:  nix run github:Project-Babble/Baballonia",
+      "note_eng": "No AppImage/Flatpak available. Without yay/paru: install via Steam, extract the release tarball from GitHub, or run via Nix:  nix run github:Project-Babble/Baballonia",
+      "note_fr": "Pas d'AppImage ni de Flatpak. Sans yay/paru : installe via Steam, extrais l'archive de la release GitHub, ou lance via Nix :  nix run github:Project-Babble/Baballonia",
       "category": "facetracking"
     }
   ]

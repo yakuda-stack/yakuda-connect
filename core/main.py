@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.7"
+APP_VERSION = "v1.4.8"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -404,6 +404,14 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         # gleicht sie bei Bedarf mit der Realität ab.
         self._server_running = False
         self._syncing_toggle = False         # True während der Schalter nur angeglichen wird
+        self._external_autostart = False     # Autostart gilt einem fremd gestarteten Server
+        self._show_autostart_icons = bool(load_saved_settings().get("show_autostart_icons", True))
+        self._stop_apps_on_disconnect = bool(
+            load_saved_settings().get("stop_apps_on_disconnect", True))
+        self._restart_server_on_poweroff = bool(
+            load_saved_settings().get("restart_server_on_poweroff", True))
+        self._icon_worker = None             # laedt gerade ein Tool-Icon
+        self._icon_queue = []                # wartende Icons: (key, manuell)
 
         # --- Autostart: Apps folgen der Headset-Verbindung ---
         # Starten, sobald ein Spieler verbindet; beenden bei Trennung oder Server-Stopp.
@@ -416,6 +424,9 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         # Wie viele Sekunden "getrennt" am Stück, bevor die Apps beendet werden
         # (verhindert, dass kurze Aussetzer die Programme killen).
         self._disconnect_grace = 3
+        self._dead_peers = set()             # Verbindungen ausgeschalteter Headsets
+        self._restart_after_stop = False     # Server nach dem Beenden neu starten
+        self._answering_ips = set()          # Geraete, die schon einmal geantwortet haben
 
         # --- Einweg-Autostart-Timer ---
         # Wird beim Server-Start scharfgeschaltet, prüft im Sekundentakt
@@ -426,6 +437,12 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.autostart_timer = QTimer(self)
         self.autostart_timer.setInterval(1000)   # 1x pro Sekunde
         self.autostart_timer.timeout.connect(self._poll_headset_for_autostart)
+
+        # Nach dem Start der Programme: Ist das Headset weg, wird der Autostart
+        # wieder scharfgeschaltet (siehe _check_autostart_rearm).
+        self._autostart_rearm_timer = QTimer(self)
+        self._autostart_rearm_timer.setInterval(5000)
+        self._autostart_rearm_timer.timeout.connect(self._check_autostart_rearm)
 
         # --- USB-Ampel im Dashboard ---
         # Laeuft NUR, solange der Dashboard-Tab offen ist (siehe
@@ -493,6 +510,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self._exit_cleanup_done = False
 
         self.init_logic_connections()
+        self._init_server_timer()
         # Farbthema anwenden, sobald die Oberflaeche steht. Vorher hat noch
         # kein Widget ein Stylesheet, das sich umfaerben liesse.
         self.apply_theme()
@@ -513,12 +531,16 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             self.ui.sidebar.setCurrentRow(1)
 
         # Kein Sekunden-Timer mehr: Der Server-Status wird gemerkt (Toggle) und
-        # nur auf Knopfdruck wirklich nachgeprüft. Beim Start einmal abgleichen,
-        # falls der Server bereits läuft (z. B. aus einer früheren Sitzung).
+        # geprüft beim Start, beim Klick auf das Dashboard, per Knopf und auf
+        # Wunsch per "Timer Server Check". Beim Start einmal abgleichen, falls
+        # der Server bereits läuft (z. B. außerhalb der App gestartet).
         self.manual_server_check()
 
         self.apply_loaded_settings()
+        self._show_autostart_notice_once()
         self.is_loading = False
+        # Erst wenn die Ereignisschleife laeuft: das Fenster steht dann schon.
+        QTimer.singleShot(0, self._start_server_on_launch)
         # Start-Zwischenspeicher der Controls-Installationspruefung verwerfen
         # (siehe controls_mixin._control_installed) — ab jetzt wieder frisch.
         self._control_installed_cache = None
@@ -558,17 +580,16 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
     def _set_welcome_text(self):
         """Willkommenstext im Installations-Tab — Texte aus locales/*.json
         (welcome_*), damit es ihn in jeder Sprache gibt."""
-        li = "<li style='margin-bottom: 4px;'>{}</li>"
+        li = "<li style='margin-bottom: 6px;'>{}</li>"
         # Der Titel steht in der Klapp-Kopfzeile darueber (btn_welcome_toggle)
         html = (
             f"<p style='margin-bottom: 12px;'>{tr('welcome_intro')}</p>"
-            "<hr style='border: none; border-top: 1px solid #3b4252; margin-bottom: 12px;' />"
-            "<p style='color: #d08770; font-weight: bold; margin-bottom: 4px;'>"
+            "<p style='color: #d08770; font-weight: bold; margin-bottom: 6px;'>"
             f"⚠️ {tr('welcome_backup_head')}</p>"
             "<ul style='margin-top: 0px; margin-bottom: 14px; padding-left: 20px;'>"
             + li.format(tr("welcome_backup_1")) + li.format(tr("welcome_backup_2")) +
             "</ul>"
-            "<p style='color: #ebcb8b; font-weight: bold; margin-bottom: 4px;'>"
+            "<p style='color: #ebcb8b; font-weight: bold; margin-bottom: 6px;'>"
             f"ℹ️ {tr('welcome_info_head')}</p>"
             "<ul style='margin-top: 0px; padding-left: 20px;'>"
             + li.format(tr("welcome_info_1")) + li.format(tr("welcome_info_2")) +
@@ -1123,6 +1144,18 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.ui.btn_games_reset.clicked.connect(self.reset_games_list)
         self.ui.chk_stop_server_with_app.setChecked(self._stop_server_with_app)
         self.ui.chk_stop_server_with_app.toggled.connect(self.on_stop_server_with_app_toggled)
+        self.ui.chk_start_server_with_app.setChecked(
+            bool(load_saved_settings().get("start_server_with_app", False)))
+        self.ui.chk_start_server_with_app.toggled.connect(self.on_start_server_with_app_toggled)
+        self.ui.chk_autostart_external_server.setChecked(
+            bool(load_saved_settings().get("autostart_external_server", True)))
+        self.ui.chk_autostart_external_server.toggled.connect(self.on_autostart_external_toggled)
+        self.ui.chk_show_autostart_icons.setChecked(self._show_autostart_icons)
+        self.ui.chk_show_autostart_icons.toggled.connect(self.on_show_autostart_icons_toggled)
+        self.ui.chk_stop_apps_on_disconnect.setChecked(self._stop_apps_on_disconnect)
+        self.ui.chk_stop_apps_on_disconnect.toggled.connect(self.on_stop_apps_on_disconnect_toggled)
+        self.ui.chk_restart_on_poweroff.setChecked(self._restart_server_on_poweroff)
+        self.ui.chk_restart_on_poweroff.toggled.connect(self.on_restart_on_poweroff_toggled)
         self.ui.btn_cli_setup.clicked.connect(self.setup_cli_commands)
         self.ui.btn_cli_open.clicked.connect(self.switch_to_terminal_mode)
         self.ui.btn_games_db_update.clicked.connect(self.start_games_db_update)
@@ -1174,6 +1207,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.ui.btn_welcome_toggle.toggled.connect(
             lambda on: update_json(paths.config_file("config.json"), {"welcome_collapsed": not on}))
         self.ui.btn_firstrun_reset.clicked.connect(self.reset_first_run)
+        self.ui.btn_app_reset.clicked.connect(self.reset_whole_app)
         # WayVR Design (Settings): cubee-cb-Design installieren / Config löschen
         self._wayvr_worker = None
         self.ui.btn_wayvr_install.clicked.connect(self.start_wayvr_design_install)
@@ -1203,7 +1237,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
 
         # Dashboard Steuerung — Schiebeschalter statt Start/Stop-Buttons
         self.ui.toggle_server.toggled.connect(self.on_server_toggled)
-        self.ui.btn_server_check.clicked.connect(self.manual_server_check)
+        self.ui.btn_server_check.clicked.connect(self._check_server_and_refresh)
+        self.ui.btn_server_timer.clicked.connect(self.open_server_timer_dialog)
         self.ui.btn_port_status.clicked.connect(self.open_port_9757_firewall)
         self.ui.btn_netbuffers.clicked.connect(self.fix_network_buffers)
         self.ui.btn_performance_setup.clicked.connect(self.open_vr_optimize)
@@ -1367,6 +1402,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             self.check_system_packages()
         # USB-Ampel nur im Dashboard mitlaufen lassen (spart adb-Aufrufe).
         if index == 1:
+            # Der Server kann ausserhalb der App gestartet oder beendet worden sein.
+            self.manual_server_check()
             self.check_usb_headset()
             self.usb_poll_timer.start()
         else:
@@ -2712,11 +2749,11 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
 
         if not self.ui.num_apps.signalsBlocked(): self.trigger_auto_save()
 
-    def _vr_add_row(self):
+    def _vr_add_row(self, app=None):
         """Eine Programmzeile im Dashboard (Aufbau: ui/autostart_row.py —
         dieselbe Zeile wie in den Autostart-Profilen)."""
         from ui.autostart_row import build_row
-        row = build_row(self, on_change=self.trigger_auto_save,
+        row = build_row(self, app, on_change=self.trigger_auto_save,
                         on_delete=self._vr_remove_row)
         row["input"].textChanged.connect(lambda _t: self._update_autostart_start_button())
         self.ui.autostart_container_layout.addWidget(row["widget"])
@@ -2745,20 +2782,34 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         for r in getattr(self, "autostart_rows", []):
             retranslate_row(r)
 
+    def _refresh_autostart_rows(self):
+        """Alle Autostart-Zeilen neu anzeigen (Dashboard und Profile)."""
+        from ui.autostart_row import refresh_row
+        for r in getattr(self, "autostart_rows", []):
+            refresh_row(r)
+        for prof in getattr(self, "_profiles", []):
+            for r in prof["rows"]:
+                refresh_row(r)
+
     @staticmethod
     def _vr_delete_row_widgets(row):
         row["widget"].setParent(None)
         row["widget"].deleteLater()
 
     def _vr_add_row_clicked(self):
-        """„+ Programm“ im VR-Tab."""
-        if len(self.autostart_rows) >= 10:
-            return
-        self._vr_add_row()
+        """„+ Programm“ im VR-Tab: erst auswaehlen, dann die Zeile anlegen."""
+        from ui.autostart_row import add_program
+        if len(self.autostart_rows) < 10:
+            add_program(self, self._vr_append_row)
+
+    def _vr_append_row(self, app=None):
+        """Zeile anhaengen, Zaehler und Anzeige nachziehen, speichern."""
+        row = self._vr_add_row(app)
         self.ui.num_apps.setText(str(len(self.autostart_rows)))
         self.trigger_auto_save()
         self.ui.update_autostart_header(len(self.autostart_rows))
         self._update_autostart_start_button()
+        return row
 
     def _vr_remove_row(self, row):
         """✕ an einer Zeile im VR-Tab — entfernt genau diese Zeile."""
@@ -2773,23 +2824,16 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self._update_autostart_start_button()
 
     def _autostart_mode_changed(self, mode, line_edit, button):
-        """Schaltet eine Autostart-Zeile zwischen Pfad- und Befehlsmodus um.
+        """Felder im Zahnrad-Fenster an die Auswahl anpassen.
 
-        Vorher stand hier ein einzeiliger Ausdruck, der nur eine Richtung
-        bediente: beim Wechsel auf CMD wurde der Knopf deaktiviert und beim
-        Zurueckwechseln nie wieder aktiv. Beide Richtungen muessen gesetzt
-        werden, sonst bleibt der Zustand haengen.
+        Programm: Befehl kommt aus der App-Liste, "Aendern" oeffnet sie.
+        Eigener Pfad: "Aendern" oeffnet die Dateiauswahl.
+        Eigener Befehl: nur das Textfeld.
         """
-        if mode == "CMD":
-            # Im Befehlsmodus fuehrt kein Dateidialog weiter — gesucht ist ein
-            # Startbefehl. Der Knopf listet stattdessen die installierten Tools.
-            button.setText(tr("autostart_apps_btn"))
-            button.setToolTip(tr("autostart_apps_tip"))
-        else:
-            button.setText(tr("autostart_browse_btn"))
-            button.setToolTip("")
-        button.setEnabled(True)
-        line_edit.setReadOnly(False)
+        button.setVisible(mode != "CMD")
+        button.setText(tr("autostart_change_btn"))
+        button.setToolTip(tr("autostart_apps_tip") if mode == "App" else "")
+        line_edit.setReadOnly(mode == "App")
 
     def _autostart_command_pool(self):
         """Vorschlaege fuer die Autovervollstaendigung im CMD-Modus.
@@ -2845,6 +2889,12 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
                     installed = bool(ai.flatpak_app_installed(tool["flatpak_id"]))
             except Exception as exc:
                 log.debug("Tool-Status %s nicht ermittelbar — %s", tool.get("key"), exc)
+            if not installed and tool.get("steam_appid"):
+                import steam_tools
+                if steam_tools.is_installed(tool["steam_appid"]):
+                    found.append({"key": tool.get("key", ""),
+                                  "name": tool.get("name", tool.get("key", "")),
+                                  "cmd": steam_tools.autostart_command(tool["steam_appid"])})
             if installed:
                 args = (tool.get("launch_args") or "").strip()
                 found.append({
@@ -2856,8 +2906,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         return found
 
     def _autostart_browse(self, line_edit, combo):
-        """Knopf am Zeilenende — je nach Modus Dateidialog oder App-Auswahl."""
-        if combo.currentText() == "CMD":
+        """Knopf "Aendern" — je nach Auswahl App-Liste oder Dateidialog."""
+        if combo.mode() == "App":
             self._autostart_pick_installed_app(line_edit)
         else:
             self.browse_custom_app_for_row(line_edit)
@@ -2875,7 +2925,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
 
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("autostart_apps_title"))
-        dlg.setMinimumWidth(420)
+        dlg.setMinimumSize(420, 380)
         v = QVBox(dlg)
 
         info = QLabel(tr("autostart_apps_hint"))
@@ -2942,6 +2992,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         apps_data = [{
             "type":  r["combo"].currentText(),
             "cmd":   r["input"].text(),
+            "name":  r["name_input"].text().strip(),
+            "icon":  r["icon"],
             "debug": r["chk_debug"].isChecked(),
             "kill_on": r["chk_kill"].isChecked(),
             "kill":  r["kill_input"].text(),
@@ -2962,6 +3014,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
 
         # Einmalig: alte Kill-Befehle (Erweitert) an ihre Autostart-Zeile haengen.
         import killcmd_migrate
+        from ui.autostart_row import apply_saved_mode, refresh_row
         if killcmd_migrate.migrate(data):
             from config_manager import CONFIG_FILE
             from jsonio import write_json_atomic
@@ -3014,9 +3067,13 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             if i < len(self.autostart_rows):
                 self.autostart_rows[i]["combo"].setCurrentText(app.get("type", "Custom Path"))
                 self.autostart_rows[i]["input"].setText(app.get("cmd", ""))
+                self.autostart_rows[i]["name_input"].setText(app.get("name", ""))
                 self.autostart_rows[i]["chk_debug"].setChecked(app.get("debug", False))
                 self.autostart_rows[i]["kill_input"].setText(app.get("kill", ""))
                 self.autostart_rows[i]["chk_kill"].setChecked(bool(app.get("kill_on")))
+                apply_saved_mode(self.autostart_rows[i])
+                self.autostart_rows[i]["icon"] = app.get("icon", "")
+                refresh_row(self.autostart_rows[i])
         self._update_autostart_start_button()
 
         self.ui.chk_steamvr_tracker.blockSignals(False)
@@ -3051,7 +3108,10 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         Terminal-Modus braucht genau dieselbe.
         """
         import autostart_runner
-        return autostart_runner.headset_connected()
+        peers = autostart_runner.headset_peers()
+        # Verbindungen eines ausgeschalteten Headsets zaehlen nicht mehr.
+        self._dead_peers &= set(peers)
+        return any(p not in self._dead_peers for p in peers)
 
     def _poll_headset_for_autostart(self):
         """
@@ -3079,6 +3139,9 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             # Selbst-Beendigung: ab hier kein Polling mehr.
             self.autostart_timer.stop()
             log.info("[Autostart] Programme gestartet – Timer beendet (kein weiteres Polling).")
+            self._disconnect_count = 0
+            self._answering_ips.clear()
+            self._autostart_rearm_timer.start()
 
     def arm_autostart_timer(self):
         """
@@ -3086,6 +3149,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         Timer wartet nur darauf, dass sich das Headset verbindet. Ohne
         konfigurierte Programme bleibt er aus (kein unnötiges Polling).
         """
+        self._autostart_rearm_timer.stop()
         self._autostart_launched = False
         self._headset_connected = False
         has_apps = any(r["input"].text().strip() for r in self.autostart_rows)
@@ -3128,6 +3192,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         Sollen die Apps später wieder kommen, einfach 'Timer zurücksetzen'.
         """
         self.stop_autostart_apps()
+        self._autostart_rearm_timer.stop()
         # Auch die Programme der Profil-Tabs. Die Profile bleiben dabei
         # „ausgeloest“ — sie starten erst wieder, wenn ihr Ausloeser neu startet.
         self.kill_profile_apps()
@@ -3757,7 +3822,9 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
 
         # Autostart-Programme beenden und Zustand zurücksetzen
         self.autostart_timer.stop()       # Einweg-Timer entwaffnen
+        self._autostart_rearm_timer.stop()
         self.stop_autostart_apps()
+        self._external_autostart = False
         self._headset_connected = False
         self._disconnect_count = 0
         if self._server_log_fh:
@@ -3807,6 +3874,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         """Beenden abschliessen — erfolgreich oder aufgegeben."""
         self._shutdown_timer.stop()
         self._server_stopping = False
+        restart = self._restart_after_stop and stopped
+        self._restart_after_stop = False
 
         if stopped:
             # Das eigene Kind ernten. Ohne diesen Schritt bleibt ein Zombie
@@ -3829,6 +3898,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             # geschrieben werden. Frueher stand hier eine feste Wartezeit von
             # 1,5 s — die war geraten und bei langsamem Beenden zu kurz.
             QTimer.singleShot(500, self._start_auto_backup_check)
+            if restart:
+                QTimer.singleShot(1500, self._restart_server_now)
         else:
             QMessageBox.warning(self, tr("dashboard_stop_failed_title"),
                                 tr("dashboard_stop_failed_text"))
@@ -4052,6 +4123,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         "_app_update_worker",       # Selbst-Update
         "_auto_backup_worker",      # automatisches Erst-Backup
         "_oxr_health_worker",       # OpenXR-Manifest-Pruefung
+        "_icon_worker",             # Tool-Icon laden
         "_pp_worker",               # ProtonPlus-Installation
         # ACHTUNG, hier lag eine stille Fehlfunktion: die Liste enthielt
         # "apk_worker" und "_games_db_worker" — beide Attribute gibt es
@@ -4098,10 +4170,14 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         # einen frischen Worker starten, auf den niemand mehr wartet.
         self.usb_poll_timer.stop()
         self.autostart_timer.stop()
+        self._autostart_rearm_timer.stop()
         self.stop_profile_watch()
         # Auch die Nachschau beim Server-Beenden: laeuft sie noch, wuerde ihr
         # naechster Tick auf ein halb abgeraeumtes Fenster zugreifen.
         self._shutdown_timer.stop()
+        self._server_timer.stop()
+        self._icon_queue.clear()
+        self._restart_after_stop = False
 
         # Die Frage VOR dem Zuruecksetzen von _server_stopping stellen: wer
         # waehrend des laufenden Beendens schliesst, will den Server trotzdem
@@ -4146,15 +4222,23 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         super().closeEvent(event)
 
     def manual_server_check(self):
-        """Prüft auf Knopfdruck (oder beim Start) einmalig den echten Server-Zustand
-        und gleicht Schalter + Anzeige daran an."""
+        """Prüft einmalig den echten Server-Zustand und gleicht Schalter + Anzeige
+        daran an. Gibt True zurück, wenn sich der Zustand geändert hat."""
+        # Beim Beenden gehoert die Anzeige _poll_server_shutdown: der Server
+        # laeuft dann noch kurz, der Schalter darf nicht zurueck auf AN springen.
+        if self._server_stopping:
+            return False
         # Ueber wivrn_server statt pgrep: pgrep zaehlt auch Zombies mit und
         # meldete deshalb einen Server, der laengst beendet war (der Grund
         # dafuer, dass der Schalter nach dem Beenden zurueck auf AN sprang).
         running = wivrn_server.is_running(self.server_process)
+        changed = running != self._server_running
         self._server_running = running
         self._set_toggle_silently(running)
         self.update_server_status_ui()
+        if changed:
+            self._external_server_changed(running)
+        return changed
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

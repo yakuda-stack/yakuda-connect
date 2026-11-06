@@ -12,47 +12,6 @@ from PySide6.QtGui import QPainter, QColor
 
 
 
-# --------------------------------------------------------------------------- #
-#  Autostart-Zeilen (Dashboard): Spalten „Debug“ und „Kill“
-# --------------------------------------------------------------------------- #
-AUTOSTART_COL_W = 52        # Breite einer Haken-Spalte
-AUTOSTART_DEL_W = 30        # Breite des ✕-Knopfs am Zeilenende
-
-
-def autostart_col_sep():
-    """Senkrechter Trennstrich zwischen den Spalten."""
-    from PySide6.QtWidgets import QFrame
-    line = QFrame()
-    line.setFrameShape(QFrame.VLine)
-    line.setFixedWidth(2)
-    line.setObjectName("autostartColSep")
-    line.setStyleSheet("QFrame#autostartColSep { color:#4c566a; background:#4c566a; border:none; }")
-    return line
-
-
-def autostart_col_label(text, tip, color):
-    from PySide6.QtWidgets import QLabel
-    lbl = QLabel(text)
-    lbl.setFixedWidth(AUTOSTART_COL_W)
-    lbl.setAlignment(Qt.AlignCenter)
-    lbl.setToolTip(tip)
-    lbl.setStyleSheet(f"color:{color}; font-size:11px; font-weight:bold;")
-    return lbl
-
-
-def autostart_col_check(tip):
-    """Haken ohne Text, mittig in einer Spalte fester Breite -> (haken, zelle)."""
-    from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QWidget
-    cell = QWidget()
-    cell.setFixedWidth(AUTOSTART_COL_W)
-    lay = QHBoxLayout(cell)
-    lay.setContentsMargins(0, 0, 0, 0)
-    chk = QCheckBox()
-    chk.setToolTip(tip)
-    chk.setCursor(Qt.PointingHandCursor)
-    lay.addWidget(chk, 0, Qt.AlignCenter)
-    return chk, cell
-
 class ToggleSwitch(QCheckBox):
     """Schiebeschalter (links = aus, rechts = an) im Stil eines iOS-Toggles.
 
@@ -174,11 +133,10 @@ class Ui_MainWindow:
     # APK-Installation per adb (Quest 2/3/3S/Pro).
     META_STORE_URL = "https://www.meta.com/experiences/wivrn/7959676140827574/"
 
-    def _apk_meta_text(self):
-        """Hinweistext mit anklickbarem Store-Link (HTML, daher hier gebaut)."""
-        return tr("dashboard_apk_meta").format(
-            link=f'<a href="{self.META_STORE_URL}" style="color:#88c0d0;">'
-                 f'{tr("dashboard_apk_meta_link")}</a>')
+    def open_meta_store(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(self.META_STORE_URL))
 
     def setupUi(self, main_window):
         main_window.setWindowTitle("yakuda-connect")
@@ -512,6 +470,18 @@ class Ui_MainWindow:
         self.btn_welcome_toggle.setArrowType(Qt.DownArrow if is_open else Qt.RightArrow)
         self.txt_free_info.setVisible(bool(is_open))
 
+    def set_server_timer_state(self, enabled, seconds):
+        """Knopf "Timer Server Check": leuchtet bei AN und zeigt den Abstand."""
+        self._server_timer_state = (enabled, seconds)
+        btn = self.btn_server_timer
+        btn.setText(tr("dashboard_timer_check_on").format(seconds=seconds) if enabled
+                    else tr("dashboard_timer_check"))
+        btn.setToolTip(tr("dashboard_timer_check_tip"))
+        # Der Selektor [timerOn="true"] greift erst nach dem Neu-Polieren.
+        btn.setProperty("timerOn", "true" if enabled else "false")
+        btn.style().unpolish(btn)
+        btn.style().polish(btn)
+
     def retranslate_ui(self):
         """
         Setzt ALLE statischen, sichtbaren Texte neu aus den Übersetzungen.
@@ -548,11 +518,13 @@ class Ui_MainWindow:
         self.btn_welcome_toggle.setText(tr("welcome_title"))
         self.btn_welcome_toggle.setToolTip(tr("welcome_toggle_tip"))
         if hasattr(self, "lbl_aur_help"):
+            self.aur_help_header.setText(tr("install_aur_help_title"))
             self.lbl_aur_help.setText(tr("install_aur_help"))
 
         # --- Dashboard-Tab ---
         self.server_group.setTitle(tr("dashboard_server"))
         self.btn_server_check.setText(tr("dashboard_check"))
+        self.set_server_timer_state(*self._server_timer_state)
         self.btn_port_status.setText(tr_amp("dashboard_firewall"))
         self.btn_netbuffers.setText(tr_amp("dashboard_netbuffers"))
         self.btn_performance_setup.setText(tr_amp("dashboard_perf_setup"))
@@ -576,8 +548,6 @@ class Ui_MainWindow:
         self.btn_autostart_add_vr_row.setText(tr("autostart_profile_add_row"))
         self.btn_autostart_start.setText(tr("dashboard_autostart_start"))
         self.btn_autostart_start.setToolTip(tr("autostart_start_tip"))
-        self.lbl_autostart_col_debug.setText(tr("autostart_col_debug"))
-        self.lbl_autostart_col_kill.setText(tr("autostart_col_kill"))
         self.lbl_vr_hint.setText(tr("autostart_vr_hint"))
         self.btn_autostart_reset.setText(tr("dashboard_autostart_reset"))
         self.btn_autostart_kill.setText(tr("dashboard_autostart_kill"))
@@ -617,6 +587,17 @@ class Ui_MainWindow:
         self.btn_games_add.setToolTip(tr("games_add_tip"))
         self.chk_games_autoscan.setText(tr("games_autoscan_label"))
         self.chk_games_autoscan.setToolTip(tr("games_autoscan_tip"))
+        self.chk_start_server_with_app.setText(tr("start_server_label"))
+        self.chk_start_server_with_app.setToolTip(tr("start_server_tip"))
+        self.lbl_autostart_notice.setText(tr("autostart_disconnect_notice"))
+        self.chk_restart_on_poweroff.setText(tr("autostart_restart_poweroff_label"))
+        self.chk_restart_on_poweroff.setToolTip(tr("autostart_restart_poweroff_tip"))
+        self.chk_stop_apps_on_disconnect.setText(tr("autostart_stop_disconnect_label"))
+        self.chk_stop_apps_on_disconnect.setToolTip(tr("autostart_stop_disconnect_tip"))
+        self.chk_show_autostart_icons.setText(tr("autostart_icons_label"))
+        self.chk_show_autostart_icons.setToolTip(tr("autostart_icons_tip"))
+        self.chk_autostart_external_server.setText(tr("autostart_external_label"))
+        self.chk_autostart_external_server.setToolTip(tr("autostart_external_tip"))
         self.chk_stop_server_with_app.setText(tr("exit_stop_server_label"))
         self.chk_stop_server_with_app.setToolTip(tr("exit_stop_server_tip"))
         self.btn_cli_setup.setText(tr("cli_setup_btn"))
@@ -638,13 +619,14 @@ class Ui_MainWindow:
         # (Widgets unten weiter übersetzt), der VRChat Picture Folder Fix als
         # dynamischer Button im ausgeklappten VRChat-Bereich des Games-Tabs
         # (Texte setzt main.py beim Bauen der Detail-Sektion).
-        self.lbl_apk_title.setText(tr("dashboard_apk_title"))
+        self.apk_header.setText(tr("dashboard_apk_title"))
         self.apk_info_lbl.setText(tr("dashboard_apk_info"))
         self.btn_apk_install.setText(tr_amp("dashboard_apk_btn"))
         self.btn_apk_download.setText(tr_amp("dashboard_apk_download_btn"))
         self.btn_apk_download.setToolTip(tr("dashboard_apk_download_tip"))
         self.btn_apk_cancel.setText(tr("dashboard_apk_cancel"))
-        self.lbl_apk_meta.setText(self._apk_meta_text())
+        self.lbl_apk_meta.setText(tr("dashboard_apk_meta"))
+        self.btn_apk_meta.setText(tr("dashboard_apk_meta_link"))
         # Backup
         self.btn_vr_backup.setText(tr("backup_create_btn"))
         self.btn_vr_restore.setText(tr("backup_restore_btn"))
@@ -674,6 +656,7 @@ class Ui_MainWindow:
         self.btn_highlights.setToolTip(tr("highlights_tip"))
         self.btn_tour.setText(tr("tour_btn"))
         self.btn_firstrun_reset.setText(tr("firstrun_reset_btn"))
+        self.btn_app_reset.setText(tr("app_reset_btn"))
         self.lbl_firstrun_hint.setText(tr("firstrun_hint"))
         self.btn_tour.setToolTip(tr("tour_btn_tip"))
         # Diagnose / Logdatei
@@ -754,7 +737,22 @@ class Ui_MainWindow:
                 card["btn_start"].setToolTip(tr("tools_start_tip"))
 
     def setup_installation_tab(self):
-        layout = QVBoxLayout(self.tab_installation)
+        # Scrollbereich: Sonst wird der Inhalt bei kleinem Fenster gestaucht und
+        # der Willkommenstext verschwindet hinter der APK-Karte.
+        from PySide6.QtWidgets import QScrollArea
+        from ui.auto_height_text import AutoHeightTextEdit
+        from ui.collapsible import CollapsibleHeader
+        page_layout = QVBoxLayout(self.tab_installation)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        page_layout.addWidget(scroll)
+        install_page = QWidget()
+        scroll.setWidget(install_page)
+        layout = QVBoxLayout(install_page)
         layout.setContentsMargins(20, 20, 20, 20)
 
         self.lbl_install_title = QLabel(tr("install_title"))
@@ -811,16 +809,25 @@ class Ui_MainWindow:
                      border-left: 3px solid #88c0d0; border-radius: 4px;
                      padding: 8px 10px; color: #d8dee9; font-size: 11px; }
         """)
+        aur_help_box = QWidget()
+        aur_help_layout = QVBoxLayout(aur_help_box)
+        aur_help_layout.setContentsMargins(0, 0, 0, 0)
+        aur_help_layout.setSpacing(4)
+        self.aur_help_header = CollapsibleHeader("install_aur_help", self.lbl_aur_help)
+        self.aur_help_header.setText(tr("install_aur_help_title"))
+        self.aur_help_header.setToolTip(tr("welcome_toggle_tip"))
+        aur_help_layout.addWidget(self.aur_help_header, 0, Qt.AlignLeft)
+        aur_help_layout.addWidget(self.lbl_aur_help)
         try:
             from appimage_installer import is_arch_based
-            self.lbl_aur_help.setVisible(is_arch_based())
+            aur_help_box.setVisible(is_arch_based())
         except Exception as exc:
             log.debug("AUR-Hilfe: Distro-Erkennung fehlgeschlagen — %s", exc)
-        layout.addWidget(self.lbl_aur_help)
+        layout.addWidget(aur_help_box)
 
         layout.addSpacing(20)
 
-# --- INFO-KASTEN (ERWEITERTE HÖHE FÜR VOLLSTÄNDIGEN TEXT) ---
+# --- INFO-KASTEN ---
 
         self.info_group = QGroupBox(tr_amp("install_hints_title"))
         info_layout = QVBoxLayout(self.info_group)
@@ -846,16 +853,9 @@ class Ui_MainWindow:
         self.btn_welcome_toggle.toggled.connect(self.set_welcome_open)
         info_layout.addWidget(self.btn_welcome_toggle, 0, Qt.AlignLeft)
 
-        self.txt_free_info = QTextEdit()
+        # So hoch wie der Text: gescrollt wird die ganze Seite.
+        self.txt_free_info = AutoHeightTextEdit()
         self.txt_free_info.setReadOnly(True)
-
-        # Auf 350 erhöht, damit die Box groß genug nach unten gezogen wird
-        # und alle Punkte (Backups + Performance) gleichzeitig reinpassen!
-        self.txt_free_info.setMinimumHeight(400)
-
-        # Scrollbalken rigoros abschalten
-        self.txt_free_info.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.txt_free_info.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         # Cursor-Interaktion deaktivieren
         self.txt_free_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -865,9 +865,10 @@ class Ui_MainWindow:
             QTextEdit {
                 background-color: #1e222a;
                 border: 1px solid #3b4252;
+                border-left: 3px solid #88c0d0;
                 border-radius: 6px;
-                padding: 15px;
-                color: #eceff4;
+                padding: 12px 14px;
+                color: #d8dee9;
                 font-size: 13px;
             }
         """)
@@ -888,14 +889,18 @@ class Ui_MainWindow:
                 border-radius: 6px;
             }
         """)
-        apk_box = QVBoxLayout(apk_card)
-        apk_box.setContentsMargins(12, 12, 12, 12)
+        apk_card_box = QVBoxLayout(apk_card)
+        apk_card_box.setContentsMargins(12, 10, 12, 12)
+        apk_card_box.setSpacing(8)
+        apk_body = QWidget()
+        apk_box = QVBoxLayout(apk_body)
+        apk_box.setContentsMargins(0, 0, 0, 0)
         apk_box.setSpacing(8)
-
-        self.lbl_apk_title = QLabel(tr("dashboard_apk_title"))
-        self.lbl_apk_title.setStyleSheet("font-weight: bold; color: #eceff4; font-size: 13px;")
-        self.lbl_apk_title.setWordWrap(True)
-        apk_box.addWidget(self.lbl_apk_title)
+        self.apk_header = CollapsibleHeader("install_wivrn_apk", apk_body)
+        self.apk_header.setText(tr("dashboard_apk_title"))
+        self.apk_header.setToolTip(tr("welcome_toggle_tip"))
+        apk_card_box.addWidget(self.apk_header, 0, Qt.AlignLeft)
+        apk_card_box.addWidget(apk_body)
 
         self.apk_info_lbl = QLabel(tr("dashboard_apk_info"))
         self.apk_info_lbl.setStyleSheet("color: #d8dee9; font-size: 11px;")
@@ -956,12 +961,23 @@ class Ui_MainWindow:
         # Der Weg per adb setzt USB-Debugging und einen Entwickler-Account
         # voraus. Auf Quest-Brillen gibt es WiVRn inzwischen regulaer im
         # Meta-Store — ein Klick statt Kabel, Treiber und Freigabe.
-        self.lbl_apk_meta = QLabel(self._apk_meta_text())
+        self.lbl_apk_meta = QLabel(tr("dashboard_apk_meta"))
         self.lbl_apk_meta.setStyleSheet("color: #a3be8c; font-size: 11px;")
         self.lbl_apk_meta.setWordWrap(True)
-        self.lbl_apk_meta.setOpenExternalLinks(True)
-        self.lbl_apk_meta.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        apk_box.addSpacing(6)
         apk_box.addWidget(self.lbl_apk_meta)
+        self.btn_apk_meta = QPushButton(tr("dashboard_apk_meta_link"))
+        self.btn_apk_meta.setCursor(Qt.PointingHandCursor)
+        self.btn_apk_meta.setStyleSheet("""
+            QPushButton { background-color: #434c5e; color: #eceff4; border: none;
+                          font-weight: bold; border-radius: 4px; padding: 8px 14px; }
+            QPushButton:hover { background-color: #4c566a; }
+        """)
+        self.btn_apk_meta.clicked.connect(self.open_meta_store)
+        meta_row = QHBoxLayout()
+        meta_row.addWidget(self.btn_apk_meta)
+        meta_row.addStretch()
+        apk_box.addLayout(meta_row)
 
         layout.addWidget(apk_card)
 
@@ -1065,8 +1081,22 @@ class Ui_MainWindow:
             QPushButton:hover { background-color: #4c566a; }
         """)
 
+        # Leuchtet gruen, solange der Timer laeuft. Ein Klick oeffnet das Popup
+        # (ui/server_check_dialog.py), deshalb kein Umschaltknopf.
+        self._server_timer_state = (False, 30)
+        self.btn_server_timer = QPushButton(tr("dashboard_timer_check"))
+        self.btn_server_timer.setCursor(Qt.PointingHandCursor)
+        self.btn_server_timer.setToolTip(tr("dashboard_timer_check_tip"))
+        self.btn_server_timer.setStyleSheet("""
+            QPushButton { background-color: #434c5e; color: #eceff4; border: none; font-weight: bold; border-radius: 4px; padding: 6px; }
+            QPushButton:hover { background-color: #4c566a; }
+            QPushButton[timerOn="true"] { background-color: #a3be8c; color: #2e3440; }
+            QPushButton[timerOn="true"]:hover { background-color: #b5cda0; }
+        """)
+
         action_row.addWidget(self.btn_performance_setup)
         action_row.addWidget(self.btn_server_check)
+        action_row.addWidget(self.btn_server_timer)
         action_row.addStretch()
         server_layout.addLayout(action_row)
         server_layout.addWidget(AdvancedBox("server"))
@@ -1246,12 +1276,6 @@ class Ui_MainWindow:
         vr_layout.setContentsMargins(0, 0, 0, 0)
         vr_layout.addLayout(count_row)
 
-        # Spaltenkoepfe ueber den Haken der Zeilen (Debug | Kill) — gleiche
-        # Kopfzeile wie in den Autostart-Profilen (ui/autostart_row.py).
-        from ui.autostart_row import column_header
-        col_head, (self.lbl_autostart_col_debug, self.lbl_autostart_col_kill) = column_header()
-        vr_layout.addLayout(col_head)
-
         self.autostart_container = QWidget()
         self.autostart_container_layout = QVBoxLayout(self.autostart_container)
         self.autostart_container_layout.setContentsMargins(0, 0, 0, 0)
@@ -1261,7 +1285,18 @@ class Ui_MainWindow:
         autostart_layout.addWidget(vr_page)
         from ui.collapsible import CollapsibleHeader
         self.autostart_header = CollapsibleHeader("dashboard_autostart", vr_page)
-        autostart_layout.insertWidget(0, self.autostart_header, 0, Qt.AlignLeft)
+        header_row = QHBoxLayout()
+        header_row.setSpacing(4)
+        header_row.addWidget(self.autostart_header)
+        header_row.addWidget(self._info_button(lambda: tr("autostart_info")))
+        header_row.addStretch()
+        autostart_layout.insertLayout(0, header_row)
+        # Einmaliger Hinweis, siehe _show_autostart_notice_once.
+        self.lbl_autostart_notice = QLabel(tr("autostart_disconnect_notice"))
+        self.lbl_autostart_notice.setWordWrap(True)
+        self.lbl_autostart_notice.setStyleSheet("color:#ebcb8b; font-size:11px;")
+        self.lbl_autostart_notice.setVisible(False)
+        autostart_layout.insertWidget(1, self.lbl_autostart_notice)
         self._autostart_count = 0
         self.update_autostart_header(0)
         layout.addWidget(self.autostart_group)
@@ -2041,11 +2076,42 @@ class Ui_MainWindow:
         card, cv = self._settings_card()
         head, _, _ = self._settings_header("exit_group", lambda: tr("exit_group_desc"))
         cv.addLayout(head)
+        self.chk_start_server_with_app = QCheckBox(tr("start_server_label"))
+        self.chk_start_server_with_app.setCursor(Qt.PointingHandCursor)
+        self.chk_start_server_with_app.setToolTip(tr("start_server_tip"))
+        self.chk_start_server_with_app.setStyleSheet("color:#d8dee9; font-size:12px;")
+        cv.addWidget(self.chk_start_server_with_app)
+        self.chk_autostart_external_server = QCheckBox(tr("autostart_external_label"))
+        self.chk_autostart_external_server.setCursor(Qt.PointingHandCursor)
+        self.chk_autostart_external_server.setToolTip(tr("autostart_external_tip"))
+        self.chk_autostart_external_server.setStyleSheet("color:#d8dee9; font-size:12px;")
+        cv.addWidget(self.chk_autostart_external_server)
         self.chk_stop_server_with_app = QCheckBox(tr("exit_stop_server_label"))
         self.chk_stop_server_with_app.setCursor(Qt.PointingHandCursor)
         self.chk_stop_server_with_app.setToolTip(tr("exit_stop_server_tip"))
         self.chk_stop_server_with_app.setStyleSheet("color:#d8dee9; font-size:12px;")
         cv.addWidget(self.chk_stop_server_with_app)
+        adv_v.addWidget(card)
+
+        # -- Autostart-Liste --
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("autostart_icons_group")
+        cv.addLayout(head)
+        self.chk_show_autostart_icons = QCheckBox(tr("autostart_icons_label"))
+        self.chk_show_autostart_icons.setCursor(Qt.PointingHandCursor)
+        self.chk_show_autostart_icons.setToolTip(tr("autostart_icons_tip"))
+        self.chk_show_autostart_icons.setStyleSheet("color:#d8dee9; font-size:12px;")
+        cv.addWidget(self.chk_show_autostart_icons)
+        self.chk_stop_apps_on_disconnect = QCheckBox(tr("autostart_stop_disconnect_label"))
+        self.chk_stop_apps_on_disconnect.setCursor(Qt.PointingHandCursor)
+        self.chk_stop_apps_on_disconnect.setToolTip(tr("autostart_stop_disconnect_tip"))
+        self.chk_stop_apps_on_disconnect.setStyleSheet("color:#d8dee9; font-size:12px;")
+        cv.addWidget(self.chk_stop_apps_on_disconnect)
+        self.chk_restart_on_poweroff = QCheckBox(tr("autostart_restart_poweroff_label"))
+        self.chk_restart_on_poweroff.setCursor(Qt.PointingHandCursor)
+        self.chk_restart_on_poweroff.setToolTip(tr("autostart_restart_poweroff_tip"))
+        self.chk_restart_on_poweroff.setStyleSheet("color:#d8dee9; font-size:12px;")
+        cv.addWidget(self.chk_restart_on_poweroff)
         adv_v.addWidget(card)
 
         # -- Terminal-Modus --
@@ -2114,6 +2180,16 @@ class Ui_MainWindow:
         fr_card.setVisible(False)
         adv_v.addWidget(fr_card)
 
+        # -- App zuruecksetzen --
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("app_reset_group", lambda: tr("app_reset_desc"))
+        self.btn_app_reset = QPushButton(tr("app_reset_btn"))
+        self.btn_app_reset.setCursor(Qt.PointingHandCursor)
+        self.btn_app_reset.setStyleSheet(self._CSS_DANGER)
+        head.addWidget(self.btn_app_reset)
+        cv.addLayout(head)
+        adv_v.addWidget(card)
+
         card, cv = self._settings_card()
         self.killcmd_card = card
         head, _, _ = self._settings_header(
@@ -2161,6 +2237,7 @@ class Ui_MainWindow:
 
         adv_v.addStretch()
         self.settings_subtabs.addTab(page_adv, tr("settings_sub_advanced"))
+        self.page_settings_advanced = page_adv
 
     # Reihenfolge = Reihenfolge im Tab. key = Schluessel in tools.json.
     CONTROLS_ENTRIES = [

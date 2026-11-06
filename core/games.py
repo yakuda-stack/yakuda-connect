@@ -127,7 +127,7 @@ def game(name, protons, launch_params=None, fixes=None, toggles=None, default_on
     default_on  : Liste von Toggle-Keys (global ODER spiel-eigen), die beim
                   ERSTEN Öffnen des Spiels vorausgewählt sind — solange der
                   Nutzer nichts anderes gespeichert hat. Danach kann er sie
-                  ganz normal ab-/anschalten (z. B. gamemoderun bei VRChat).
+                  ganz normal ab-/anschalten (z. B. --force-openxr bei VRChat).
     """
     return {
         "name": name,
@@ -139,16 +139,19 @@ def game(name, protons, launch_params=None, fixes=None, toggles=None, default_on
     }
 
 
-def game_toggle(key, arg, position="after", default=False):
+def game_toggle(key, arg, position="after", default=False, amd_only=False, panel_only=False):
     """Ein spiel-spezifischer Startparameter-Schalter (wie LAUNCH_TOGGLES).
       position "before" -> Wrapper (vor %command%), "after" -> Spiel-Argument,
                            "wrap"   -> umschliesst die ganze restliche Zeile
                                        (endet auf '--', danach folgt alles
                                        Weitere als Argumentliste)
       default           -> beim ersten Oeffnen des Spiels bereits an.
+      amd_only          -> nur auf AMD-Grafikkarten anbieten
+      panel_only        -> nur in den Spiel-Einstellungen, nicht bei ✨ Optimieren
     Beschriftung/Tooltip kommen ueber tr("games_toggle_<key>") / _tip.
     """
-    return {"key": key, "arg": arg, "position": position, "default": default}
+    return {"key": key, "arg": arg, "position": position, "default": default,
+            "amd_only": amd_only, "panel_only": panel_only}
 
 
 def all_gpus(params):
@@ -394,12 +397,23 @@ def build_games_from_config(cfg):
             amd = g.get("amd_start") or g.get("nvidia_start")
             nv  = g.get("nvidia_start") or g.get("amd_start")
             launch = {"amd": amd, "nvidia": nv}
+        # base_start hat Vorrang: amd_start/nvidia_start bleiben in der
+        # games.json fuer aeltere Versionen, die sie noch als feste Vorgabe lesen.
+        if g.get("base_start"):
+            launch = {"amd": g["base_start"], "nvidia": g["base_start"]}
 
         toggles = []
         if g.get("toggle_enable_hardware_decoding"):
             toggles.append(game_toggle("vrc_hw_video_decoding",
                                        "--enable-hw-video-decoding",
                                        position="after", default=True))
+        if g.get("toggle_avpro_proton"):
+            toggles.append(game_toggle("vrc_avpro_proton", "--enable-avpro-in-proton",
+                                       position="after", default=True, panel_only=True))
+        if g.get("toggle_amd_stutter"):
+            toggles.append(game_toggle("vrc_amd_stutter", "--disable-amd-stutter-workaround",
+                                       position="after", default=True,
+                                       amd_only=True, panel_only=True))
         if g.get("toggle_launch_in_vr"):
             # Spiel-Argument -> hinter %command%. Startet VRChat direkt im
             # VR-Modus statt mit der Desktop-/VR-Abfrage.
@@ -435,6 +449,8 @@ def build_games_from_config(cfg):
         default_on = []
         if g.get("toggle_gamemoderun"):
             default_on.append("gamemoderun")
+        if g.get("toggle_force_openxr"):
+            default_on.append("force_openxr")
 
         picture = g.get("picture") or (pic_tmpl.format(appid=appid) if pic_tmpl else "")
 
@@ -609,7 +625,10 @@ def resolved_toggles(game):
     damit die UI nicht an zwei Orten zwischen game["toggles"] und einer
     aufgeloesten Fassung unterscheiden muss.
     """
-    return list(game.get("toggles", []))
+    toggles = list(game.get("toggles", []))
+    if any(t.get("amd_only") for t in toggles) and detect_gpu_vendor() == "nvidia":
+        toggles = [t for t in toggles if not t.get("amd_only")]
+    return toggles
 
 
 # --------------------------------------------------------------------------- #
@@ -2675,6 +2694,11 @@ def _is_env_assignment(token):
     return bool(sep) and bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name))
 
 
+# Waren feste Startparameter und bleiben an, bis man sie abschaltet. Deshalb
+# wird gemerkt, was AUS ist: aeltere Eintraege kennen die Schalter noch nicht.
+OPT_OUT_TOGGLES = ("vrc_avpro_proton", "vrc_amd_stutter")
+
+
 def has_saved_launch_toggles(appid):
     """True, wenn für dieses Spiel schon einmal eine Toggle-Auswahl gespeichert
     wurde. Solange False, greifen die Spiel-Vorgaben (game['default_on'] und
@@ -2696,6 +2720,8 @@ def load_launch_toggles(appid, extra_toggles=None):
         return [], ""
     known = {t["key"] for t in LAUNCH_TOGGLES} | {t["key"] for t in (extra_toggles or ())}
     keys = [k for k in entry.get("toggles", []) if k in known]
+    off = entry.get("off", [])
+    keys += [k for k in OPT_OUT_TOGGLES if k in known and k not in keys and k not in off]
     # Den Autostart-Wrapper aus Vorabstaenden herausnehmen. Der Schalter
     # selbst faellt schon durch den known-Filter oben weg, aber wer ihn
     # ueber das Feld fuer eigene Parameter uebernommen hatte, haette ihn
@@ -2710,6 +2736,7 @@ def save_launch_toggles(appid, enabled_keys, custom):
     if not isinstance(all_t, dict):
         all_t = {}
     all_t[str(appid)] = {"toggles": list(enabled_keys),
-                         "custom": (custom or "").strip()}
+                         "custom": (custom or "").strip(),
+                         "off": [k for k in OPT_OUT_TOGGLES if k not in enabled_keys]}
     if not update_json(APP_CONFIG, {"games_launch_toggles": all_t}):
         log.warning("Startparameter-Toggles konnten nicht gespeichert werden.")

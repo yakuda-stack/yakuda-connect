@@ -1,7 +1,7 @@
 {
   "info": {
-    "version": "1.3.0",
-    "last_updated": "2026-10-29"
+    "version": "1.3.2",
+    "last_updated": "2026-11-06"
   },
   "picture_template": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appid}/header.jpg",
   "proton_versions": {
@@ -51,7 +51,9 @@
     "438100": {
       "name": "VRChat",
       "toggle_enable_hardware_decoding": true,
-      "toggle_gamemoderun": true,
+      "toggle_force_openxr": true,
+      "toggle_avpro_proton": true,
+      "toggle_amd_stutter": true,
       "toggle_proton_use_wayland": true,
       "toggle_launch_in_vr": true,
       "fixes": [
@@ -94,6 +96,7 @@
       },
       "amd_start": "%command% --enable-avpro-in-proton --disable-amd-stutter-workaround",
       "nvidia_start": "%command% --enable-avpro-in-proton",
+      "base_start": "%command%",
       "toggle_proton_log": true
     },
     "1540210": {

@@ -1,6 +1,50 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.8 — 2026-11-06
+
+#### 🇩🇪 Deutsch
+
+* **Serverstatus immer aktuell:** Die App erkennt jetzt auch einen WiVRn-Server, den du anders gestartet hast – beim App-Start und beim Öffnen des Dashboards. Neu: **Timer Server Check** prüft auf Wunsch automatisch in deinem Abstand.
+* **WiVRn mit der App starten:** Neuer Schalter unter Erweitert / System.
+* **Autostart-Apps auch bei extern gestartetem Server:** Sie starten, sobald das Headset verbindet. Lässt sich abschalten.
+* **Autostart nach dem Trennen wieder bereit:** Sind die Programme zu und das Headset getrennt, starten sie beim nächsten Verbinden von selbst wieder. Neu: Programme werden beim Trennen beendet, auch wenn das Headset einfach ausgeschaltet wird. Wird es ausgeschaltet, startet die App außerdem den WiVRn-Server neu und räumt die hängende Sitzung auf. Beides ist unter Erweitert / System abschaltbar, das ⓘ bei Autostart erklärt alles.
+* **Weniger Last:** Die Headset-Erkennung kommt ohne Prozessstarts aus und erkennt auch eigene WiVRn-Ports.
+* **Viel übersichtlicherer Autostart:** **+ Programm** öffnet direkt die App-Liste, jede Zeile zeigt nur noch Icon, Name, ⚙ und ✕. Alles Technische liegt im Zahnrad.
+* **Icons und Beschreibungen:** Programme bekommen ein kleines Icon, und beim Drüberfahren siehst du, was ein bekanntes Programm macht.
+* **VRChat:** startet jetzt standardmäßig mit `--force-openxr` statt `gamemoderun`.
+* **Optimieren nur noch mit Empfehlungen:** Bei VRChat sind nur noch `--force-openxr` und Hardware-Videodekodierung angehakt. Dazu zeigt die App, wie du in Steam den SteamVR-Modus fest einstellst und dir den Klick am Desktop sparst.
+* **VRChat:** `--enable-avpro-in-proton` bleibt an, lässt sich jetzt aber in den Startoptionen abschalten. Auf AMD gilt das auch für `--disable-amd-stutter-workaround`.
+* **VRCFaceTracking und Baballonia über Steam installieren:** Bei VRCFaceTracking zeigt die App, welche Beta du für Linux wählen musst.
+* **💾 Speichern in den Spiel-Einstellungen:** trägt deine Startoptionen sauber in Steam ein.
+* **SpaceCal for Monado** gibt es auf Fedora jetzt auch als RPM.
+* **App zurücksetzen:** Neuer Knopf unter Erweitert / System – die App startet danach wie frisch installiert. Installierte Programme und dein VR-Backup bleiben.
+* **Französisch:** Tool-Beschreibungen gibt es jetzt auch auf Französisch.
+* **Aufgeräumter Installations-Tab:** Der Willkommenstext ist jetzt komplett lesbar, „Neu auf Linux?“ und „WiVRn APK“ lassen sich einklappen, und der Meta-Store hat einen eigenen Knopf.
+* **Tour aktualisiert:** erklärt jetzt auch Serverstatus und den Bereich Erweitert / System.
+
+#### 🇬🇧 English
+
+* **Server status always up to date:** The app now also detects a WiVRn server you started another way – at app start and when you open the Dashboard. New: **Timer Server Check** can check automatically at your interval.
+* **Start WiVRn with the app:** New switch in Advanced / System.
+* **Autostart apps with an externally started server:** They start as soon as the headset connects. Can be turned off.
+* **Autostart ready again after a disconnect:** Once the programs are closed and the headset is disconnected, they start again by themselves on the next connect. New: programs close on disconnect, even if the headset is simply switched off. When it's switched off, the app also restarts the WiVRn server to clear the stuck session. Both can be turned off in Advanced / System, and the ⓘ next to Autostart explains everything.
+* **Less load:** Headset detection no longer starts any processes and also recognises custom WiVRn ports.
+* **Much cleaner autostart:** **+ Program** opens the app list right away, and each row only shows icon, name, ⚙ and ✕. All the technical stuff lives in the gear.
+* **Icons and descriptions:** Programs get a small icon, and hovering shows what a known program does.
+* **VRChat:** now starts with `--force-openxr` by default instead of `gamemoderun`.
+* **Optimize with recommendations only:** For VRChat, only `--force-openxr` and hardware video decoding are ticked. The app also shows how to set the SteamVR mode in Steam so you can skip the click on the desktop.
+* **VRChat:** `--enable-avpro-in-proton` stays on, but can now be turned off in the launch options. On AMD the same goes for `--disable-amd-stutter-workaround`.
+* **Install VRCFaceTracking and Baballonia via Steam:** For VRCFaceTracking the app shows which beta to pick on Linux.
+* **💾 Save in the game settings:** writes your launch options to Steam properly.
+* **SpaceCal for Monado** is now also available on Fedora as an RPM.
+* **Reset app:** New button in Advanced / System – the app then starts as if freshly installed. Installed programs and your VR backup are kept.
+* **French:** Tool descriptions are now available in French too.
+* **Cleaner Installation tab:** The welcome text is now fully readable, "New to Linux?" and "WiVRn APK" can be collapsed, and the Meta Store has its own button.
+* **Tour updated:** now also explains the server status and the Advanced / System area.
+
+---
+
 ### 🚀 v1.4.7 — 2026-11-02
 
 #### 🇩🇪 Deutsch

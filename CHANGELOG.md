@@ -1,6 +1,72 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.4.8 — 2026-11-06
+
+#### 🇩🇪 Deutsch
+
+* **Serverstatus stimmt jetzt auch, wenn WiVRn anders gestartet wurde.** Die App prüft beim Start und beim Wechsel aufs Dashboard, ob der Server läuft, und gleicht Schalter und Anzeige an. Vorher ging das nur beim App-Start und per Knopf.
+  * **Neu: „Timer Server Check"** rechts neben „Serverstatus prüfen", standardmäßig aus. Der Knopf öffnet ein Popup mit Timer an/aus und Abstand (30 s bis 5 min); läuft der Timer, leuchtet der Knopf grün und zeigt den Abstand. Kleinere Eingaben werden auf 30 s gesetzt. Merker: `server_check_timer`, `server_check_interval`. Neu: `ui/server_check_dialog.py`.
+  * **Fix:** Eine Prüfung während des Beendens holt den Schalter nicht mehr zurück auf AN.
+* **Neu: „WiVRn-Server mit der App starten"** unter Einstellungen → Erweitert / System, standardmäßig aus (`start_server_with_app`). Läuft der Server schon oder fehlt WiVRn, passiert nichts. Die Karte heißt jetzt „App starten & beenden".
+* **Neu: Autostart-Apps auch bei extern gestartetem Server**, standardmäßig an und unter Erweitert / System abschaltbar (`autostart_external_server`). Erkennt die App einen fremden Server, starten die Apps beim Verbinden des Headsets; geht er aus, werden sie beim nächsten Check beendet. Laufen schon Apps oder der Terminal-Modus, bleibt alles, wie es ist.
+* **Neu: Autostart macht sich nach dem Trennen selbst bereit.** Sind alle Autostart-Programme zu und das Headset ist etwa 15 Sekunden getrennt, läuft „Timer zurücksetzen“ automatisch, und die Programme starten beim nächsten Verbinden wieder. Der Besen-Knopf setzt das aus, bis der Timer von Hand zurückgesetzt wird oder der Server neu startet.
+  * **Neu: „Autostart-Programme beim Trennen beenden“** unter Erweitert / System, standardmäßig an (`stop_apps_on_disconnect`). Einmaliger Hinweis unter „Autostart Applikationen“, dazu ein ⓘ, das Timer, Knöpfe und diese Einstellung erklärt.
+  * **Ausgeschaltetes Headset wird erkannt.** Die TCP-Verbindung bleibt dann stehen, deshalb fragt die App das Headset alle 5 Sekunden direkt an. Schweigen zählt nur, wenn es in dieser Sitzung schon geantwortet hat.
+  * **Neu: „WiVRn-Server neu starten, wenn das Headset ausgeschaltet wird“** unter Erweitert / System, standardmäßig an (`restart_server_on_poweroff`). Räumt die hängende Sitzung auf, nur wenn die App den Server selbst gestartet hat.
+* **Headset-Erkennung ohne Prozessstarts.** Statt `pactl` und `ss` im Sekundentakt liest die App `/proc/net/tcp`, auch im Terminal-Modus. Eigene WiVRn-Ports werden jetzt überall erkannt, auch bei den Autostart-Profilen.
+* **Autostart-Liste aufgeräumt (Dashboard und Profile).** Eine Zeile zeigt nur noch Icon, Name, ⚙ und ✕; Abzeichen zeigen, ob Debug oder Kill gesetzt ist. Die Spalten „Debug | Kill" sind weg.
+  * **„+ Programm"** öffnet sofort die App-Liste, oben stehen „Eigener Befehl" und „Eigenen Pfad wählen". Abbrechen hinterlässt keine leere Zeile. Das Fenster lässt sich nicht mehr zu klein ziehen.
+  * **⚙** enthält Name, Icon, Debug, Kill-Befehl und die drei Arten **Eigener Befehl**, **Eigener Pfad** und **Programm**. „Ändern" öffnet je nach Art die Dateiauswahl oder die App-Liste.
+  * Bestehende Einträge bleiben gültig: Der Name kommt aus dem Tools-Tab oder dem Befehl (`core/autostart_name.py`), gespeichert wird „Programm" weiter als `CMD`.
+* **Neu: App zurücksetzen** unter Erweitert / System. Löscht alle App-Einstellungen und den Icon-Ordner und startet neu, als wäre die App frisch installiert. Installierte Programme, das VR-Backup sowie WiVRn- und Steam-Einstellungen bleiben. Neu: `core/app_reset.py`.
+* **Tools-Tab komplett auf Französisch:** Beschreibungen und Hinweise aller Tools, auch die Hover-Texte (`desc_fr`, `note_fr`).
+* **Neu: Icons in der Autostart-Liste.** Sie liegen in `~/.config/yakuda-connect/icons/` und werden bei einer Installation über den Tools-Tab geladen, nie beim Start. Reihenfolge: eigenes Icon, Icon-Ordner, System-Icon, Standard-Icon. Im ⚙ gibt es **Icon holen** und **Eigenes Icon**. Abschaltbar unter Erweitert / System (`show_autostart_icons`). Neu: `core/tool_icons.py`.
+* **Neu: Beschreibung beim Hovern.** Bei bekannten Programmen zeigt die Zeile die Beschreibung aus dem Tools-Tab und darunter den Befehl.
+* **VRChat:** Spiel-Vorgabe ist jetzt `--force-openxr` statt `gamemoderun`, auch im ✨ Optimieren-Assistenten.
+* **✨ Optimieren hakt nur noch die Empfehlungen an** statt allem, was vorher aktiv war. Bei VRChat sind das `--force-openxr` und `--enable-hw-video-decoding`. Eigene Parameter bleiben erhalten.
+  * **Neu bei VRChat:** Die Zusammenfassung erklärt mit Bild, wie man in Steam den SteamVR-Modus fest einstellt.
+* **VRChat: `--enable-avpro-in-proton` ist jetzt abschaltbar, auf AMD auch `--disable-amd-stutter-workaround`.** Beide bleiben standardmäßig an, auch bei gespeicherten Einstellungen, und erscheinen als Schalter nur in den Startoptionen (`toggle_avpro_proton`, `toggle_amd_stutter`, `base_start`).
+* **Tools-Tab:** Ist der offene Unterreiter nach Suche oder Filter leer, wechselt die App zum Unterreiter mit Treffern.
+* **Neu: Installationsart Steam im Tools-Tab** für VRCFaceTracking und Baballonia (`steam_appid`, neu `core/steam_tools.py`). Steam übernimmt Installieren und Entfernen. Bei VRCFaceTracking erklärt ein Hinweis mit Bild, dass für Linux die Beta `avalonia` gewählt werden muss (`steam_beta`). Der Kill-Vorschlag schlägt bei Start über Steam nichts vor, damit nicht Steam selbst beendet wird.
+* **Neu: 💾 Speichern in den Spiel-Einstellungen.** Merkt die Auswahl und trägt die Startoptionen in Steam ein. Läuft Steam, bietet die App an, es zu beenden, weil es die Änderung sonst überschreibt.
+* **SpaceCal for Monado** lässt sich auf Fedora als RPM aus dem GitHub-Release installieren.
+* **Installations-Tab aufgeräumt.** Die Seite lässt sich scrollen und der Willkommenstext ist immer komplett lesbar, statt hinter der APK-Karte zu verschwinden (neu: `ui/auto_height_text.py`). „Neu auf Linux?“ und „WiVRn APK“ sind einklappbar, der Zustand wird gemerkt. Der Meta-Store hat bei der APK-Karte einen eigenen Knopf statt eines Links im Text.
+* **Tour:** neue Schritte **Serverstatus** und **Erweitert / System**, Autostart-Schritt an die neue Liste angepasst.
+* Tests: neu `test_server_status.py`, `test_autostart_compact.py`, `test_tool_icons.py`.
+
+#### 🇬🇧 English
+
+* **The server status is now right even if WiVRn was started another way.** The app checks whether the server is running when it starts and when you switch to the Dashboard, and updates the switch and display. Before, this only happened at app start and via the button.
+  * **New: "Timer Server Check"** to the right of "Check Server Status", off by default. The button opens a popup with timer on/off and interval (30 s to 5 min); while the timer runs, the button lights up green and shows the interval. Smaller values are set to 30 s. Stored as `server_check_timer`, `server_check_interval`. New: `ui/server_check_dialog.py`.
+  * **Fix:** A check during shutdown no longer flips the switch back to ON.
+* **New: "Start WiVRn server with app"** in Settings → Advanced / System, off by default (`start_server_with_app`). If the server is already running or WiVRn is missing, nothing happens. The card is now called "Starting & closing the app".
+* **New: Autostart apps with an externally started server**, on by default and can be turned off in Advanced / System (`autostart_external_server`). When the app detects an external server, the apps start once the headset connects; when it goes away, they are closed at the next check. If apps or terminal mode are already running, everything stays as it is.
+* **New: Autostart gets ready again after a disconnect.** Once all autostart programs are closed and the headset has been disconnected for about 15 seconds, "Reset start timer" runs automatically, and the programs start again on the next connect. The broom button pauses this until the timer is reset by hand or the server restarts.
+  * **New: "Close autostart programs on disconnect"** in Advanced / System, on by default (`stop_apps_on_disconnect`). One-time note below "Autostart Applications", plus an ⓘ explaining the timer, the buttons and this setting.
+  * **A switched-off headset is detected.** The TCP connection stays open in that case, so the app queries the headset directly every 5 seconds. Silence only counts if it has answered during this session.
+  * **New: "Restart WiVRn server when the headset is switched off"** in Advanced / System, on by default (`restart_server_on_poweroff`). Clears the stuck session, only if the app started the server itself.
+* **Headset detection without starting processes.** Instead of running `pactl` and `ss` every second, the app reads `/proc/net/tcp`, also in terminal mode. Custom WiVRn ports are now detected everywhere, including autostart profiles.
+* **Cleaner autostart list (Dashboard and profiles).** A row now only shows icon, name, ⚙ and ✕; badges show whether Debug or Kill is set. The "Debug | Kill" columns are gone.
+  * **"+ Program"** opens the app list right away, with "Custom command" and "Choose custom path" at the top. Cancelling leaves no empty row. The window can no longer be dragged too small.
+  * **⚙** holds the name, icon, Debug, kill command and the three kinds **Custom command**, **Custom path** and **Program**. "Change" opens the file picker or the app list, depending on the kind.
+  * Existing entries stay valid: the name comes from the Tools tab or the command (`core/autostart_name.py`), and "Program" is still saved as `CMD`.
+* **New: Reset app** in Advanced / System. Deletes all app settings and the icon folder and restarts as if the app were freshly installed. Installed programs, the VR backup and WiVRn and Steam settings are kept. New: `core/app_reset.py`.
+* **Tools tab fully in French:** descriptions and notes of all tools, including the hover texts (`desc_fr`, `note_fr`).
+* **New: icons in the autostart list.** They live in `~/.config/yakuda-connect/icons/` and are downloaded when you install through the Tools tab, never at startup. Order: custom icon, icon folder, system icon, default icon. ⚙ offers **Get icon** and **Custom icon**. Can be turned off in Advanced / System (`show_autostart_icons`). New: `core/tool_icons.py`.
+* **New: description on hover.** For known programs, the row shows the description from the Tools tab with the command below it.
+* **VRChat:** the game default is now `--force-openxr` instead of `gamemoderun`, also in the ✨ Optimize wizard.
+* **✨ Optimize now only ticks the recommendations** instead of everything that was on before. For VRChat these are `--force-openxr` and `--enable-hw-video-decoding`. Your own parameters are kept.
+  * **New for VRChat:** the summary shows with a picture how to set the SteamVR mode in Steam.
+* **VRChat: `--enable-avpro-in-proton` can now be turned off, on AMD also `--disable-amd-stutter-workaround`.** Both stay on by default, including with saved settings, and show up as switches in the launch options only (`toggle_avpro_proton`, `toggle_amd_stutter`, `base_start`).
+* **Tools tab:** If the open sub-tab is empty after a search or filter, the app switches to the sub-tab with results.
+* **New: Steam install method in the Tools tab** for VRCFaceTracking and Baballonia (`steam_appid`, new `core/steam_tools.py`). Steam handles installing and removing. For VRCFaceTracking a note with a picture explains that the `avalonia` beta must be selected on Linux (`steam_beta`). The kill suggestion stays empty for programs started through Steam, so Steam itself isn't closed.
+* **New: 💾 Save in the game settings.** Stores your selection and writes the launch options to Steam. If Steam is running, the app offers to close it, because it would otherwise overwrite the change.
+* **SpaceCal for Monado** can be installed on Fedora as an RPM from the GitHub release.
+* **Cleaner Installation tab.** The page scrolls and the welcome text is always fully readable instead of disappearing behind the APK card (new: `ui/auto_height_text.py`). "New to Linux?" and "WiVRn APK" can be collapsed, and the state is remembered. The Meta Store now has its own button on the APK card instead of a link in the text.
+* **Tour:** new steps **Server status** and **Advanced / System**, autostart step updated for the new list.
+* Tests: new `test_server_status.py`, `test_autostart_compact.py`, `test_tool_icons.py`.
+
 ### 🚀 v1.4.7 — 2026-11-02
 
 #### 🇩🇪 Deutsch
