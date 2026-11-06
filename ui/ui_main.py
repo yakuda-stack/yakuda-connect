@@ -324,7 +324,7 @@ class Ui_MainWindow:
         if _app is not None:
             from ui import theme
             theme.remember_app_base(_stylesheet)
-            _app.setStyleSheet(theme.tint(_stylesheet, allow_opacity=False))
+            theme.set_style_if_changed(_app, theme.tint(_stylesheet, allow_opacity=False))
         else:
             main_window.setStyleSheet(_stylesheet)
 
@@ -592,6 +592,8 @@ class Ui_MainWindow:
         self.lbl_autostart_notice.setText(tr("autostart_disconnect_notice"))
         self.chk_restart_on_poweroff.setText(tr("autostart_restart_poweroff_label"))
         self.chk_restart_on_poweroff.setToolTip(tr("autostart_restart_poweroff_tip"))
+        self.chk_audio_return.setText(tr("audio_return_label"))
+        self.chk_audio_return.setToolTip(tr("audio_return_tip"))
         self.chk_stop_apps_on_disconnect.setText(tr("autostart_stop_disconnect_label"))
         self.chk_stop_apps_on_disconnect.setToolTip(tr("autostart_stop_disconnect_tip"))
         self.chk_show_autostart_icons.setText(tr("autostart_icons_label"))
@@ -2112,6 +2114,11 @@ class Ui_MainWindow:
         self.chk_restart_on_poweroff.setToolTip(tr("autostart_restart_poweroff_tip"))
         self.chk_restart_on_poweroff.setStyleSheet("color:#d8dee9; font-size:12px;")
         cv.addWidget(self.chk_restart_on_poweroff)
+        self.chk_audio_return = QCheckBox(tr("audio_return_label"))
+        self.chk_audio_return.setCursor(Qt.PointingHandCursor)
+        self.chk_audio_return.setToolTip(tr("audio_return_tip"))
+        self.chk_audio_return.setStyleSheet("color:#d8dee9; font-size:12px;")
+        cv.addWidget(self.chk_audio_return)
         adv_v.addWidget(card)
 
         # -- Terminal-Modus --

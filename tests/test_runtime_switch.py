@@ -43,6 +43,9 @@ def env(tmp_path, monkeypatch):
     import openxr_manager
     for mod in (paths, vr_environment, openxr_manager):
         importlib.reload(mod)
+    # Sonst haengt das Ergebnis davon ab, ob auf dem Testrechner gerade ein
+    # Headset verbunden ist oder WiVRn laeuft ("session" statt "ok").
+    monkeypatch.setattr(openxr_manager, "session_active", lambda: False)
 
     return {"home": home, "venv": vr_environment, "oxr": openxr_manager}
 

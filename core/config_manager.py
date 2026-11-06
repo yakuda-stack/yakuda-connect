@@ -59,6 +59,9 @@ DEFAULT_SETTINGS = {
     # Einstellungen -> Erweitert / System -> Server neu starten, wenn das
     # Headset ausgeschaltet wurde.
     "restart_server_on_poweroff": True,
+    # Einstellungen -> Erweitert / System -> Audio beim Trennen zurueck auf
+    # den PC (core/audio_return.py).
+    "audio_return_on_disconnect": True,
     # Dashboard -> "Timer Server Check": Serverstatus regelmaessig pruefen.
     "server_check_timer": False,
     "server_check_interval": 30,

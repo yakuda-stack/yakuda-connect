@@ -28,6 +28,10 @@ Autostart-Profile (Tabs neben „VR“) haben einen EIGENEN Waechter
 alle 3 s und startet/beendet nach denselben Regeln wie die Oberflaeche
 (core/autostart_profiles.py).
 
+Audio zurueck auf den PC (``--cli _audio-watch``): dritter Waechter, laeuft
+ebenfalls mit dem Server. Geht das Headset weg, stellt er den Ton vom
+WiVRn-Geraet zurueck auf den PC (core/audio_return.py).
+
 PID + Startzeit zusammen benennen einen Prozess eindeutig (siehe
 exit_guard.process_starttime) — nach einem Neustart vergebene PIDs werden
 so nie versehentlich getroffen.
@@ -37,6 +41,7 @@ import signal
 import subprocess
 import time
 
+import audio_return
 import autostart_profiles as engine
 import exit_guard
 import paths
@@ -107,6 +112,7 @@ def load_state():
     data.setdefault("profile_watcher", None)
     data.setdefault("profile_apps", [])
     data.setdefault("profile_manual", [])
+    data.setdefault("audio_watcher", None)
     return data
 
 
@@ -423,4 +429,60 @@ def profile_watch(settings, terminal_command=None, _sleep=time.sleep, _now=time.
     save_state(st)
     persist()
     log.info("[CLI-Profile] Waechter beendet.")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
+#  Audio zurueck auf den PC (Terminal-Modus)
+# --------------------------------------------------------------------------- #
+def audio_watcher_running(state=None):
+    state = state or load_state()
+    return _alive(state.get("audio_watcher"))
+
+
+def stop_audio_watcher():
+    state = load_state()
+    if _alive(state.get("audio_watcher")):
+        try:
+            os.kill(state["audio_watcher"][0], signal.SIGTERM)
+        except OSError as exc:
+            log.debug("stop_audio_watcher: %s", exc)
+    state["audio_watcher"] = None
+    save_state(state)
+
+
+def arm_audio(settings, launch_argv, env=None):
+    """Audio-Waechter starten. Rueckgabe: "armed" | "off" | "running"."""
+    if not settings.get(audio_return.SETTING_KEY, True):
+        return "off"
+    if audio_watcher_running():
+        return "running"
+    proc = subprocess.Popen(launch_argv, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True, env=env)
+    state = load_state()
+    state["audio_watcher"] = _entry(proc.pid)
+    save_state(state)
+    log.info("[CLI-Audio] Waechter gestartet (PID %s).", proc.pid)
+    return "armed"
+
+
+def audio_watch(_sleep=time.sleep, _server_running=wivrn_server.is_running,
+                _presence=None, _handle=audio_return.handle, _max_ticks=None):
+    """Der Audio-Waechter: laeuft, bis der Server aus ist."""
+    presence = _presence or audio_return.HeadsetPresence(headset_peers)
+    audio_return.remember_pc_devices()
+    ticks = 0
+    while _server_running():
+        event = presence.update()
+        if event:
+            _handle(event)
+        ticks += 1
+        if _max_ticks is not None and ticks >= _max_ticks:
+            break
+        _sleep(audio_return.POLL_S)
+    state = load_state()
+    state["audio_watcher"] = None
+    save_state(state)
+    log.info("[CLI-Audio] Server aus – Waechter beendet sich.")
     return 0

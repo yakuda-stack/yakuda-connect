@@ -87,6 +87,38 @@ def _track_qthreads():
 _track_qthreads()
 
 
+def _guard_single_shots():
+    """
+    QTimer.singleShot ohne Kontext-Objekt feuert auch, wenn das Fenster
+    dahinter schon geloescht ist (siehe _delete_closed_windows). Im echten
+    Programm passiert das nicht, in Tests landet dann ein „Internal C++ object
+    already deleted“ mitten in einem fremden Test. Solche Nachzuegler werden
+    hier still verworfen, jeder andere Fehler bleibt sichtbar.
+    """
+    from PySide6.QtCore import QTimer
+    if getattr(QTimer.singleShot, "_yc_guarded", False):
+        return
+    orig = QTimer.singleShot
+
+    def guarded(*args, **kwargs):
+        if len(args) == 2 and callable(args[1]):
+            func = args[1]
+
+            def safe():
+                try:
+                    func()
+                except RuntimeError as exc:
+                    if "already deleted" not in str(exc):
+                        raise
+            return orig(args[0], safe, **kwargs)
+        return orig(*args, **kwargs)
+    guarded._yc_guarded = True
+    QTimer.singleShot = staticmethod(guarded)
+
+
+_guard_single_shots()
+
+
 # Exit-Code des Testlaufs, fuer den harten Ausstieg in pytest_unconfigure.
 _exitstatus = None   # None = Lauf kam nie bis sessionfinish
 
@@ -133,6 +165,37 @@ def _fresh_gpu_cache():
     if mod is not None and hasattr(mod, "clear_cache"):
         mod.clear_cache()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _delete_closed_windows():
+    """
+    Geschlossene Hauptfenster nach jedem Test wirklich loeschen.
+
+    ``close()`` versteckt ein Fenster nur, Qt behaelt es samt allen Widgets.
+    Jedes neue VRApp setzt aber das Stylesheet der QApplication, und Qt
+    wendet das auf ALLE noch vorhandenen Widgets an — auch auf die der alten,
+    geschlossenen Fenster. Dadurch wurde jeder Fensterstart langsamer als der
+    vorige (0,4 s -> mehrere Sekunden), der ganze Lauf dauerte ueber 35 Minuten
+    und test_theme lief zeitweise in den Timeout.
+
+    Geloescht wird nur, was closeEvent schon aufgeraeumt hat
+    (``_exit_cleanup_done``) — Fenster, die ein Modul noch weiter benutzt,
+    bleiben unangetastet.
+    """
+    yield
+    if "PySide6.QtWidgets" not in sys.modules:
+        return
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        return
+    closed = [w for w in app.topLevelWidgets() if getattr(w, "_exit_cleanup_done", False)]
+    for w in closed:
+        w.deleteLater()
+    if closed:
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
 # --------------------------------------------------------------------------- #

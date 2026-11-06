@@ -190,6 +190,7 @@ def _start_server():
     # Wie die Oberflaeche: Autostart-Programme erst, wenn das Headset da ist.
     _arm_autostart(quiet_if_none=True)
     _arm_profiles()
+    _arm_audio()
     return True
 
 
@@ -210,6 +211,12 @@ def _arm_profiles():
     return result
 
 
+def _arm_audio():
+    """Audio-Waechter starten: Headset weg -> Ton zurueck auf den PC."""
+    return autostart_runner.arm_audio(_settings(), cli_install.cli_argv("_audio-watch"),
+                                      _watch_env())
+
+
 def _arm_autostart(quiet_if_none=False):
     """Hintergrund-Waechter starten (siehe core/autostart_runner.py)."""
     env = dict(os.environ)
@@ -227,6 +234,7 @@ def _arm_autostart(quiet_if_none=False):
 def _stop_server():
     # Wie der Dashboard-Schalter: erst Autostart-Programme weg, dann Server.
     autostart_runner.stop_watcher()
+    autostart_runner.stop_audio_watcher()
     if autostart_runner.running_apps():
         count = autostart_runner.kill_apps(_settings())
         print(tr("cli_killapps_done").format(count=count))
@@ -525,6 +533,11 @@ def cmd_autostart_watch(_arg=None):
     return autostart_runner.watch(_settings(), cli_install.terminal_command)
 
 
+def cmd_audio_watch(_arg=None):
+    """Intern: Audio-Waechter (autostart_runner.audio_watch)."""
+    return autostart_runner.audio_watch()
+
+
 def cmd_profile_watch(_arg=None):
     """Intern: Waechter der Autostart-Profile (autostart_runner.profile_watch)."""
     return autostart_runner.profile_watch(_settings(), cli_install.terminal_command)
@@ -547,6 +560,7 @@ COMMANDS = {
     "pair": cmd_pairing,
     "_autostart-watch": cmd_autostart_watch,
     "_profile-watch": cmd_profile_watch,
+    "_audio-watch": cmd_audio_watch,
 }
 
 

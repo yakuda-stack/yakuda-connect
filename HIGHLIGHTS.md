@@ -1,6 +1,18 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.4.9 — 2026-11-06
+
+#### 🇩🇪 Deutsch
+
+* **Audio zurück auf den PC:** Geht dein Headset in den Standby oder trennst du es, schaltet die App Ton und Mikrofon nach ein paar Sekunden von WiVRn zurück auf den PC. Kommt das Headset wieder, geht der Ton zurück. Klappt auch, wenn du den Server im Terminal mit `YC-wivrn-toggle` startest. Abschaltbar unter Erweitert / System.
+
+#### 🇬🇧 English
+
+* **Audio back to the PC:** If your headset goes into standby or you disconnect it, the app switches sound and microphone from WiVRn back to your PC after a few seconds. When the headset comes back, sound goes back too. Also works if you start the server in the terminal with `YC-wivrn-toggle`. Can be turned off in Advanced / System.
+
+---
+
 ### 🚀 v1.4.8 — 2026-11-06
 
 #### 🇩🇪 Deutsch

@@ -1,6 +1,22 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.4.9 — 2026-11-06
+
+#### 🇩🇪 Deutsch
+
+* **Neu: „Audio beim Trennen zurück auf den PC stellen“** unter Erweitert / System, standardmäßig an (`audio_return_on_disconnect`). Geht das Headset in den Standby oder wird es getrennt, stellt die App Ton und Mikrofon nach etwa 15 Sekunden von `wivrn.sink` / `wivrn.source` zurück auf das vorherige PC-Gerät. Kommt das Headset wieder, geht der Ton zurück, außer man hat inzwischen selbst ein anderes Gerät gewählt. `pactl` läuft nur bei diesen Ereignissen. Neu: `core/audio_return.py`.
+  * **Auch im Terminal-Modus:** `YC-wivrn-toggle` startet dafür einen eigenen Hintergrund-Wächter (`--cli _audio-watch`), der mit dem Server endet. Schließt man die App bei laufendem Server, übernimmt er.
+* **Tests laufen viel schneller (über 35 min → gut 2 min).** Geschlossene Testfenster blieben samt Widgets bestehen, und jedes neue Fenster musste das App-Stylesheet auf alle alten anwenden. `tests/conftest.py` löscht sie jetzt nach jedem Test.
+* Tests: neu `test_audio_return.py`.
+
+#### 🇬🇧 English
+
+* **New: "Switch audio back to the PC on disconnect"** in Advanced / System, on by default (`audio_return_on_disconnect`). If the headset goes into standby or disconnects, the app switches sound and microphone from `wivrn.sink` / `wivrn.source` back to the previous PC device after about 15 seconds. When the headset comes back, sound goes back too, unless you picked another device in the meantime. `pactl` only runs on these events. New: `core/audio_return.py`.
+  * **Also in terminal mode:** `YC-wivrn-toggle` starts its own background watcher for this (`--cli _audio-watch`), which ends with the server. If you close the app while the server keeps running, it takes over.
+* **Tests run much faster (over 35 min → about 2 min).** Closed test windows stayed alive with all their widgets, and every new window had to apply the app stylesheet to all the old ones. `tests/conftest.py` now deletes them after each test.
+* Tests: new `test_audio_return.py`.
+
 ### 🚀 v1.4.8 — 2026-11-06
 
 #### 🇩🇪 Deutsch

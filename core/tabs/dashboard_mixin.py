@@ -913,6 +913,61 @@ class DashboardMixin:
                            {"stop_apps_on_disconnect": bool(checked)}):
             log.warning("'Programme beim Trennen beenden' konnte nicht gespeichert werden.")
 
+    def on_audio_return_toggled(self, checked):
+        """Schalter unter Einstellungen -> Erweitert / System."""
+        import audio_return
+        self._audio_return_on = bool(checked)
+        if not update_json(paths.config_file("config.json"),
+                           {audio_return.SETTING_KEY: bool(checked)}):
+            log.warning("'Audio zurueck auf den PC' konnte nicht gespeichert werden.")
+        if checked:
+            self._audio_return_timer.start()
+        else:
+            self._audio_return_timer.stop()
+            self._audio_presence.reset()
+
+    def _check_audio_return(self):
+        """Headset weg: Ton vom WiVRn-Geraet zurueck auf den PC (und wieder hin).
+
+        pactl laeuft nur bei einem Ereignis und dann in einem eigenen Thread,
+        damit das Fenster nicht stockt. Laeuft der Waechter des
+        Terminal-Modus, uebernimmt der.
+        """
+        import audio_return
+        if not wivrn_server.is_running(self.server_process):
+            self._audio_presence.reset()
+            self._audio_pc_remembered = False
+            return
+        if not self._audio_pc_remembered:
+            self._audio_pc_remembered = True
+            self._run_audio_job(audio_return.remember_pc_devices)
+        event = self._audio_presence.update()
+        if event and not autostart_runner.audio_watcher_running():
+            self._run_audio_job(audio_return.handle, event)
+
+    def _run_audio_job(self, func, *args):
+        import threading
+        threading.Thread(target=func, args=args, daemon=True).start()
+
+    def _handoff_audio_to_cli(self):
+        """Beim Schliessen: laeuft der Server weiter, uebernimmt der Terminal-Modus."""
+        import audio_return
+        import cli_install
+        import exit_guard
+        if exit_guard.disabled_by_env() or not self._audio_return_on:
+            return
+        if not wivrn_server.is_running(self.server_process):
+            return
+        try:
+            env = dict(os.environ)
+            if cli_install.install_kind() == "appimage":
+                for key in ("PYTHONPATH", "PYTHONHOME", "LD_LIBRARY_PATH"):
+                    env.pop(key, None)
+            autostart_runner.arm_audio({audio_return.SETTING_KEY: True},
+                                       cli_install.cli_argv("_audio-watch"), env)
+        except Exception as exc:  # noqa: BLE001 — Schliessen darf daran nicht scheitern
+            log.warning("Audio-Uebergabe an den Terminal-Modus: %s", exc)
+
     def _external_server_changed(self, running):
         """Server ist ausserhalb der App an- oder ausgegangen."""
         if running:

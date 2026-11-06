@@ -972,6 +972,8 @@
   "autostart_info": "<b>Autostart</b><br>The programs start as soon as the headset connects.<br><br><b>Reset start timer:</b> Makes the autostart ready again without restarting the server. This also happens automatically after a server start and after a disconnect.<br><b>▶ Start apps:</b> Starts the programs right away, for testing even without a headset.<br><b>🧹 Kill apps:</b> Closes the programs. They only start again once you reset the timer or the server restarts.<br><br><b>On disconnect:</b> If the headset is gone for about 15 seconds, the programs are closed. If the headset is switched off, the app also restarts the server. You can turn off both in Settings → Advanced / System → Autostart list.",
   "autostart_restart_poweroff_label": "Restart WiVRn server when the headset is switched off",
   "autostart_restart_poweroff_tip": "On by default. If the headset is switched off instead of disconnected, the old session stays stuck. The app then stops the server and autostart programs and restarts the server. A running VR game loses its connection. Only applies if the app started the server itself.",
+  "audio_return_label": "Switch audio back to the PC on disconnect",
+  "audio_return_tip": "On by default. If the headset goes into standby or disconnects, the app switches sound and microphone from the WiVRn device back to the PC after a few seconds. When the headset comes back, sound goes back to the headset. Also works for a server from terminal mode (YC-wivrn-toggle). Needs pactl.",
   "autostart_icons_group": "Autostart list",
   "autostart_icons_label": "Show icons in the autostart list",
   "autostart_icons_tip": "On by default. Shows a small icon to the left of the program name.",

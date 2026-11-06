@@ -38,6 +38,13 @@ def chain(window, monkeypatch):
     # Die echte Paketpruefung vom Fensterstart abwarten — solange sie
     # laeuft, gilt die Installation (richtig) als nicht fertig.
     QTest.qWait(50)
+    # Bis sie wirklich fertig ist: endet sie erst nach dem Zuruecksetzen,
+    # startet first_run_after_install die Kette vom Dashboard aus doch noch.
+    for _ in range(200):
+        if not w._running(getattr(w, "_pkgcheck_worker", None)):
+            break
+        QTest.qWait(50)
+    QTest.qWait(50)
     # Springt die App beim Start selbst aufs Dashboard (alle Pakete da),
     # ist schon ein Schritt geplant — der muss verworfen werden.
     w.reset_first_run_state()

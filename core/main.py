@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.8"
+APP_VERSION = "v1.4.9"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -443,6 +443,20 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self._autostart_rearm_timer = QTimer(self)
         self._autostart_rearm_timer.setInterval(5000)
         self._autostart_rearm_timer.timeout.connect(self._check_autostart_rearm)
+
+        # Headset weg -> Ton zurueck auf den PC (core/audio_return.py). Laeuft
+        # mit der App, prueft aber nur, solange ein Server laeuft.
+        import audio_return
+        import autostart_runner
+        self._audio_return_on = bool(
+            load_saved_settings().get(audio_return.SETTING_KEY, True))
+        self._audio_presence = audio_return.HeadsetPresence(autostart_runner.headset_peers)
+        self._audio_pc_remembered = False
+        self._audio_return_timer = QTimer(self)
+        self._audio_return_timer.setInterval(int(audio_return.POLL_S * 1000))
+        self._audio_return_timer.timeout.connect(self._check_audio_return)
+        if self._audio_return_on:
+            self._audio_return_timer.start()
 
         # --- USB-Ampel im Dashboard ---
         # Laeuft NUR, solange der Dashboard-Tab offen ist (siehe
@@ -1156,6 +1170,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.ui.chk_stop_apps_on_disconnect.toggled.connect(self.on_stop_apps_on_disconnect_toggled)
         self.ui.chk_restart_on_poweroff.setChecked(self._restart_server_on_poweroff)
         self.ui.chk_restart_on_poweroff.toggled.connect(self.on_restart_on_poweroff_toggled)
+        self.ui.chk_audio_return.setChecked(self._audio_return_on)
+        self.ui.chk_audio_return.toggled.connect(self.on_audio_return_toggled)
         self.ui.btn_cli_setup.clicked.connect(self.setup_cli_commands)
         self.ui.btn_cli_open.clicked.connect(self.switch_to_terminal_mode)
         self.ui.btn_games_db_update.clicked.connect(self.start_games_db_update)
@@ -4171,6 +4187,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.usb_poll_timer.stop()
         self.autostart_timer.stop()
         self._autostart_rearm_timer.stop()
+        self._audio_return_timer.stop()
         self.stop_profile_watch()
         # Auch die Nachschau beim Server-Beenden: laeuft sie noch, wuerde ihr
         # naechster Tick auf ein halb abgeraeumtes Fenster zugreifen.
@@ -4185,6 +4202,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         if self._exit_stop_wanted():
             self._stop_server_for_exit()
         self._server_stopping = False
+        self._handoff_audio_to_cli()
 
         # xrBinder-Karte im Controls-Tab: eigener IPC-Thread
         panel = getattr(self.ui, "xrbinder_card", None)
