@@ -252,6 +252,7 @@ SOURCE_LABELS = {
     SOURCE_GITHUB: "GitHub-Release",
     "yay": "AUR (yay)",
     "paru": "AUR (paru)",
+    "shelly": "AUR (Shelly)",
     "native": "System",
 }
 
@@ -286,7 +287,10 @@ def component_sources(method, name):
     if method == "flatpak":
         # SteamOS: nur der Flatpak (xrizer/OpenComposite stecken darin).
         return [SOURCE_FLATPAK]
-    if method in ("yay", "paru"):
+    from appimage_installer import is_aur_helper
+    if method == "shelly":
+        return [method]
+    if is_aur_helper(method):
         # xrizer gibt es auch auf Arch als Release-ZIP — praktisch, wenn der
         # AUR-Build gerade klemmt.
         if name == "xrizer":

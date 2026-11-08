@@ -44,7 +44,7 @@ from logging_setup import get_logger
 log = get_logger("controls_tab")
 
 # Anzeigenamen der Methoden — wie im Methoden-Dropdown des Tools-Tabs.
-METHOD_LABELS = {"appimage": "AppImage", "yay": "yay (AUR)", "paru": "paru (AUR)",
+METHOD_LABELS = {"appimage": "AppImage", "yay": "yay (AUR)", "paru": "paru (AUR)", "shelly": "Shelly (AUR)",
                  "flatpak": "Flatpak", "rpm": "RPM (dnf)", "cargo": "Cargo"}
 
 
@@ -52,7 +52,8 @@ METHOD_LABELS = {"appimage": "AppImage", "yay": "yay (AUR)", "paru": "paru (AUR)
 # zusammengesetzt, damit die Schluesselpruefung (tests/smoke.py) sie findet.
 METHOD_HINT_KEYS = {
     "cargo": "controls_method_cargo", "yay": "controls_method_yay",
-    "paru": "controls_method_paru", "appimage": "controls_method_appimage",
+    "paru": "controls_method_paru", "shelly": "controls_method_shelly",
+    "appimage": "controls_method_appimage",
     "flatpak": "controls_method_flatpak", "rpm": "controls_method_rpm",
 }
 

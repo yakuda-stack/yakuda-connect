@@ -414,7 +414,7 @@ class ToolsTabMixin:
             return
         methods = appimg.detect_install_methods(tool)
         card["methods"] = methods
-        labels = {"appimage": "AppImage", "yay": "yay", "paru": "paru",
+        labels = {"appimage": "AppImage", "yay": "yay", "paru": "paru", "shelly": "Shelly",
                   "flatpak": "Flatpak", "rpm": "RPM (dnf)", "cargo": "Cargo",
                   "script": tr("tools_method_script"), "steam": "Steam"}
         combo.blockSignals(True)
@@ -588,7 +588,7 @@ class ToolsTabMixin:
             )
             self.tool_worker.start()
         else:
-            # method ist 'yay' oder 'paru'
+            # method ist 'yay', 'paru', 'shelly' oder ein eigener AUR-Helfer
             self.tool_worker = InstallWorker([card["pkg"]], helper=method)
             self.tool_worker.finished_signal.connect(
                 lambda success, k=key: self.on_tool_installed(k, success)

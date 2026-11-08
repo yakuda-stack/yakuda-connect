@@ -1,6 +1,66 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.5.0 — 2026-11-08
+
+#### 🇩🇪 Deutsch
+
+* **Fix: Tabs gesperrt, obwohl WiVRn installiert ist.** Auf Arch ohne yay/paru (z. B. CachyOS mit Shelly) war die Installationsmethode leer. Die App meldete „Keine Installationsmethode verfügbar“, sperrte alle Tabs und zeigte nur WiVRn statt aller Komponenten. Jetzt reicht ein vorhandenes `wivrn-server`, und die Liste wird per `pacman -Q` vollständig geprüft.
+* **Fix: Sperr-Meldung nur noch beim Tab-Klick.** Das Popup „Komponenten fehlen“ beim Start ist weg.
+* **Neu: Shelly als Installationsmethode** ([Shelly-ALPM](https://github.com/Seafoam-Labs/Shelly-ALPM)). Auf CachyOS vorausgewählt.
+  * Installations-Tab: `shelly install aur <paket>`; Aktualisieren über `shelly upgrade all --no-flatpak --no-appimage`.
+  * Tools- und Controls-Tab: Installieren über Shelly, Status per `pacman -Q`, Entfernen per `sudo pacman -Rns`.
+  * AUR-Updates (z. B. `opencomposite-git`) kommen aus `shelly list-updates aur --json` (5 Minuten gemerkt).
+* **Neu: yay und paru immer im Methoden-Dropdown.** Fehlende stehen als „(nicht installiert)“ drin. Wählt man sie, fragt die App, ob sie installiert werden sollen: zuerst `sudo pacman -S --needed <helfer>`, nur wenn es das Paket dort nicht gibt per `git clone` + `makepkg -si` aus dem AUR. Neu: `HelperInstallWorker`.
+* **Neu: Popup bei Arch ohne AUR-Helfer** (`ui/aur_helper_dialog.py`) mit vier Wegen: paru automatisch installieren, paru-Seite öffnen, eigenen AUR-Helfer eintragen (gleiche Syntax wie paru/yay, `aur_helper_custom`) oder Flatpak benutzen (eingeschränkte Funktionalität, `arch_helper_choice`). Beim Start nur einmal (`aur_dialog_start_shown`), danach über Installieren/Aktualisieren.
+* **Fix: Tour erst, wenn alles installiert ist.** Das Tour-Angebot wartet, bis jede Zeile im Installations-Tab „Installiert“ zeigt, und kommt dann automatisch. Der Merker wird erst beim Fragen gesetzt.
+* **Fix:** Entfernen über den Tools-Tab fiel ohne yay auf `yay` zurück.
+* Tests: neu `test_aur_helper.py`.
+* **Neu: App-Profile** (`core/app_profiles.py`, `core/tabs/app_profiles_mixin.py`). Unten links in der Sidebar über Advanced Mode: Profil wählen, „💾 Profil speichern …“, „— kein Profil —“ (Standard), 🗑 rechts im Eintrag löscht. Der 💾-Knopf daneben speichert das aktive Profil.
+  * **Gespeichert:** `config.json` ohne globale Schlüssel, dazu `theme.json` und die Controls-Profile/-Anordnung. Das Dashboard-Autostart gehört immer dazu.
+  * **Global:** Sprache, Merker der Erst-Einrichtung, Installationsstand, AUR-Helfer. Die Autostart-Profile im Streaming-Tab nur mit dem neuen Schalter „Im aktiven App-Profil speichern“ (`app_profile_autostart_in_profile`).
+  * **Wechsel:** Die App merkt sich das Profil und startet neu; erst die neue App spielt es ein und schreibt die WiVRn-Einstellungen. So kann die alte App beim Beenden nichts überschreiben.
+  * **Einstellungen → Allgemein → Profile:** Ordner öffnen, aktives Profil umbenennen / kopieren (fragt nach dem Namen) / löschen / exportieren, importieren, „Beim Schließen speichern“ (`app_profile_autosave`, Standard an).
+  * Profile liegen in `~/.config/yakuda-connect/profiles/` und bleiben bei „App zurücksetzen“ erhalten.
+* **Neu: Optimieren direkt auf der Spielkachel.** Beim Drüberfahren erscheint oben rechts ein runder Knopf mit eigenem Symbol (Zahnrad mit Pfeilen, `make_optimize_icon`) auf dunklem Grund, damit er auf jedem Cover sichtbar ist. Ein grünes ✓ heißt: alle empfohlenen Startoptionen und die empfohlene Proton-Version sind gesetzt, ein rotes ✗: noch nicht (`game_optimize_state`, geprüft beim Drüberfahren). Klick startet denselben Assistenten wie im Popup. Der Optimieren-Knopf oben im Popup nutzt dasselbe Symbol. Eigene Spiele bekommen ihn nicht. Ist kein Popup offen, wird danach auch keins neu aufgebaut (`_optimize_from_tile`).
+* **Neu: Haken „Alle installierten Proton-Versionen anzeigen“** oben im Proton-Bereich jedes Spiels (`games_show_all_protons`). Oben stehen die Favoriten (Empfehlungen wie CachyOS und GE), nach der Trennzeile „Installiert“ alle weiteren Proton-Builds aus `compatibilitytools.d` (eigene und vom System), die nicht schon oben stehen. Sie werden über ihren genauen Ordnernamen zugeordnet (`tool_exact`), damit z. B. „GE-Proton9-1“ nicht auf „GE-Proton9-10“ springt.
+* **Proton-GE festgelegt auf GE-Proton11-12** (Spiele-Datenbank 1.3.3, auch für ungetestete Spiele). Ältere GE-Builds wie GE-Proton8 zählen nicht mehr als installiert (`min_version`), der Knopf bietet stattdessen 11-12 zum Herunterladen an (x86_64-Archiv mit sha512-Prüfung). GE-Proton-RTSP bleibt unverändert und wird nicht mehr als normales GE erkannt.
+* **Neu: „Einreichen“.** Unten im Popup öffnet „📨 Einstellungen einreichen“ (ungetestete Spiele) bzw. „📨 Vorschlag einreichen“ (getestete Spiele) nach einer Vorschau ein neues Issue bei yakuda-connect auf GitHub, schon ausgefüllt mit Spiel, AppID, Proton, Startparametern, Sitzung, Distro, GPU und App-Version. Pfade aus dem Home-Ordner werden zu `~`. Abgeschickt wird erst auf GitHub.
+* **Einreichen:** Das Issue enthält zusätzlich einen fertigen Eintrag für `config/games.json` (Name, Proton-Schlüssel wie `Pro11GE`, Startparameter als `base_start`) zum direkten Einfügen.
+* **Installations-Tab:** App-Version oben rechts. **Profil-Auswahl** in der Sidebar abgerundet und ohne Pfeil.
+* **Tour:** Der Spiele-Schritt ist kürzer und zeigt auf eine Spielkachel: drüberfahren, oben rechts optimieren, ✓/✗ zeigt den Stand.
+* **Fix (Tests):** `test_tour_walks_all_steps` scheiterte auf langsameren Systemen beim Tools-Schritt, weil das Ziel gesucht wurde, bevor Qt den frisch gebauten Tab ausgelegt hatte. Die Fehlermeldung zeigt jetzt außerdem den Zustand der Oberfläche.
+* Tests: neu `test_app_profiles.py`, `test_games_detect_submit.py`.
+
+#### 🇬🇧 English
+
+* **Fix: Tabs locked although WiVRn is installed.** On Arch without yay/paru (e.g. CachyOS with Shelly) the install method was empty. The app said "No installation method available", locked all tabs and only listed WiVRn instead of all components. Now an existing `wivrn-server` is enough, and the full list is checked with `pacman -Q`.
+* **Fix: Lock message only on tab click.** The "Components are missing" popup at startup is gone.
+* **New: Shelly as install method** ([Shelly-ALPM](https://github.com/Seafoam-Labs/Shelly-ALPM)). Preselected on CachyOS.
+  * Installation tab: `shelly install aur <package>`; updates via `shelly upgrade all --no-flatpak --no-appimage`.
+  * Tools and Controls tab: install via Shelly, status via `pacman -Q`, removal via `sudo pacman -Rns`.
+  * AUR updates (e.g. `opencomposite-git`) come from `shelly list-updates aur --json` (cached for 5 minutes).
+* **New: yay and paru always in the method dropdown.** Missing ones are listed as "(not installed)". Picking one asks whether to install it: first `sudo pacman -S --needed <helper>`, and only if the package is not there via `git clone` + `makepkg -si` from the AUR. New: `HelperInstallWorker`.
+* **New: Popup on Arch without an AUR helper** (`ui/aur_helper_dialog.py`) with four ways: install paru automatically, open the paru page, enter your own AUR helper (same syntax as paru/yay, `aur_helper_custom`) or use Flatpak (limited functionality, `arch_helper_choice`). Shown at startup only once (`aur_dialog_start_shown`), afterwards via Install/Update.
+* **Fix: Tour only once everything is installed.** The tour offer waits until every row in the Installation tab shows "Installed", then comes automatically. The flag is only set once you are actually asked.
+* **Fix:** Removing via the Tools tab fell back to `yay` when yay was not installed.
+* Tests: new `test_aur_helper.py`.
+* **New: App profiles** (`core/app_profiles.py`, `core/tabs/app_profiles_mixin.py`). Bottom left of the sidebar above Advanced Mode: choose a profile, "💾 Save profile …", "— no profile —" (default), 🗑 on the right of an entry deletes it. The 💾 button next to it saves the active profile.
+  * **Saved:** `config.json` without global keys, plus `theme.json` and the Controls profiles/layout. The Dashboard autostart is always included.
+  * **Global:** language, first-run flags, installation state, AUR helper. The autostart profiles in the Streaming tab only with the new switch "Save in the active app profile" (`app_profile_autostart_in_profile`).
+  * **Switching:** the app remembers the profile and restarts; only the new app applies it and writes the WiVRn settings, so the old app cannot overwrite anything while closing.
+  * **Settings → General → Profiles:** open folder, rename / copy (asks for the name) / delete / export the active profile, import, "Save when the app closes" (`app_profile_autosave`, on by default).
+  * Profiles live in `~/.config/yakuda-connect/profiles/` and survive "Reset app".
+* **New: Optimize right on the game tile.** On hover, a round button with its own icon (gear with arrows, `make_optimize_icon`) appears in the top right corner on a dark background, so it is visible on every cover. A green ✓ means all recommended launch options and the recommended Proton version are set, a red ✗ means not yet (`game_optimize_state`, checked on hover). A click starts the same assistant as in the popup. The Optimize button at the top of the popup uses the same icon. Own games don't get it. If no popup is open, none is rebuilt afterwards (`_optimize_from_tile`).
+* **New: checkbox "Show all installed Proton versions"** at the top of every game's Proton section (`games_show_all_protons`). The favorites (recommendations like CachyOS and GE) stay on top; below the "Installed" separator come all other Proton builds from `compatibilitytools.d` (own and system-wide) that are not listed yet. They are matched by their exact folder name (`tool_exact`), so e.g. "GE-Proton9-1" does not jump to "GE-Proton9-10".
+* **Proton-GE pinned to GE-Proton11-12** (games database 1.3.3, also for untested games). Older GE builds like GE-Proton8 no longer count as installed (`min_version`); the button offers 11-12 for download instead (x86_64 archive with sha512 check). GE-Proton-RTSP is unchanged and no longer detected as plain GE.
+* **New: "Submit".** At the bottom of the popup, "📨 Submit settings" (untested games) or "📨 Submit suggestion" (tested games) shows a preview and then opens a new yakuda-connect issue on GitHub, prefilled with game, AppID, Proton, launch options, session, distro, GPU and app version. Paths from the home folder become `~`. Nothing is sent until you confirm on GitHub.
+* **Submit:** the issue also contains a ready-made entry for `config/games.json` (name, Proton key like `Pro11GE`, launch options as `base_start`) to paste directly.
+* **Installation tab:** app version in the top right corner. **Profile picker** in the sidebar rounded and without an arrow.
+* **Tour:** the Games step is shorter and points at a game tile: hover, optimize in the top right corner, ✓/✗ shows the state.
+* **Fix (tests):** `test_tour_walks_all_steps` failed on slower systems at the Tools step because the target was looked up before Qt had laid out the freshly built tab. The failure message now also shows the UI state.
+* Tests: new `test_app_profiles.py`, `test_games_detect_submit.py`.
+
 ### 🚀 v1.4.9 — 2026-11-06
 
 #### 🇩🇪 Deutsch

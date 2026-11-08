@@ -286,7 +286,7 @@ def _proton_entry(pv_map, pd_map, key, role, desc=None, cachyos_only=False,
     # Manuell installierbare Builds (nicht in AUR/ProtonPlus): Ordner-Praefix
     # zum Erkennen + URLs fuer den Download-Knopf an der Karte.
     for field in ("tool_prefix", "download_url", "checksum_url",
-                  "release_url", "manual"):
+                  "release_url", "manual", "min_version"):
         if meta.get(field):
             entry[field] = meta[field]
     if cachyos_only:
@@ -1808,6 +1808,16 @@ def visible_protons(game):
                                           order.get(p.get("role"), 9)))
 
 
+def _pinned_ge_meta():
+    """Die in games.json festgelegte GE-Version (proton_versions → Pro11GE),
+    damit ungetestete Spiele dieselbe Version bekommen wie getestete."""
+    meta = ((GAMES_CONFIG or {}).get("proton_versions", {}) or {}).get("Pro11GE")
+    if not isinstance(meta, dict) or not meta.get("version"):
+        return {}
+    return {k: meta[k] for k in ("version", "tool_prefix", "min_version", "download_url",
+                                 "checksum_url", "release_url") if meta.get(k)}
+
+
 def dynamic_protons():
     """
     Automatisch generierte Proton-Empfehlungen für UNGETESTETE Spiele
@@ -1851,6 +1861,7 @@ def dynamic_protons():
         "version": "Proton-GE",
         "role": "alternative_ge",
         "protonplus_runner": "proton-ge",
+        **_pinned_ge_meta(),
         "desc": {
             "de": ("Universelle Alternative für alle Systeme — empfohlen, falls "
                    "es zu Problemen mit In-Game-Videos oder Audio-Codecs kommt "
@@ -2199,12 +2210,23 @@ _TOOL_PREFIXES = {
 # "Use" traege den falschen Ordner in Steams CompatToolMapping ein.
 _TOOL_EXCLUDES = {
     "proton-ge-rtsp": ["proton-rtsp-wayland"],
+    # „GE-Proton“ ist auch der Anfang von „GE-Proton-RTSP“ — das ist ein
+    # anderes Proton und darf nicht als normales GE zaehlen.
+    "proton-ge": ["ge-proton-rtsp", "proton-ge-rtsp"],
 }
 
 
 def installed_builds(proton):
     """Alle installierten Ordner in compatibilitytools.d, die zu diesem
     Proton-Eintrag gehoeren — neueste zuletzt. Leere Liste = nicht da."""
+    # Per „Proton erkennen“ gefunden: genau dieser Ordner, kein Praefix —
+    # sonst passte „GE-Proton9-1“ auch auf „GE-Proton9-10“.
+    exact = proton.get("tool_exact")
+    if exact:
+        for d in compat_tools_dirs() + system_compat_tools_dirs():
+            if os.path.isdir(os.path.join(d, exact)):
+                return [exact]
+        return []
     runner = proton.get("protonplus_runner")
     # Ein explizites tool_prefix aus der games.json gewinnt: manuell
     # installierte Builds (Proton-RTSP-Wayland-GE) haben gar keinen Runner,
@@ -2231,8 +2253,62 @@ def installed_builds(proton):
             if any(p and low.startswith(p.lower()) for p in prefixes):
                 if name not in found:
                     found.append(name)
+    # Mindestversion (games.json "min_version"): aeltere Builds gelten als
+    # nicht installiert, damit nicht still z. B. GE-Proton8 benutzt wird und
+    # der Knopf die eingetragene Version anbietet. Builds ohne Nummer
+    # (Distro-Pakete wie „proton-ge-custom“) lassen sich nicht vergleichen
+    # und bleiben drin.
+    if proton.get("min_version"):
+        wanted = _natural_key(proton.get("version", ""))
+        found = [n for n in found if not _natural_key(n) or _natural_key(n) >= wanted]
     found.sort(key=_natural_key)
     return found
+
+
+SHOW_ALL_PROTONS_KEY = "games_show_all_protons"
+
+
+def show_all_protons():
+    """Haken „Alle installierten Proton-Versionen anzeigen“ (Spiel-Popup)."""
+    return bool(_load_app_config().get(SHOW_ALL_PROTONS_KEY, False))
+
+
+def set_show_all_protons(on):
+    from jsonio import update_json
+    update_json(APP_CONFIG, {SHOW_ALL_PROTONS_KEY: bool(on)})
+
+
+def detected_proton_tools():
+    """Alle installierten Proton-Builds in compatibilitytools.d (eigene und
+    vom System), sortiert. Fuer „Proton erkennen“ im Spiel-Popup."""
+    found = []
+    for d in compat_tools_dirs() + system_compat_tools_dirs():
+        try:
+            names = os.listdir(d)
+        except OSError:
+            continue
+        for name in names:
+            if "proton" in name.lower() and os.path.isdir(os.path.join(d, name)) \
+                    and name not in found:
+                found.append(name)
+    found.sort(key=_natural_key)
+    return found
+
+
+def detected_proton_entry(name):
+    """Proton-Eintrag fuer einen gefundenen Build (Struktur wie in games.json)."""
+    return {
+        "version": name,
+        "role": "detected",
+        "detected": True,
+        "tool_exact": name,
+        "protonplus_runner": None,
+        "desc": {
+            "de": "Auf deinem System gefunden. Nicht von uns für dieses Spiel getestet.",
+            "en": "Found on your system. Not tested by us for this game.",
+            "fr": "Trouvé sur votre système. Non testé par nous pour ce jeu.",
+        },
+    }
 
 
 def resolve_steam_tool(proton):
@@ -2253,7 +2329,7 @@ def resolve_steam_tool(proton):
     damit nur noch als Hinweis, WELCHE Sorte gemeint ist.
     """
     runner = proton.get("protonplus_runner")
-    if runner is None and not proton.get("tool_prefix"):
+    if runner is None and not proton.get("tool_prefix") and not proton.get("tool_exact"):
         # Valves Proton / "Proton 11 (Standard)": bringt Steam selbst mit ->
         # Mapping entfernen, Steam nutzt seinen Standard.
         #

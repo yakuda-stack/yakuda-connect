@@ -44,7 +44,8 @@ log = get_logger("first_run")
 FIRST_RUN_KEYS = ("dashboard_optimize_asked", "dashboard_wayvr_asked", "tour_asked",
                   "controls_setup_asked")
 _SESSION_FLAGS = ("_optimize_checked", "_wayvr_offer_checked", "_tour_offer_checked",
-                  "_first_run_busy", "_tour_after_wayvr", "_controls_setup_checked")
+                  "_first_run_busy", "_tour_after_wayvr", "_controls_setup_checked",
+                  "_tour_waiting_for_install")
 RETRY_MS = 500
 
 

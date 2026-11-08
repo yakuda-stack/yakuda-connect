@@ -30,6 +30,11 @@ TERMINAL_CANDIDATES = [
     ("urxvt",        ["-e"]),
 ]
 
+def _is_aur_helper(name):
+    import appimage_installer
+    return appimage_installer.is_aur_helper(name)
+
+
 def find_terminal():
     """Gibt (binary, exec_flag_list) des ersten verfügbaren Terminals zurück."""
     for binary, flags in TERMINAL_CANDIDATES:
@@ -53,7 +58,14 @@ class RemoveWorker(QThread):
     def __init__(self, packages, helper="yay"):
         super().__init__()
         self.packages = packages
-        self.helper = helper if helper in ("yay", "paru") else "yay"
+        self.helper = helper if (helper == "shelly" or _is_aur_helper(helper)) else "yay"
+
+    def _remove_cmd(self, pkg):
+        """Shelly: AUR-Pakete liegen in der normalen pacman-Datenbank, also
+        direkt per pacman entfernen (gleiche Wirkung wie 'yay -Rns')."""
+        if self.helper == "shelly":
+            return f"sudo pacman -Rns {pkg}"
+        return f"{self.helper} -Rns {pkg}"
 
     def run(self):
         if not self.packages:
@@ -71,7 +83,7 @@ class RemoveWorker(QThread):
             self.status_signal.emit(f"Entferne Paket: {pkg}...")
             bash_cmd = (
                 f"echo '=== Entferne {pkg} mit {self.helper} ==='; "
-                f"{self.helper} -Rns {pkg}; "
+                f"{self._remove_cmd(pkg)}; "
                 f"echo ''; "
                 f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
                 f"sleep 2"
@@ -132,6 +144,7 @@ class UpdateWorker(QThread):
         cmds = {
             "yay":  "yay -Syu",
             "paru": "paru -Syu",
+            "shelly": "shelly upgrade all --no-flatpak --no-appimage",
             # Nur die VR-Pakete anfassen, kein volles Systemupdate.
             # Wird normalerweise nicht erreicht: auf Fedora oeffnet der
             # Update-Knopf das Software-Center. Dies ist der Rueckfall, wenn
@@ -141,6 +154,8 @@ class UpdateWorker(QThread):
             # System — flatpak findet ihn selbst).
             "flatpak": "flatpak update -y io.github.wivrn.wivrn",
         }
+        if _is_aur_helper(self.method):
+            cmds.setdefault(self.method, f"{self.method} -Syu")
         update_cmd = cmds.get(self.method, "yay -Syu")
         self.status_signal.emit(f"Update läuft ({self.method}) ...")
 
@@ -162,6 +177,60 @@ class UpdateWorker(QThread):
             self.finished_signal.emit(False)
 
 
+def helper_install_bash(name):
+    """
+    yay/paru installieren: zuerst aus den Paketquellen (CachyOS, Chaotic-AUR),
+    nur wenn es dort fehlt aus dem AUR bauen (git clone + makepkg -si).
+    """
+    if name not in ("yay", "paru"):
+        raise ValueError(f"unbekannter AUR-Helfer: {name}")
+    return (
+        f"echo '=== Installiere {name} (AUR-Helfer) ==='; "
+        f"tmp=''; "
+        f"if pacman -Si {name} >/dev/null 2>&1; then "
+        f"echo '--- {name} liegt in den Paketquellen: sudo pacman -S --needed {name} ---'; "
+        f"sudo pacman -S --needed {name}; "
+        f"else "
+        f"echo '--- {name} nicht in den Paketquellen, wird aus dem AUR gebaut ---'; "
+        f"sudo pacman -S --needed git base-devel && "
+        f"tmp=$(mktemp -d) && "
+        f"git clone https://aur.archlinux.org/{name}.git \"$tmp/{name}\" && "
+        f"cd \"$tmp/{name}\" && "
+        f"makepkg -si; "
+        f"fi; "
+        f"rc=$?; cd /; [ -n \"$tmp\" ] && rm -rf \"$tmp\"; "
+        f"echo ''; "
+        f"echo 'Fertig. Dieses Fenster schließt sich gleich automatisch...'; "
+        f"sleep 2; "
+        f"exit $rc"
+    )
+
+
+class HelperInstallWorker(QThread):
+    """Installiert yay oder paru im sichtbaren Terminal (sudo-Passwort dort)."""
+    status_signal = Signal(str)
+    finished_signal = Signal(bool)
+
+    def __init__(self, name):
+        super().__init__()
+        self.name = name
+
+    def run(self):
+        terminal, exec_flags = find_terminal()
+        if terminal is None:
+            self.status_signal.emit("Fehler: Kein unterstütztes Terminal gefunden (konsole, kitty, foot, alacritty ...)!")
+            self.finished_signal.emit(False)
+            return
+        cmd = [terminal] + exec_flags + ["bash", "-c", helper_install_bash(self.name)]
+        try:
+            process = subprocess.Popen(cmd)
+            process.wait()
+            self.finished_signal.emit(process.returncode == 0)
+        except Exception as e:
+            log.warning("%s-Installation: Terminal '%s' fehlgeschlagen: %s", self.name, terminal, e)
+            self.finished_signal.emit(False)
+
+
 class InstallWorker(QThread):
     status_signal = Signal(str)
     finished_signal = Signal(bool)
@@ -175,7 +244,7 @@ class InstallWorker(QThread):
         self.flatpak_user = bool(flatpak_user)
         # 'flatpak' ist hier nur noch für den TOOLS-Tab erlaubt (ProtonPlus etc.),
         # die WiVRn-Runtime im Installations-Tab läuft ausschließlich nativ.
-        self.helper = helper if helper in ("yay", "paru", "dnf", "apt", "flatpak") else "yay"
+        self.helper = helper if (helper in ("dnf", "apt", "flatpak", "shelly") or _is_aur_helper(helper)) else "yay"
         # {paketname: copr-kennung} — nur für dnf. Steht ein Paket hier drin,
         # wird das COPR im selben Terminalfenster aktiviert, bevor installiert
         # wird. Der Nutzer muss also nichts mehr von Hand kopieren.
@@ -243,6 +312,10 @@ class InstallWorker(QThread):
                             f"sudo dnf copr enable -y {copr}; }}; ")
             return (f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit dnf ==='; "
                     f"{copr_cmd}sudo dnf install -y {pkg}; " + tail)
+
+        if self.helper == "shelly":
+            return (f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit shelly ==='; "
+                    f"shelly install aur {pkg}; " + tail)
 
         return (f"echo '=== Installiere {pkg} ({index}/{total_pkgs}) mit {self.helper} ==='; "
                 f"{self.helper} -S {pkg}; " + tail)

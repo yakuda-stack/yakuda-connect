@@ -1,6 +1,36 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.5.0 — 2026-11-08
+
+#### 🇩🇪 Deutsch
+
+* **App-Profile:** Speichere alle Einstellungen als Profil und wechsle unten links in der Sidebar zwischen ihnen. So kannst du gefahrlos ausprobieren und jederzeit zurück. Kopieren, Umbenennen, Exportieren und Importieren gibt es unter Einstellungen → Allgemein → Profile.
+* **Optimieren auf der Spielkachel:** Fahr mit der Maus über ein Spiel – oben rechts zeigt ein Knopf mit ✓ oder ✗, ob schon alles optimiert ist. Ein Klick optimiert direkt, ohne erst die Einstellungen zu öffnen.
+* **Alle installierten Proton-Versionen:** Ein Haken zeigt unter deinen Favoriten auch alle anderen Proton-Versionen, die bei dir liegen.
+* **Aktuelles GE-Proton:** Proton-GE ist jetzt GE-Proton11-12 – alte GE-Versionen werden nicht mehr still benutzt.
+* **Einstellungen einreichen:** Läuft ein Spiel gut oder hast du einen Verbesserungsvorschlag, schickst du deine Einstellungen mit einem Klick als fertig ausgefülltes GitHub-Issue – inklusive fertigem Eintrag für die Spiele-Datenbank.
+* **Kleinigkeiten:** Die App-Version steht jetzt oben rechts im Installations-Tab, und die Profil-Auswahl unten links ist schlicht und abgerundet.
+* **Shelly-Unterstützung:** Auf CachyOS nutzt die App jetzt das vorinstallierte Shelly – im Installations-, Tools- und Controls-Tab, inklusive AUR-Updates.
+* **Kein AUR-Helfer? Kein Problem:** yay und paru stehen immer zur Auswahl und lassen sich per Klick installieren – erst über pacman, sonst aus dem AUR. Ohne Helfer bietet ein Popup einmalig vier Wege an, auch einen eigenen AUR-Helfer oder Flatpak.
+* **Keine gesperrten Tabs mehr:** Ist WiVRn installiert, sind alle Tabs offen – auch ohne yay/paru. Die Sperr-Meldung kommt nur noch beim Klick auf einen Tab, nicht mehr beim Start.
+* **Tour zur richtigen Zeit:** Sie wird erst angeboten, wenn alle Komponenten installiert sind.
+
+#### 🇬🇧 English
+
+* **App profiles:** Save all your settings as a profile and switch between them at the bottom left of the sidebar. Try things out without worry and go back any time. Copy, rename, export and import live in Settings → General → Profiles.
+* **Optimize on the game tile:** Hover a game – a button in the top right corner shows ✓ or ✗ for whether everything is optimized. One click optimizes right away, without opening its settings first.
+* **All installed Proton versions:** One checkbox also lists every other Proton version on your system below your favorites.
+* **Current GE-Proton:** Proton-GE is now GE-Proton11-12 – old GE versions are no longer used silently.
+* **Submit settings:** If a game runs well or you have a suggestion, send your settings with one click as a prefilled GitHub issue – including a ready-made entry for the games database.
+* **Small touches:** The app version now shows in the top right of the Installation tab, and the profile picker at the bottom left is clean and rounded.
+* **Shelly support:** On CachyOS the app now uses the preinstalled Shelly – in the Installation, Tools and Controls tab, including AUR updates.
+* **No AUR helper? No problem:** yay and paru are always selectable and can be installed with one click – via pacman first, otherwise from the AUR. Without a helper, a popup offers four ways once, including your own AUR helper or Flatpak.
+* **No more locked tabs:** If WiVRn is installed, all tabs are open – even without yay/paru. The lock message only appears when you click a tab, not at startup anymore.
+* **Tour at the right time:** It is only offered once all components are installed.
+
+---
+
 ### 🚀 v1.4.9 — 2026-11-06
 
 #### 🇩🇪 Deutsch

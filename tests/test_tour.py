@@ -23,6 +23,32 @@ def test_every_step_has_texts_in_all_languages():
                 assert f"tour_action_{step['action']}" in data
 
 
+def _tour_state(w, tour):
+    from PySide6.QtWidgets import QApplication
+    targets = tour._target or []
+    return {
+        "page": w.ui.pages.currentIndex(),
+        "sidebar": w.ui.sidebar.currentRow(),
+        "tour_is_current": w._tour is tour,
+        "targets_visible": [t.isVisible() for t in targets],
+        "modal": type(QApplication.activeModalWidget()).__name__,
+        "popup": type(QApplication.activePopupWidget()).__name__,
+        "win": (w.width(), w.height()),
+        "card_visible": tour.card.isVisible(),
+        "target_size": [(t.width(), t.height()) for t in targets],
+        "widget_rects": [str(tour._widget_rect(t)) for t in targets],
+        "scroll_parents": [type(p).__name__ for t in targets[:1]
+                           for p in _parents(t)],
+    }
+
+
+def _parents(t):
+    p = t.parentWidget()
+    while p is not None:
+        yield p
+        p = p.parentWidget()
+
+
 def test_tour_walks_all_steps(window):
     from PySide6.QtWidgets import QApplication
     w = window
@@ -34,11 +60,13 @@ def test_tour_walks_all_steps(window):
     tour = w._tour
     seen = []
     for i, step in enumerate(STEPS):
+        QApplication.processEvents()
         tour._focus_target()
         QApplication.processEvents()
         if step["target"] is not None:
             assert tour._target is not None, step["id"]
-            assert tour.marker.isVisible() and tour.frame.isVisible(), step["id"]
+            assert tour.marker.isVisible() and tour.frame.isVisible(), (
+                step["id"], _tour_state(w, tour))
         assert tour.card.isVisible()
         card = tour.card.geometry()
         assert w.rect().contains(card), step["id"]

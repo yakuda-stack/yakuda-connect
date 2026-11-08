@@ -389,6 +389,53 @@ class Ui_MainWindow:
         """)
         sidebar_v.addWidget(self.sidebar, 1)
 
+        # ---- App-Profil (unten links, ueber Advanced Mode) ----------------
+        # Auswahl, Speichern und Loeschen der Profile; die Logik steckt in
+        # core/tabs/app_profiles_mixin.py, die Dateien in core/app_profiles.py.
+        self.profile_row = profile_row = QWidget()
+        profile_row.setStyleSheet("background-color:#1c1f26;")
+        profile_v = QVBoxLayout(profile_row)
+        profile_v.setContentsMargins(14, 10, 14, 0)
+        profile_v.setSpacing(4)
+        self.lbl_app_profile = QLabel(tr("app_profile_label"))
+        self.lbl_app_profile.setStyleSheet(
+            "color:#7b88a1; font-size:11px; font-weight:bold; background:transparent;")
+        profile_v.addWidget(self.lbl_app_profile)
+        profile_h = QHBoxLayout()
+        profile_h.setSpacing(6)
+        self.combo_app_profile = QComboBox()
+        self.combo_app_profile.setFixedHeight(32)
+        self.combo_app_profile.setCursor(Qt.PointingHandCursor)
+        # Abgerundet, ohne Pfeil: wirkt wie ein Feld, Klick oeffnet die Liste
+        self.combo_app_profile.setStyleSheet("""
+            QComboBox { background-color:#1c1f26; color:#eceff4; border:1px solid #3b4252;
+                        border-radius:8px; padding:4px 10px; font-size:13px; }
+            QComboBox:hover { border-color:#5e81ac; }
+            QComboBox::drop-down { width:0px; border:none; }
+            QComboBox::down-arrow { image:none; width:0px; height:0px; }
+            QComboBox QAbstractItemView { background-color:#21252b; color:#eceff4;
+                        border:1px solid #3b4252; border-radius:8px; padding:4px;
+                        outline:0; selection-background-color:#3b4252; }
+            QComboBox QAbstractItemView::item { padding:5px 8px; min-height:22px;
+                        border-radius:6px; }
+            QComboBox QAbstractItemView::item:selected { background-color:#3b4252; }
+        """)
+        self.combo_app_profile.setMinimumWidth(0)
+        self.combo_app_profile.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.combo_app_profile.setToolTip(tr("app_profile_combo_tip"))
+        profile_h.addWidget(self.combo_app_profile, 1)
+        self.btn_app_profile_save = QPushButton("💾")
+        self.btn_app_profile_save.setFixedSize(32, 32)
+        self.btn_app_profile_save.setCursor(Qt.PointingHandCursor)
+        self.btn_app_profile_save.setToolTip(tr("app_profile_save_tip"))
+        self.btn_app_profile_save.setStyleSheet(
+            "QPushButton { background-color:#1c1f26; color:#eceff4; border:1px solid #3b4252;"
+            " border-radius:8px; font-size:14px; padding:0px; }"
+            " QPushButton:hover { background-color:#2e3440; border-color:#5e81ac; }")
+        profile_h.addWidget(self.btn_app_profile_save)
+        profile_v.addLayout(profile_h)
+        sidebar_v.addWidget(profile_row, 0)
+
         # ---- Advanced Mode (unten links, wie der Schalter in SteamVR) -----
         # Ist er aus (Standard), aendert sich an der Oberflaeche nichts. Ist
         # er an, erscheint unter den betroffenen Schaltflaechen ein
@@ -496,6 +543,17 @@ class Ui_MainWindow:
             item = self.sidebar.item(i)
             if item:
                 item.setText(tr(key))
+
+        # App-Profil unten links und Karte unter Einstellungen -> Allgemein
+        if hasattr(self, "lbl_app_profile"):
+            self.lbl_app_profile.setText(tr("app_profile_label"))
+            self.combo_app_profile.setToolTip(tr("app_profile_combo_tip"))
+            self.btn_app_profile_save.setToolTip(tr("app_profile_save_tip"))
+        if hasattr(self, "app_profile_buttons"):
+            for key, btn in self.app_profile_buttons.items():
+                btn.setText(tr(f"app_profiles_btn_{key}"))
+            self.lbl_app_profiles_hint.setText(tr("app_profiles_hint"))
+            self.lbl_app_profile_autosave.setText(tr("app_profiles_autosave"))
 
         # Advanced-Mode-Schalter unten links
         if hasattr(self, "lbl_advanced_mode"):
@@ -759,7 +817,16 @@ class Ui_MainWindow:
 
         self.lbl_install_title = QLabel(tr("install_title"))
         self.lbl_install_title.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(self.lbl_install_title)
+        # App-Version oben rechts, damit man sie bei Fragen gleich findet
+        import version as _app_version
+        title_row = QHBoxLayout()
+        title_row.addWidget(self.lbl_install_title)
+        title_row.addStretch()
+        self.lbl_install_version = QLabel(f"yakuda-connect v{_app_version.VERSION}")
+        self.lbl_install_version.setStyleSheet(
+            "color:#7b88a1; font-size:12px; font-weight:bold; margin-bottom: 10px;")
+        title_row.addWidget(self.lbl_install_version, 0, Qt.AlignTop)
+        layout.addLayout(title_row)
 
         self.pkg_group = QGroupBox(tr("install_deps_title"))
         self.pkg_layout = QFormLayout(self.pkg_group)
@@ -1842,6 +1909,35 @@ class Ui_MainWindow:
         self.lbl_log_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
         cv.addWidget(self.lbl_log_hint)
         cv.addWidget(AdvancedBox("diagnostics"))
+        gen_v.addWidget(card)
+
+        # -- App-Profile --
+        card, cv = self._settings_card()
+        head, _, _ = self._settings_header("app_profiles_group", lambda: tr("app_profiles_desc"))
+        cv.addLayout(head)
+        self.lbl_app_profiles_hint = QLabel(tr("app_profiles_hint"))
+        self.lbl_app_profiles_hint.setWordWrap(True)
+        self.lbl_app_profiles_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
+        cv.addWidget(self.lbl_app_profiles_hint)
+        self.app_profile_buttons = {}
+        for row_keys in (("open", "rename", "copy", "delete"), ("export", "import")):
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            for key in row_keys:
+                btn = QPushButton(tr(f"app_profiles_btn_{key}"))
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setStyleSheet(self._CSS_DANGER if key == "delete" else self._CSS_SECONDARY)
+                self.app_profile_buttons[key] = btn
+                row.addWidget(btn)
+            row.addStretch()
+            cv.addLayout(row)
+        autosave_row = QHBoxLayout()
+        self.toggle_app_profile_autosave = ToggleSwitch()
+        self.lbl_app_profile_autosave = QLabel(tr("app_profiles_autosave"))
+        self.lbl_app_profile_autosave.setWordWrap(True)
+        autosave_row.addWidget(self.toggle_app_profile_autosave, 0, Qt.AlignVCenter)
+        autosave_row.addWidget(self.lbl_app_profile_autosave, 1)
+        cv.addLayout(autosave_row)
         gen_v.addWidget(card)
 
         # -- Backup --

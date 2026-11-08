@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.4.9"
+APP_VERSION = "v1.5.0"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -101,13 +101,15 @@ from tabs.tour_mixin import TourMixin
 from tabs.first_run_mixin import FirstRunMixin
 from tabs.controls_setup_mixin import ControlsSetupMixin
 from tabs.games_optimize_mixin import GamesOptimizeMixin
+from tabs.app_profiles_mixin import AppProfilesMixin
+import app_profiles
 
 # Interne Importe (liegen im selben Ordner 'core')
 from install_worker import (InstallWorker, UpdateWorker, AppUpdateCheckWorker,
-                            AppUpdateWorker, XrizerGithubWorker)
+                            AppUpdateWorker, XrizerGithubWorker, HelperInstallWorker)
 import appimage_installer as appimg
 import vr_environment as venv
-from config_manager import load_saved_settings, save_all_settings
+from config_manager import load_saved_settings, save_all_settings, sync_with_wivrn
 from streaming_tab import StreamingTab
 from backup_manager import (create_vr_backup, restore_vr_environment,
                             sync_backup_from_github)
@@ -272,18 +274,25 @@ class PackageCheckWorker(QThread):
             installed = {WIVRN_FLATPAK_ID} if venv.wivrn_flatpak_installed() else set()
             return installed, set()
 
-        if self.method == "native" or not self.method:
+        tool = "pacman" if self.method == "shelly" else self.method
+        if not tool and appimg.is_arch_based() and shutil.which("pacman"):
+            tool = "pacman"
+        if self.method == "native" or not tool:
             return None, set()          # wird ueber shutil.which geprueft
 
-        if not shutil.which(self.method):
+        if not shutil.which(tool):
             return set(), set()
 
         # pacman/yay/paru: "name version" je Zeile
-        out = proc.output_of([self.method, "-Q"], timeout=proc.LONG_TIMEOUT)
+        out = proc.output_of([tool, "-Q"], timeout=proc.LONG_TIMEOUT)
         installed = {line.split()[0] for line in out.splitlines() if line.strip()}
 
-        out_up = proc.output_of([self.method, "-Qu"], timeout=proc.LONG_TIMEOUT)
+        out_up = proc.output_of([tool, "-Qu"], timeout=proc.LONG_TIMEOUT)
         updatable = {line.split()[0] for line in out_up.splitlines() if line.strip()}
+        if self.method == "shelly":
+            # pacman -Qu kennt nur die Paketquellen — AUR-Updates (z. B.
+            # opencomposite-git) liefert erst Shelly selbst.
+            updatable |= appimg.shelly_aur_updates(force=True)
         return installed, updatable
 
     def run(self):
@@ -341,7 +350,7 @@ class PackageCheckWorker(QThread):
 
 class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMixin, FirstRunMixin, ControlsSetupMixin, GamesOptimizeMixin, GamesTabMixin, ToolsTabMixin,
             ControlsTabMixin, XrControlsMixin,
-            AutostartProfilesMixin, QMainWindow):
+            AutostartProfilesMixin, AppProfilesMixin, QMainWindow):
     """
     Hauptfenster.
 
@@ -355,6 +364,14 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         # Mausrad aendert keine Aufklapplisten mehr (scrollt die Seite)
         from ui import no_wheel
         no_wheel.install(QApplication.instance())
+        # Profilwechsel aus der letzten Sitzung einspielen — VOR allem anderen,
+        # damit Design, Einstellungen und WiVRn schon die Werte des Profils sehen.
+        try:
+            loaded = app_profiles.apply_pending()
+            if loaded is not None:
+                sync_with_wivrn(loaded)
+        except Exception:
+            log.exception("Profil beim Start nicht geladen")
         # Gespeichertes Design VOR dem Aufbau lesen: dann setzt ui_main das
         # Anwendungs-Stylesheet gleich gefaerbt (und es kommt nach einem
         # Neustart ueberhaupt zurueck — theme.load() wurde bisher nie gerufen).
@@ -536,11 +553,6 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         # Start-Tab Sperren-Logik (Lock)
         if self.are_critical_packages_missing():
             self.ui.sidebar.setCurrentRow(0)
-            QMessageBox.warning(
-                self,
-                tr("msg_components_title"),
-                tr("msg_components_text")
-            )
         else:
             self.ui.sidebar.setCurrentRow(1)
 
@@ -1186,6 +1198,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.ui.combo_install_method.currentIndexChanged.connect(self._on_install_method_changed)
         # Ubuntu/Debian: Update-Knopf ausblenden (kein Paket in den Repos)
         QTimer.singleShot(400, self._apply_distro_ui_rules)
+        QTimer.singleShot(1200, self._maybe_show_aur_helper_dialog)
         self.ui.btn_vr_backup.clicked.connect(self.trigger_vr_backup)
         self.ui.btn_vr_restore.clicked.connect(self.trigger_vr_restore)
         self.ui.btn_vr_restore_github.clicked.connect(self.trigger_vr_restore_github)
@@ -1322,6 +1335,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         # Autostart-Profile (Bedingung „Spiel laeuft + Headset“) — eigene
         # Gruppe oben im Streaming-Tab, siehe tabs/autostart_profiles_mixin.py.
         self.setup_autostart_profiles()
+        self.setup_app_profiles()
 
         # Tools-Tab wird erst beim ersten Oeffnen gebaut (_ensure_tools_ui).
         # Controls-Tab braucht beim Start nur die Tool-Daten, nicht die Karten.
@@ -1368,7 +1382,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         """Ist die WiVRn-Runtime für die aktuell gewählte Methode installiert?"""
         method = self._install_method()
         if not method:
-            return False
+            return shutil.which("wivrn-server") is not None
         if method in ("dnf", "native"):
             return shutil.which("wivrn-server") is not None
         if method == "flatpak":
@@ -1795,7 +1809,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
     # tragen ihre Farbe als EIGENES Stylesheet — und ein Widget-Stylesheet
     # schlaegt jede Regel aus dem Anwendungs-Stylesheet. Genau deshalb endete
     # das Hintergrundbild frueher an der Kante der Leiste.
-    _COLUMN_WIDGETS = ("sidebar_container", "sidebar", "adv_row")
+    _COLUMN_WIDGETS = ("sidebar_container", "sidebar", "profile_row", "adv_row")
 
     def _apply_column_tint(self, with_image):
         """
@@ -1844,7 +1858,8 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         if method == "flatpak":
             return {"WiVRn (Flatpak)": [WIVRN_FLATPAK_ID]}
         if not method:
-            # Ubuntu/Debian: keine Methode -> nur den WiVRn-Status zeigen
+            if appimg.is_arch_based() and not appimg.is_steamos():
+                return dict(INSTALL_PACKAGES)
             return {"WiVRn": ["wivrn-server"]}
         return dict(INSTALL_PACKAGES)         # yay/paru
 
@@ -1928,7 +1943,17 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         return sources[0] if sources else ""
 
     def _on_install_method_changed(self, *args):
-        """Dropdown gewechselt -> Zeilen neu aufbauen und Status prüfen."""
+        """Dropdown gewechselt -> Zeilen neu aufbauen und Status prüfen.
+        Fehlendes yay/paru gewaehlt: Auswahl zuruecksetzen und Installation anbieten."""
+        combo = self.ui.combo_install_method
+        data = combo.currentData()
+        if data in appimg.INSTALLABLE_HELPERS and not shutil.which(data):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(combo.findData(getattr(self, "_last_combo_method", "")))
+            combo.blockSignals(False)
+            self._offer_helper_install(data)
+            return
+        self._last_combo_method = data or ""
         self._rebuild_package_rows()
         self.check_system_packages()
 
@@ -1988,9 +2013,11 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             return
         # Erst-Einrichtung wartet auf eine fertige Installation
         self.first_run_after_install()
+        self._offer_tour_if_waiting()
 
     def _on_package_check_done(self, results, updates_available):
         """Ergebnis des Hintergrund-Threads in die Oberflaeche uebertragen."""
+        self._last_pkg_results = dict(results)
         for name, state in results.items():
             label = self.prog_labels.get(name)
             if label is None:
@@ -2239,19 +2266,113 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self._install_methods = methods
         if combo is None:
             return
-        labels = {"yay": "yay", "paru": "paru", "dnf": "dnf (Fedora)", "native": "Nativ"}
+        labels = {"yay": "yay", "paru": "paru", "shelly": "Shelly", "dnf": "dnf (Fedora)",
+                  "flatpak": "Flatpak", "native": "Nativ"}
         combo.blockSignals(True)
         combo.clear()
         for mthd in methods:
             combo.addItem(labels.get(mthd, mthd), mthd)
+        for helper in appimg.missing_installable_helpers():
+            combo.addItem(tr("method_not_installed").format(name=helper), helper)
+        combo.setPlaceholderText(tr("method_choose"))
         default = appimg.default_update_method(methods)
-        if default:
-            idx = combo.findData(default)
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
+        combo.setCurrentIndex(combo.findData(default) if default else -1)
+        self._last_combo_method = default
         combo.blockSignals(False)
-        combo.setVisible(len(methods) >= 2)
+        combo.setVisible(combo.count() >= 2)
         self._update_update_button()
+
+    def _maybe_show_aur_helper_dialog(self):
+        """Arch ohne yay/paru/Shelly: nur beim ALLERERSTEN Start die vier Wege
+        anbieten. Danach nur noch ueber Installieren/Aktualisieren."""
+        try:
+            if appimg.arch_helper_missing() and not appimg.start_dialog_already_shown():
+                appimg.save_arch_setting(appimg.AUR_DIALOG_SHOWN_KEY, True)
+                self._show_aur_helper_dialog()
+        except Exception as e:
+            log.info(f"[AUR-Helfer-Dialog] {e}")
+
+    def _show_aur_helper_dialog(self):
+        if getattr(self, "_aur_dialog_open", False):
+            return
+        worker = getattr(self, "worker", None)
+        if worker is not None and worker.isRunning():
+            return
+        from ui.aur_helper_dialog import (AurHelperDialog, CHOICE_PARU_AUTO,
+                                          CHOICE_PARU_LINK, CHOICE_CUSTOM,
+                                          CHOICE_FLATPAK)
+        self._aur_dialog_open = True
+        try:
+            dlg = AurHelperDialog(self)
+            accepted = dlg.exec()
+        finally:
+            self._aur_dialog_open = False
+        if not accepted:
+            return
+        if dlg.choice == CHOICE_PARU_AUTO:
+            self._start_helper_install("paru")
+        elif dlg.choice == CHOICE_PARU_LINK:
+            webbrowser.open(appimg.PARU_URL)
+            self.ui.lbl_worker_status.setText(tr("aur_dlg_link_opened"))
+        elif dlg.choice == CHOICE_CUSTOM:
+            appimg.save_arch_setting(appimg.AUR_HELPER_CONFIG_KEY, dlg.custom_name)
+            if not shutil.which(dlg.custom_name):
+                QMessageBox.warning(self, tr("aur_dlg_title"),
+                                    tr("aur_dlg_opt3_notfound").format(name=dlg.custom_name))
+            self._refresh_install_methods()
+        elif dlg.choice == CHOICE_FLATPAK:
+            if not shutil.which("flatpak"):
+                QMessageBox.warning(self, tr("aur_dlg_title"), tr("aur_dlg_flatpak_missing"))
+                return
+            appimg.save_arch_setting(appimg.ARCH_CHOICE_CONFIG_KEY, "flatpak")
+            self._refresh_install_methods()
+
+    def _refresh_install_methods(self):
+        self._populate_install_method_combo()
+        self._rebuild_package_rows()
+        self.check_system_packages()
+
+    def _offer_helper_install(self, name):
+        """Rueckfrage: fehlendes yay/paru jetzt installieren?"""
+        worker = getattr(self, "worker", None)
+        if worker is not None and worker.isRunning():
+            return
+        answer = QMessageBox.question(
+            self, tr("helper_install_title").format(name=name),
+            tr("helper_install_text").format(name=name),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer == QMessageBox.Yes:
+            self._start_helper_install(name)
+
+    def _start_helper_install(self, name):
+        worker = getattr(self, "worker", None)
+        if worker is not None and worker.isRunning():
+            return
+        self.ui.btn_install.setEnabled(False)
+        self.ui.btn_update.setEnabled(False)
+        self.ui.lbl_worker_status.setText(tr("helper_install_running").format(name=name))
+        self._helper_installing = name
+        self.worker = HelperInstallWorker(name)
+        self.worker.status_signal.connect(self.ui.lbl_worker_status.setText)
+        self.worker.finished_signal.connect(self._on_helper_install_finished)
+        self.worker.start()
+
+    def _on_helper_install_finished(self, success):
+        name = getattr(self, "_helper_installing", "")
+        self.ui.btn_install.setEnabled(True)
+        self._populate_install_method_combo()
+        installed = bool(name) and shutil.which(name) is not None
+        combo = self.ui.combo_install_method
+        if installed and combo.findData(name) >= 0:
+            combo.blockSignals(True)
+            combo.setCurrentIndex(combo.findData(name))
+            combo.blockSignals(False)
+            self._last_combo_method = name
+            self._update_update_button()
+        self._rebuild_package_rows()
+        self.check_system_packages()
+        self.ui.lbl_worker_status.setText(
+            tr("helper_install_done" if installed else "helper_install_failed").format(name=name))
 
     def _apply_distro_ui_rules(self):
         """
@@ -2286,7 +2407,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         methods = getattr(self, "_install_methods", None) or appimg.available_update_methods()
         if combo is not None and combo.count() > 0:
             data = combo.currentData()
-            if data:
+            if data and data in methods:
                 return data
         return appimg.default_update_method(methods)
 
@@ -2326,7 +2447,10 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             QMessageBox.information(self, tr("native_update_title"), tr("native_update_text"))
             return
         if not method:
-            self.ui.lbl_worker_status.setText(tr("install_no_update_method"))
+            if appimg.arch_helper_missing():
+                self._show_aur_helper_dialog()
+            else:
+                self.ui.lbl_worker_status.setText(tr("install_no_update_method"))
             return
         self.ui.btn_install.setEnabled(False)
         self.ui.btn_update.setEnabled(False)
@@ -2420,7 +2544,10 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
                 self.install_wivrn_flatpak()
             return
         if not method:
-            self.ui.lbl_worker_status.setText(tr("install_no_method"))
+            if appimg.arch_helper_missing():
+                self._show_aur_helper_dialog()
+            else:
+                self.ui.lbl_worker_status.setText(tr("install_no_method"))
             return
 
         if method == "apt":
@@ -2502,12 +2629,13 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
                 return
             worker_pkgs, helper = packages_to_process, "dnf"
 
-        elif method in ("yay", "paru"):
+        elif appimg.is_aur_helper(method) or method == "shelly":
             # nur fehlende AUR-Pakete installieren
             packages_to_process = []
+            query_tool = "pacman" if method == "shelly" else method
             for prog_name, pkgs in self.required_packages.items():
                 for pkg in pkgs:
-                    result = proc.run([method, "-Q", pkg],
+                    result = proc.run([query_tool, "-Q", pkg],
                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=proc.DEFAULT_TIMEOUT)
                     if result.returncode != 0:
                         packages_to_process.append(pkg)
@@ -4181,6 +4309,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
                 event.ignore()
                 return
         self._exit_cleanup_done = True
+        self.autosave_app_profile_on_close()
 
         # Zuerst die Timer anhalten: ein Tick waehrend des Aufraeumens wuerde
         # einen frischen Worker starten, auf den niemand mehr wartet.

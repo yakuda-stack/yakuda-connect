@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (QApplication, QLabel, QMessageBox, QHBoxLayout,
 from PySide6.QtCore import (Qt, QTimer, QSize, QPointF, QThread, QUrl,
                             Signal as QtSignal)
 from PySide6.QtGui import (QPixmap, QIcon, QPainter, QPolygonF, QColor,
-                           QDesktopServices)
+                           QDesktopServices, QPen, QPainterPath)
 
 import games as games_db
 import vrchat_config as vrc_cfg
@@ -74,6 +74,75 @@ def make_play_icon(size=14, color="#21252b"):
     return QIcon(pm)
 
 
+def make_optimize_icon(size=22, state=None, color="#eceff4"):
+    """
+    Optimieren-Symbol: halbes Zahnrad mit drei Pfeilen nach oben.
+
+    state: True = alles optimiert (gruenes ✓ unten rechts), False = noch
+    nicht (rotes ✗), None = ohne Abzeichen. Doppelt so gross gemalt und
+    zurueckskaliert, damit es auf HiDPI-Bildschirmen scharf bleibt.
+    """
+    scale = 2
+    s = size * scale
+    pm = QPixmap(s, s)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(QColor(color), s * 0.062)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+
+    cx, base = s * 0.5, s * 0.58
+    r_out, r_in = s * 0.40, s * 0.30
+    gear = QPainterPath()
+    teeth = 5
+    import math
+    points = []
+    for i in range(teeth * 2 + 1):
+        a = math.pi * i / (teeth * 2)
+        r = r_out if i % 2 else r_in
+        a0, a1 = a - math.pi / (teeth * 4) * 0.55, a + math.pi / (teeth * 4) * 0.55
+        for ang in (a0, a1):
+            ang = max(0.0, min(math.pi, ang))
+            points.append(QPointF(cx - r * math.cos(ang), base + r * math.sin(ang)))
+    gear.moveTo(QPointF(cx - r_in, base))
+    for pt in points:
+        gear.lineTo(pt)
+    gear.lineTo(QPointF(cx + r_in, base))
+    gear.closeSubpath()
+    p.drawPath(gear)
+
+    head = s * 0.09
+    for x, top, bottom in ((cx - s * 0.2, s * 0.22, base),
+                           (cx, s * 0.08, base + s * 0.12),
+                           (cx + s * 0.2, s * 0.22, base)):
+        p.drawLine(QPointF(x, bottom), QPointF(x, top))
+        p.drawLine(QPointF(x - head, top + head), QPointF(x, top))
+        p.drawLine(QPointF(x + head, top + head), QPointF(x, top))
+
+    if state is not None:
+        br = s * 0.19
+        bc = QPointF(s - br - 1, s - br - 1)
+        p.setPen(QPen(QColor("#21252b"), s * 0.05))
+        p.setBrush(QColor("#a3be8c" if state else "#bf616a"))
+        p.drawEllipse(bc, br, br)
+        mark = QPen(QColor("#21252b"), s * 0.055)
+        mark.setCapStyle(Qt.RoundCap)
+        p.setPen(mark)
+        d = br * 0.45
+        if state:
+            p.drawLine(QPointF(bc.x() - d, bc.y()), QPointF(bc.x() - d * 0.2, bc.y() + d * 0.8))
+            p.drawLine(QPointF(bc.x() - d * 0.2, bc.y() + d * 0.8), QPointF(bc.x() + d, bc.y() - d * 0.7))
+        else:
+            p.drawLine(QPointF(bc.x() - d, bc.y() - d), QPointF(bc.x() + d, bc.y() + d))
+            p.drawLine(QPointF(bc.x() - d, bc.y() + d), QPointF(bc.x() + d, bc.y() - d))
+    p.end()
+    pm.setDevicePixelRatio(scale)
+    return QIcon(pm)
+
+
 class ClickableFrame(QFrame):
     """QFrame, das wie ein großer Button funktioniert (für die Spiel-Kacheln).
 
@@ -89,6 +158,9 @@ class ClickableFrame(QFrame):
         super().mousePressEvent(event)
 
     def enterEvent(self, event):
+        on_hover = getattr(self, "_on_hover", None)
+        if on_hover is not None:
+            on_hover()
         hover = getattr(self, "_hover", None)
         if hover is not None:
             hover.setGeometry(self.rect())
@@ -563,6 +635,31 @@ class GamesTabMixin:
         hv = QVBoxLayout(hover)
         hv.setContentsMargins(10, 10, 10, 34)
         hv.setSpacing(10)
+
+        # „✨“ oben rechts: Optimieren-Assistent direkt von der Kachel, ohne
+        # erst die Einstellungen zu oeffnen. Eigene Spiele haben nichts zu
+        # optimieren und bekommen den Knopf nicht.
+        btn_tile_opt = None
+        if not games_db.is_local_id(appid):
+            top_row = QHBoxLayout()
+            top_row.setContentsMargins(0, 0, 0, 0)
+            top_row.addStretch()
+            btn_tile_opt = QPushButton()
+            btn_tile_opt.setObjectName("tileOptimize")
+            btn_tile_opt.setCursor(Qt.PointingHandCursor)
+            btn_tile_opt.setFixedSize(36, 36)
+            btn_tile_opt.setIcon(make_optimize_icon(24))
+            btn_tile_opt.setIconSize(QSize(24, 24))
+            btn_tile_opt.setToolTip(tr("gopt_btn") + " — " + tr("gopt_btn_tip"))
+            btn_tile_opt.setStyleSheet("""
+                QPushButton#tileOptimize { background-color: rgba(33, 37, 43, 235);
+                                           border: 1px solid rgba(236, 239, 244, 110);
+                                           border-radius: 18px; padding: 0px; }
+                QPushButton#tileOptimize:hover { background-color: #3b4252; border-color: #88c0d0; }
+            """)
+            btn_tile_opt.clicked.connect(lambda _, a=appid: self._optimize_from_tile(a))
+            top_row.addWidget(btn_tile_opt)
+            hv.addLayout(top_row)
         hv.addStretch()
 
         btn_tile_play = QPushButton()
@@ -592,12 +689,16 @@ class GamesTabMixin:
             QPushButton#tileSettings:hover { background-color: rgba(136, 192, 208, 110); }
         """)
         btn_tile_set.clicked.connect(lambda _, a=appid: self._on_game_tile_clicked(a))
+
         hv.addWidget(btn_tile_set)
         hover.clicked.connect(lambda a=appid: self._on_game_tile_clicked(a))
         hover.hide()
         tile._hover = hover
         tile._play_btn = btn_tile_play
         tile._settings_btn = btn_tile_set
+        tile._optimize_btn = btn_tile_opt
+        if btn_tile_opt is not None:
+            tile._on_hover = lambda a=appid: self._update_tile_optimize_badge(a)
         tile._name = name
 
         tile.clicked.connect(lambda a=appid: self._on_game_tile_clicked(a))
@@ -609,6 +710,8 @@ class GamesTabMixin:
         for appid, tile in getattr(self, "_games_tiles", {}).items():
             if getattr(tile, "_settings_btn", None) is not None:
                 tile._settings_btn.setText(tr("games_settings_btn"))
+            if getattr(tile, "_optimize_btn", None) is not None:
+                self._update_tile_optimize_badge(appid)
             if getattr(tile, "_play_btn", None) is not None:
                 tile._play_btn.setToolTip(
                     self._tile_play_tooltip(appid, getattr(tile, "_name", "")))
@@ -729,7 +832,9 @@ class GamesTabMixin:
             btn_play.clicked.connect(lambda _, a=appid, g=game: self._play_game(a, g))
             ov.add_head_widget(btn_play)
             # „✨ Optimieren“: ein paar Fragen, dann ist alles eingerichtet
-            btn_opt = QPushButton("✨  " + tr("gopt_btn"))
+            btn_opt = QPushButton(" " + tr("gopt_btn"))
+            btn_opt.setIcon(make_optimize_icon(18, self.game_optimize_state(appid), color="#21252b"))
+            btn_opt.setIconSize(QSize(18, 18))
             btn_opt.setObjectName("panelOptimize")
             btn_opt.setCursor(Qt.PointingHandCursor)
             btn_opt.setToolTip(tr("gopt_btn_tip"))
@@ -776,6 +881,164 @@ class GamesTabMixin:
         if appid is None:
             return
         self._expand_game(appid, keep_scroll=True)
+
+    # ------------------------------------------------------------------ #
+    #  Proton erkennen
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _detected_protons_for(protons):
+        """Gefundene Builds, die keiner der Listeneintraege schon abdeckt."""
+        known = set()
+        for proton in protons:
+            tool, found, _kind = games_db.resolve_steam_tool(proton)
+            if found and tool:
+                known.add(tool)
+            known.add(proton.get("version", ""))
+        return [games_db.detected_proton_entry(name)
+                for name in games_db.detected_proton_tools() if name not in known]
+
+    def _toggle_show_all_protons(self, on):
+        games_db.set_show_all_protons(on)
+        game = self._game_data_for(self._expanded_appid) if self._expanded_appid else None
+        count = len(self._detected_protons_for(list(games_db.visible_protons(game)))) if game else 0
+        self._refresh_detail()
+        if not on:
+            return
+        if count:
+            self._detail_status(tr("games_proton_detect_found").format(n=count), "#a3be8c")
+        else:
+            self._detail_status(tr("games_proton_detect_none"), "#88c0d0")
+
+    # ------------------------------------------------------------------ #
+    #  Ungetestetes Spiel als GitHub-Issue einreichen
+    # ------------------------------------------------------------------ #
+    GAME_REPORT_URL = "https://github.com/yakuda-stack/yakuda-connect/issues/new"
+
+    def _game_report(self, appid, game):
+        """(Titel, Text) fuer das Issue. Pfade aus dem Home werden zu ~."""
+        import version as app_version
+        name = game.get("name", "")
+        proton = self._selected_proton.get(appid) or "—"
+        try:
+            options = self._saved_launch_options(appid, game) or "—"
+        except Exception:                              # noqa: BLE001
+            options = "—"
+        home = os.path.expanduser("~")
+        if home and home != "/":
+            options = options.replace(home, "~")
+        wl = games_db.get_uses_wayland()
+        if wl is None:
+            wl = games_db.session_looks_wayland()
+        try:
+            import diagnostics
+            distro = diagnostics._distro_name()
+        except Exception:                              # noqa: BLE001
+            distro = "—"
+        try:
+            gpu = games_db.detect_gpu_vendor() or "—"
+        except Exception:                              # noqa: BLE001
+            gpu = "—"
+        tested = not game.get("untested")
+        title = (f"[Game suggestion] {name} ({appid})" if tested
+                 else f"[Game report] {name} ({appid})")
+        entry = self._games_json_entry(appid, name, self._selected_proton.get(appid), options)
+        body = "\n".join([
+            ("Suggestion for this tested game — my settings:" if tested
+             else "Works well for me with these settings:"),
+            "",
+            f"- **Game:** {name}",
+            f"- **Steam AppID:** {appid}",
+            f"- **Proton:** {proton}",
+            f"- **Launch options:** `{options}`",
+            f"- **Session:** {'Wayland' if wl else 'X11'}",
+            f"- **Distro:** {distro}",
+            f"- **GPU:** {gpu}",
+            f"- **yakuda-connect:** v{app_version.VERSION}",
+            "",
+            "**Notes:**",
+            "",
+            "",
+            "<details><summary>Entry for <code>config/games.json</code> → <code>games</code></summary>",
+            "",
+            "```json",
+            entry,
+            "```",
+            "",
+            "</details>",
+        ])
+        return title, body
+
+    @staticmethod
+    def _proton_key_for(tool):
+        """Gewaehlte Proton-Version → Schluessel aus games.json proton_versions.
+        Unbekannt: der Name selbst (games.json versteht auch den direkt)."""
+        if not tool:
+            return "Pro11"
+        low = tool.lower()
+        pv = (games_db.GAMES_CONFIG or {}).get("proton_versions", {}) or {}
+        for key, val in pv.items():
+            ver = val if isinstance(val, str) else (val or {}).get("version", "")
+            if ver and ver.lower() == low:
+                return key
+        if "wayland" in low and "rtsp" in low:
+            return "Pro11WaylandGE"
+        if "rtsp" in low:
+            return "Pro11GERTSP"
+        if low.startswith("ge-proton") or low.startswith("proton-ge"):
+            return "Pro11GE"
+        if "cachyos" in low:
+            return "CachyOSPro11"
+        if low.startswith("proton") and low.replace("proton", "").strip(" _-").split(".")[0].isdigit():
+            return "Pro11"
+        return tool
+
+    def _games_json_entry(self, appid, name, tool, options):
+        """Fertiger Eintrag fuer config/games.json → "games" (zum Einfuegen)."""
+        import json
+        key = self._proton_key_for(tool)
+        proton = {"cachyos": key, "default": "Pro11"} if key == "CachyOSPro11" else {"default": key}
+        data = {"name": name, "proton": proton}
+        if options and options not in ("—", "%command%"):
+            data["base_start"] = options
+        text = json.dumps({str(appid): data}, ensure_ascii=False, indent=2)
+        return text[1:-1].strip("\n") + ","
+
+    def _submit_game_report(self, appid, game):
+        from urllib.parse import urlencode
+        title, body = self._game_report(appid, game)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(tr("games_submit_section"))
+        box.setText(tr("games_submit_confirm"))
+        box.setDetailedText(title + "\n\n" + body)
+        open_btn = box.addButton(tr("games_submit_open"), QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        if box.clickedButton() is not open_btn:
+            return
+        url = self.GAME_REPORT_URL + "?" + urlencode({"title": title, "body": body})
+        QDesktopServices.openUrl(QUrl.fromEncoded(url.encode("ascii")))
+
+    def _update_tile_optimize_badge(self, appid):
+        """✓/✗ am Optimieren-Knopf der Kachel neu setzen (beim Drueberfahren)."""
+        tile = getattr(self, "_games_tiles", {}).get(appid)
+        btn = getattr(tile, "_optimize_btn", None) if tile is not None else None
+        if btn is None:
+            return
+        state = self.game_optimize_state(appid)
+        btn.setIcon(make_optimize_icon(24, state))
+        status = {True: "gopt_tile_done", False: "gopt_tile_todo"}.get(state)
+        tip = tr("gopt_btn") + " — " + tr("gopt_btn_tip")
+        btn.setToolTip(tip + ("\n\n" + tr(status) if status else ""))
+
+    def _optimize_from_tile(self, appid):
+        """„✨ Optimieren“ auf der Kachel. Ist kein Popup offen, darf der
+        Assistent danach auch keins neu aufbauen — sonst ginge das zuletzt
+        geschlossene Popup (womoeglich eines anderen Spiels) wieder auf."""
+        ov = self._games_overlay
+        if ov is None or not ov.isVisible():
+            self._expanded_appid = None
+        self.open_game_optimize(appid)
 
     def _on_game_tile_clicked(self, appid):
         """Klick auf Kachel oder „Einstellungen“: Popup dieses Spiels öffnen."""
@@ -1502,7 +1765,12 @@ class GamesTabMixin:
         # ================= Proton-Versionen ================= #
         sec = CollapsibleSection(tr("games_proton_section").rstrip(": "), "proton", state, default_open=True)
         protons = list(games_db.visible_protons(game))
+        show_all = games_db.show_all_protons()
+        extra_protons = self._detected_protons_for(protons) if show_all else []
+        if extra_protons:
+            protons += [None] + extra_protons     # None = Trennzeile „Installiert“
         role_labels = {
+            "detected": tr("games_role_detected"),
             "main": tr("games_role_main"),
             "main_cachyos": tr("games_role_cachyos"),
             "alternative": tr("games_role_alt"),
@@ -1525,6 +1793,17 @@ class GamesTabMixin:
         """)
         desc_row.addWidget(btn_info, 0, Qt.AlignTop)
         sec.body.addLayout(desc_row)
+
+        # Haken oben: alle installierten Proton-Versionen mit anzeigen. Oben
+        # stehen die Favoriten (Empfehlungen), darunter — nach einer
+        # Trennzeile — alles, was sonst noch installiert ist.
+        cb_all = QCheckBox(tr("games_proton_show_all"))
+        cb_all.setToolTip(tr("games_proton_show_all_tip"))
+        cb_all.setCursor(Qt.PointingHandCursor)
+        cb_all.setStyleSheet("QCheckBox { color: #d8dee9; font-size: 11px; border: none; }")
+        cb_all.setChecked(show_all)
+        cb_all.toggled.connect(self._toggle_show_all_protons)
+        sec.body.addWidget(cb_all)
 
         lbl_badges = QLabel("")
         lbl_badges.setStyleSheet("color: #ebcb8b; font-size: 11px; font-weight: bold; border: none;")
@@ -1562,6 +1841,13 @@ class GamesTabMixin:
         active_idx, rec_idx = -1, 0
         tool_names = []
         for i, proton in enumerate(protons):
+            if proton is None:
+                tool_names.append((None, False))
+                combo.addItem(tr("games_proton_installed_sep"))
+                item = combo.model().item(i)
+                if item is not None:
+                    item.setEnabled(False)
+                continue
             installed_tool, found, _kind = games_db.resolve_steam_tool(proton)
             tool_names.append((installed_tool, found))
             text = installed_tool or proton.get("version", "")
@@ -1589,6 +1875,7 @@ class GamesTabMixin:
         for b in (btn_use, btn_copy_ver, btn_inst):
             pick_row.addWidget(b)
         sec.body.addLayout(pick_row)
+
 
         def current():
             i = combo.currentIndex()
@@ -1619,7 +1906,11 @@ class GamesTabMixin:
 
             btn_use.setEnabled(i != active_idx)
             runner_id = proton.get("protonplus_runner")
-            if proton.get("download_url"):
+            if proton.get("detected"):
+                btn_inst.setVisible(False)
+                lbl_src.setText(tr("games_proton_detected_note"))
+                lbl_src.setStyleSheet("color: #7b88a1; font-size: 10px; font-style: italic; border: none;")
+            elif proton.get("download_url"):
                 btn_inst.setVisible(True)
                 btn_inst.setText((tr("games_manual_reinstall_btn") if found
                                   else tr("games_manual_install_btn")).replace("&", "&&"))
@@ -1670,6 +1961,28 @@ class GamesTabMixin:
         sec = CollapsibleSection(tr("games_params_head"), "params", state)
         self._build_launch_params(sec.body, appid, game, gpu)
         box.addWidget(sec)
+
+        # ================= Einreichen (nur ungetestet) ================= #
+        # Klappt ein ungetestetes Spiel gut, laesst sich die Einstellung mit
+        # einem Klick als GitHub-Issue vorschlagen — Text schon ausgefuellt.
+        if not game.get("local") and not game.get("shortcut"):
+            untested = bool(game.get("untested"))
+            sec = CollapsibleSection(tr("games_submit_section"), "submit", state,
+                                     default_open=untested)
+            lbl_sub = QLabel(tr("games_submit_text" if untested else "games_submit_text_tested"))
+            lbl_sub.setWordWrap(True)
+            lbl_sub.setStyleSheet("color: #d8dee9; font-size: 11px; border: none;")
+            sec.body.addWidget(lbl_sub)
+            sub_row = QHBoxLayout()
+            btn_submit = QPushButton(tr("games_submit_btn" if untested else "games_submit_btn_tested"))
+            btn_submit.setCursor(Qt.PointingHandCursor)
+            btn_submit.setStyleSheet(self._fix_button_style())
+            btn_submit.clicked.connect(
+                lambda _=False, a=appid, g=game: self._submit_game_report(a, g))
+            sub_row.addWidget(btn_submit)
+            sub_row.addStretch()
+            sec.body.addLayout(sub_row)
+            box.addWidget(sec)
 
         # Statuszeile fuer Use-/Play-Feedback (Steam-Neustart-Hinweis usw.)
         self._detail_status_lbl = QLabel("")

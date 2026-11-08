@@ -73,6 +73,35 @@ class GamesOptimizeMixin:
         self._apply_game_optimize(appid, game, list(dlg.enabled_keys()) + kept, custom,
                                   dlg.cache_value(), rec)
 
+    def game_optimize_state(self, appid):
+        """
+        Sind alle Optimierungen gesetzt, die der Assistent vorschlaegt?
+        True / False, None wenn es nichts zu optimieren gibt oder die
+        Pruefung scheitert. Geprueft werden die empfohlenen Startoptionen
+        und die empfohlene Proton-Version.
+        """
+        try:
+            game = self._game_data_for(appid)
+            if not game or game.get("local"):
+                return None
+            is_vrc = str(appid) == VRCHAT_APPID
+            game_toggles = games_db.resolved_toggles(game)
+            saved, _custom = games_db.load_launch_toggles(appid, game_toggles)
+            wanted = set(game.get("default_on", []))
+            wanted |= {t["key"] for t in game_toggles if t.get("default")}
+            usable = {t["key"] for t in list(games_db.LAUNCH_TOGGLES) + list(game_toggles)
+                      if t.get("arg") and not t.get("panel_only")
+                      and not (is_vrc and t["key"] == "gamemoderun")}
+            if not (wanted & usable) <= set(saved):
+                return False
+            rec = self._optimize_recommended_proton(game)
+            if rec is not None and not self._is_active_proton(appid, rec):
+                return False
+            return True
+        except Exception:                          # noqa: BLE001 — nur Anzeige
+            log.debug("Optimierungs-Status fuer %s nicht ermittelbar", appid, exc_info=True)
+            return None
+
     @staticmethod
     def _optimize_recommended_proton(game):
         role = games_db.recommended_role(game)

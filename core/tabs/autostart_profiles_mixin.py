@@ -190,6 +190,16 @@ class AutostartProfilesMixin:
         ui.lbl_profiles_hint.setStyleSheet("color:#7b88a1; font-size:11px;")
         v.addWidget(ui.lbl_profiles_hint)
 
+        # Gehoeren die Autostart-Profile zum App-Profil? (core/app_profiles.py)
+        in_profile_row = QHBoxLayout()
+        ui.toggle_autostart_in_app_profile = ToggleSwitch()
+        ui.lbl_autostart_in_app_profile = QLabel(tr("app_profile_autostart_toggle"))
+        ui.lbl_autostart_in_app_profile.setWordWrap(True)
+        ui.lbl_autostart_in_app_profile.setToolTip(tr("app_profile_autostart_tip"))
+        in_profile_row.addWidget(ui.toggle_autostart_in_app_profile, 0, Qt.AlignVCenter)
+        in_profile_row.addWidget(ui.lbl_autostart_in_app_profile, 1)
+        v.addLayout(in_profile_row)
+
         ui.autostart_tabs = QTabWidget()
         ui.autostart_tabs.setMovable(False)   # Index == Profil-Reihenfolge
         ui.autostart_tabs.setDocumentMode(True)
@@ -925,6 +935,9 @@ class AutostartProfilesMixin:
 
     def autostart_profiles_retranslate(self):
         tabs = self.ui.autostart_tabs
+        if hasattr(self.ui, "lbl_autostart_in_app_profile"):
+            self.ui.lbl_autostart_in_app_profile.setText(tr("app_profile_autostart_toggle"))
+            self.ui.lbl_autostart_in_app_profile.setToolTip(tr("app_profile_autostart_tip"))
         for prof in getattr(self, "_profiles", []):
             if prof.get("btn_close") is not None:
                 prof["btn_close"].setToolTip(tr("autostart_profile_delete_title"))

@@ -31,11 +31,18 @@ class TourMixin:
     #  Angebot + Start
     # ------------------------------------------------------------------ #
     def maybe_offer_tour(self):
-        """Nach dem WayVR-Angebot: einmal fragen."""
+        """Nach dem WayVR-Angebot: einmal fragen — aber erst, wenn ALLE
+        Komponenten des Installations-Tabs installiert sind. Sonst wartet das
+        Angebot, und die naechste fertige Paketpruefung holt es nach
+        (_offer_tour_if_waiting). Der Merker wird erst beim Fragen gesetzt."""
         data = read_json(vopt.APP_CONFIG_FILE, default={})
         if getattr(self, "_tour_offer_checked", False) or (
                 isinstance(data, dict) and data.get(KEY_TOUR_ASKED)):
             return
+        if not self.all_components_installed() or self.installation_running():
+            self._tour_waiting_for_install = True
+            return
+        self._tour_waiting_for_install = False
         self._tour_offer_checked = True
         stamp = datetime.datetime.now().isoformat(timespec="seconds")
         update_json(vopt.APP_CONFIG_FILE, {KEY_TOUR_ASKED: stamp})
@@ -43,6 +50,16 @@ class TourMixin:
                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if answer == QMessageBox.Yes:
             self.start_tour()
+
+    def all_components_installed(self):
+        """Letzte Paketpruefung: jede Zeile im Installations-Tab installiert?"""
+        results = getattr(self, "_last_pkg_results", None) or {}
+        return bool(results) and all(s.get("installed") for s in results.values())
+
+    def _offer_tour_if_waiting(self):
+        """Aus der Paketpruefung: wartet ein Tour-Angebot und ist jetzt alles da?"""
+        if getattr(self, "_tour_waiting_for_install", False) and self.all_components_installed():
+            self._first_run_offer_tour()
 
     def start_tour(self, index=0):
         from tour_steps import STEPS

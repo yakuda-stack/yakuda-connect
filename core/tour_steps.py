@@ -38,6 +38,17 @@ def _settings_page(name):
     return lambda w: (w.ui.settings_subtabs, getattr(w.ui, name, None))
 
 
+def _games_target(w):
+    """Erste sichtbare Spielkachel, sonst der Scan-Knopf."""
+    for tile in getattr(w, "_games_tiles", {}).values():
+        try:
+            if tile.isVisible():
+                return tile
+        except RuntimeError:
+            continue
+    return getattr(w.ui, "btn_games_scan", None)
+
+
 def _tools_first(w):
     tabs = getattr(w.ui, "tools_subtabs", None)
     return (tabs, tabs.widget(0)) if tabs is not None else (None, None)
@@ -59,7 +70,7 @@ STEPS = [
      "target": lambda w: getattr(getattr(w, "streaming_settings", None), "encoder_group", None)},
     {"id": "profiles", "tab": STREAMING, "target": _ui("autostart_profiles_group")},
     {"id": "tools", "tab": TOOLS, "target": _ui("tools_subtabs"), "subtab": _tools_first},
-    {"id": "games", "tab": GAMES, "target": _ui("btn_games_scan")},
+    {"id": "games", "tab": GAMES, "target": _games_target},
     {"id": "controls", "tab": CONTROLS, "target": _controls_cards,
      "action": "controls_install_all"},
     {"id": "xrbinder", "tab": CONTROLS, "target": _ui("xrbinder_card")},

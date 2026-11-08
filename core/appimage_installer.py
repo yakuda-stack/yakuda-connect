@@ -34,6 +34,7 @@ Alle Schreibziele liegen unter $HOME und sind daher auch auf SteamOS
 beschreibbar.
 """
 import os
+import re
 import json
 import stat
 import glob
@@ -48,6 +49,8 @@ from PySide6.QtCore import QThread, Signal
 
 from logging_setup import get_logger
 import proc
+import paths
+from jsonio import read_json, write_json_atomic
 
 log = get_logger("appimage_installer")
 
@@ -317,6 +320,12 @@ def is_steamos():
     return osid in ("steamos", "chimeraos")
 
 
+def is_cachyos():
+    """CachyOS bringt Shelly vorinstalliert mit."""
+    osid, _idlike = _os_release_ids()
+    return osid == "cachyos"
+
+
 def is_fedora_based():
     """True auf Fedora und Ableitungen (Nobara, Bazzite, ...)."""
     osid, idlike = _os_release_ids()
@@ -334,11 +343,160 @@ def is_debian_based():
         and shutil.which("apt") is not None
 
 
+INSTALLABLE_HELPERS = ("yay", "paru")
+AUR_DIALOG_SHOWN_KEY = "aur_dialog_start_shown"
+AUR_HELPER_CONFIG_KEY = "aur_helper_custom"
+ARCH_CHOICE_CONFIG_KEY = "arch_helper_choice"
+PARU_URL = "https://github.com/morganamilo/paru"
+_HELPER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+_RESERVED_HELPER_NAMES = {"yay", "paru", "shelly", "pacman", "makepkg", "sudo",
+                          "dnf", "rpm", "apt", "apt-get", "flatpak", "native"}
+
+
+def _read_config():
+    data = read_json(paths.config_file("config.json"), default={})
+    return data if isinstance(data, dict) else {}
+
+
+def save_arch_setting(key, value):
+    """Einen einzelnen Schluessel in config.json setzen, alle anderen bleiben."""
+    data = _read_config()
+    data[key] = value
+    if not write_json_atomic(paths.config_file("config.json"), data):
+        log.warning("Einstellung %s konnte nicht gespeichert werden.", key)
+        return False
+    return True
+
+
+def valid_helper_name(name):
+    """Nur ein einzelner Befehlsname, keine Pfade, keine Leerzeichen, keine Shell-Zeichen.
+    yay/paru/shelly und Paketverwaltungen sind reserviert: die erkennt die App selbst."""
+    return (bool(name) and bool(_HELPER_NAME_RE.match(name))
+            and name.lower() not in _RESERVED_HELPER_NAMES)
+
+
+def custom_aur_helper_name():
+    """Vom Nutzer eingetragener AUR-Helfer (Name), '' wenn keiner gesetzt ist."""
+    name = str(_read_config().get(AUR_HELPER_CONFIG_KEY, "") or "").strip()
+    return name if valid_helper_name(name) else ""
+
+
+def arch_helper_choice():
+    """'' oder 'flatpak' – Wahl aus dem Popup, wenn auf Arch kein yay/paru da ist."""
+    return str(_read_config().get(ARCH_CHOICE_CONFIG_KEY, "") or "")
+
+
+def is_aur_helper(name):
+    """True fuer yay, paru und den selbst eingetragenen Helfer."""
+    if not name:
+        return False
+    return name in ("yay", "paru") or name == custom_aur_helper_name()
+
+
 def available_aur_helpers():
-    """Installierte AUR-Helfer (['yay','paru'], yay zuerst) – nur auf Arch-Basis."""
+    """Installierte AUR-Helfer (yay, paru, dann der eigene) – nur auf Arch-Basis."""
     if not is_arch_based():
         return []
-    return [h for h in ("yay", "paru") if shutil.which(h)]
+    found = [h for h in ("yay", "paru") if shutil.which(h)]
+    custom = custom_aur_helper_name()
+    if custom and custom not in found and shutil.which(custom):
+        found.append(custom)
+    return found
+
+
+SHELLY_UPDATES_TTL = 300
+_SHELLY_UPDATES_TIMEOUT = 60
+_shelly_updates_cache = {"time": 0.0, "names": frozenset()}
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def parse_shelly_updates(text):
+    """
+    Paketnamen aus 'shelly list-updates aur'. Rueckgabe: (namen, erkannt).
+    Versteht die JSON-Ausgabe (--json) und die Tabelle mit Rahmenzeichen.
+    'erkannt' ist False, wenn die Ausgabe keins von beiden war.
+    """
+    text = _ANSI_RE.sub("", text or "").strip()
+    if not text:
+        return set(), False
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if data is not None:
+        items = data
+        if isinstance(data, dict):
+            items = next((v for v in data.values() if isinstance(v, list)), [])
+        names = set()
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict):
+                name = (item.get("name") or item.get("Name")
+                        or item.get("package") or item.get("Package"))
+                if name:
+                    names.add(str(name))
+            elif isinstance(item, str):
+                names.add(item)
+        return names, True
+    names, header = set(), False
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line[0] not in "│|":
+            continue
+        cells = [c.strip() for c in re.split(r"[│|]", line)[1:-1]]
+        if not cells or not cells[0]:
+            continue
+        if cells[0].lower() == "name":
+            header = True
+            continue
+        names.add(cells[0])
+    return names, header or bool(names) or "aur total" in text.lower()
+
+
+def shelly_aur_updates(force=False):
+    """
+    AUR-Pakete mit Update laut Shelly (fragt das AUR ab, deshalb 5 Minuten
+    gemerkt). Leere Menge, wenn Shelly fehlt oder die Abfrage scheitert.
+    """
+    if not shelly_available():
+        return set()
+    now = time.time()
+    if not force and now - _shelly_updates_cache["time"] < SHELLY_UPDATES_TTL:
+        return set(_shelly_updates_cache["names"])
+    names, ok = parse_shelly_updates(proc.output_of(
+        ["shelly", "list-updates", "aur", "--json"], timeout=_SHELLY_UPDATES_TIMEOUT))
+    if not ok:
+        names, ok = parse_shelly_updates(proc.output_of(
+            ["shelly", "list-updates", "aur"], timeout=_SHELLY_UPDATES_TIMEOUT))
+    if not ok:
+        log.info("shelly list-updates aur: Ausgabe nicht erkannt")
+        return set()
+    _shelly_updates_cache.update(time=now, names=frozenset(names))
+    return set(names)
+
+
+def missing_installable_helpers():
+    """yay/paru, die fehlen, aber auf Arch (nicht SteamOS) nachinstalliert werden koennen."""
+    if not is_arch_based() or is_steamos():
+        return []
+    return [h for h in INSTALLABLE_HELPERS if not shutil.which(h)]
+
+
+def start_dialog_already_shown():
+    return bool(_read_config().get(AUR_DIALOG_SHOWN_KEY, False))
+
+
+def shelly_available():
+    """Shelly (eigene Syntax: 'shelly install aur <paket>') – nur auf Arch-Basis."""
+    return is_arch_based() and shutil.which("shelly") is not None
+
+
+def arch_helper_missing():
+    """True auf Arch (nicht SteamOS), wenn weder ein AUR-Helfer noch Shelly noch der Flatpak-Weg gewaehlt ist."""
+    if not is_arch_based() or is_steamos():
+        return False
+    if available_aur_helpers() or shelly_available():
+        return False
+    return not (arch_helper_choice() == "flatpak" and shutil.which("flatpak"))
 
 
 def supported_methods(tool):
@@ -371,6 +529,8 @@ def detect_install_methods(tool):
         methods.append("appimage")
     if "aur" in supported and tool.get("pkg"):
         methods.extend(available_aur_helpers())   # yay vor paru
+        if shelly_available():
+            methods.append("shelly")
     if "cargo" in supported:
         # Distro-unabhaengig: fehlendes Rust/Cargo zieht das Installations-
         # skript selbst nach (siehe core/cargo_installer.py).
@@ -578,8 +738,12 @@ def flatpak_query(tool):
 
 
 def default_method(methods):
-    """Vorauswahl-Priorität: AppImage -> yay -> flatpak -> erstes."""
-    for pref in ("appimage", "yay", "flatpak"):
+    """Vorauswahl-Priorität: AppImage -> (CachyOS: Shelly) -> yay -> flatpak -> erstes."""
+    if "appimage" in methods:
+        return "appimage"
+    if "shelly" in methods and is_cachyos():
+        return "shelly"
+    for pref in ("yay", "flatpak"):
         if pref in methods:
             return pref
     return methods[0] if methods else ""
@@ -603,6 +767,10 @@ def available_update_methods():
         return methods
     if is_arch_based():
         methods.extend(available_aur_helpers())     # yay vor paru
+        if shelly_available():
+            methods.append("shelly")
+        if not methods and arch_helper_choice() == "flatpak" and shutil.which("flatpak"):
+            methods.append("flatpak")
     elif is_fedora_based():
         if shutil.which("dnf"):
             methods.append("dnf")
@@ -625,8 +793,10 @@ def wivrn_native_present():
 
 
 def default_update_method(methods):
-    """Vorauswahl: yay -> paru -> dnf -> apt -> native -> erstes."""
-    for pref in ("yay", "paru", "dnf", "apt", "flatpak", "native"):
+    """Vorauswahl: (CachyOS: Shelly) -> yay -> paru -> shelly -> dnf -> apt -> native -> erstes."""
+    if "shelly" in methods and is_cachyos():
+        return "shelly"
+    for pref in ("yay", "paru", "shelly", "dnf", "apt", "flatpak", "native"):
         if pref in methods:
             return pref
     return methods[0] if methods else ""
@@ -681,6 +851,13 @@ def compute_status(tool):
                 st["pm_version"] = ver
                 st["pm_has_update"] = upd
                 break
+        if not st["pm_installed"] and shelly_available():
+            ok, ver, upd = pm_query(tool, "pacman")
+            if ok:
+                st["pm_installed"] = True
+                st["pm_helper"] = "shelly"
+                st["pm_version"] = ver
+                st["pm_has_update"] = upd or tool["pkg"] in shelly_aur_updates()
 
     if "flatpak" in supported and tool.get("flatpak_id"):
         ok, ver = flatpak_query(tool)
@@ -732,7 +909,7 @@ def installed_locally(tool):
             return True
     if "aur" in supported and tool.get("pkg"):
         helpers = available_aur_helpers()
-        if helpers and shutil.which("pacman"):
+        if (helpers or shelly_available()) and shutil.which("pacman"):
             # 'yay -Q' / 'paru -Q' reichen die Frage nur an pacman weiter,
             # laden vorher aber ihre eigene Config. Diese Funktion laeuft
             # beim Start mehrfach im GUI-Thread (Controls-Tab) — frueher bis
