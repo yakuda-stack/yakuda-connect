@@ -41,6 +41,41 @@ def is_installed(appid):
     return any(os.path.isfile(os.path.join(d, name)) for d in games_db._steamapps_dirs())
 
 
+def installed_apps(software_only=True):
+    """Installierte Steam-Apps als [{"appid", "name"}], nach Name sortiert.
+
+    Proton, Steam-Runtimes und SteamVR fallen weg. ``software_only``: nur
+    Apps, die Steam selbst als Software fuehrt (``type`` = application, z. B.
+    VRCFaceTracking) — keine Spiele. Ist Steams appinfo.vdf nicht lesbar oder
+    fehlt eine App darin, bleibt sie in der Liste, statt still zu fehlen.
+    """
+    apps = {}
+    for sa in games_db._steamapps_dirs():
+        try:
+            fnames = os.listdir(sa)
+        except OSError:
+            continue
+        for fname in fnames:
+            if not (fname.startswith("appmanifest_") and fname.endswith(".acf")):
+                continue
+            info = games_db._parse_acf(os.path.join(sa, fname))
+            if not info or not info["appid"] or info["appid"] in apps:
+                continue
+            if (info["appid"] in games_db._APPID_BLACKLIST
+                    or games_db._is_steam_tool(info["name"])):
+                continue
+            apps[info["appid"]] = {"appid": info["appid"],
+                                   "name": info["name"] or f"App {info['appid']}"}
+    if software_only and apps:
+        import steam_appinfo
+        commons, ok = steam_appinfo.commons(apps.keys())
+        if ok:
+            apps = {a: v for a, v in apps.items()
+                    if a not in commons
+                    or steam_appinfo.app_type(commons[a]) == "application"}
+    return sorted(apps.values(), key=lambda a: a["name"].lower())
+
+
 def launch_argv(appid):
     client = _client_cmd()
     return client + ["-applaunch", str(appid)] if client else None

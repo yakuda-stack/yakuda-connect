@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.5.0"
+APP_VERSION = "v1.5.1"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -567,6 +567,10 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.is_loading = False
         # Erst wenn die Ereignisschleife laeuft: das Fenster steht dann schon.
         QTimer.singleShot(0, self._start_server_on_launch)
+        # Kurz danach noch einmal nachsehen: Ein Server, der beim Start gerade
+        # hoch- oder herunterfuhr oder direkt abstuerzte, liess den Schalter
+        # sonst auf dem falschen Stand stehen (abschaltbar unter Erweitert).
+        QTimer.singleShot(self._START_CHECK_DELAY_MS, self._check_server_on_launch)
         # Start-Zwischenspeicher der Controls-Installationspruefung verwerfen
         # (siehe controls_mixin._control_installed) — ab jetzt wieder frisch.
         self._control_installed_cache = None
@@ -1173,6 +1177,9 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.ui.chk_start_server_with_app.setChecked(
             bool(load_saved_settings().get("start_server_with_app", False)))
         self.ui.chk_start_server_with_app.toggled.connect(self.on_start_server_with_app_toggled)
+        self.ui.chk_check_server_on_start.setChecked(
+            bool(load_saved_settings().get("check_server_on_start", True)))
+        self.ui.chk_check_server_on_start.toggled.connect(self.on_check_server_on_start_toggled)
         self.ui.chk_autostart_external_server.setChecked(
             bool(load_saved_settings().get("autostart_external_server", True)))
         self.ui.chk_autostart_external_server.toggled.connect(self.on_autostart_external_toggled)
@@ -2347,7 +2354,7 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
     def _start_helper_install(self, name):
         worker = getattr(self, "worker", None)
         if worker is not None and worker.isRunning():
-            return
+            return False
         self.ui.btn_install.setEnabled(False)
         self.ui.btn_update.setEnabled(False)
         self.ui.lbl_worker_status.setText(tr("helper_install_running").format(name=name))
@@ -2356,9 +2363,13 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
         self.worker.status_signal.connect(self.ui.lbl_worker_status.setText)
         self.worker.finished_signal.connect(self._on_helper_install_finished)
         self.worker.start()
+        return True
 
     def _on_helper_install_finished(self, success):
         name = getattr(self, "_helper_installing", "")
+        worker = getattr(self, "worker", None)
+        if worker is not None:
+            worker.wait(3000)
         self.ui.btn_install.setEnabled(True)
         self._populate_install_method_combo()
         installed = bool(name) and shutil.which(name) is not None
@@ -2371,6 +2382,9 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             self._update_update_button()
         self._rebuild_package_rows()
         self.check_system_packages()
+        if getattr(self, "_update_after_helper", False):
+            self._continue_update_after_helper(name, installed)
+            return
         self.ui.lbl_worker_status.setText(
             tr("helper_install_done" if installed else "helper_install_failed").format(name=name))
 
@@ -2452,12 +2466,62 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             else:
                 self.ui.lbl_worker_status.setText(tr("install_no_update_method"))
             return
+        if appimg.should_offer_helper_for_update(method) and self._offer_helper_before_update():
+            return
+        self._launch_update_worker(method)
+
+    def _launch_update_worker(self, method):
         self.ui.btn_install.setEnabled(False)
         self.ui.btn_update.setEnabled(False)
         self.update_worker = UpdateWorker(method)
         self.update_worker.status_signal.connect(self.ui.lbl_worker_status.setText)
         self.update_worker.finished_signal.connect(self.on_installation_finished)
         self.update_worker.start()
+
+    def _offer_helper_before_update(self):
+        """Update ueber Shelly ohne paru/yay: Popup, das die Installation empfiehlt.
+        True = erledigt (Installation laeuft oder abgebrochen), False = trotzdem mit Shelly."""
+        if getattr(self, "_aur_dialog_open", False):
+            return True
+        from ui.aur_helper_dialog import ShellyHintDialog, HINT_SHELLY
+        self._aur_dialog_open = True
+        try:
+            dlg = ShellyHintDialog(self)
+            accepted = dlg.exec()
+        finally:
+            self._aur_dialog_open = False
+        if not accepted:
+            return True
+        if dlg.hide_hint:
+            appimg.save_arch_setting(appimg.SHELLY_HINT_HIDDEN_KEY, True)
+        if dlg.choice == HINT_SHELLY:
+            return False
+        order = [dlg.choice] + [h for h in appimg.INSTALLABLE_HELPERS if h != dlg.choice]
+        self._helper_chain = order[1:]
+        self._update_after_helper = True
+        if not self._start_helper_install(order[0]):
+            self._update_after_helper = False
+        return True
+
+    def _continue_update_after_helper(self, name, installed):
+        """Nach der Helfer-Installation: mit ihm aktualisieren, sonst naechster Helfer, sonst Shelly."""
+        chain = list(getattr(self, "_helper_chain", []))
+        if installed:
+            self._update_after_helper = False
+            self._helper_chain = []
+            self._launch_update_worker(name)
+            return
+        if chain:
+            nxt = chain.pop(0)
+            self._helper_chain = chain
+            if self._start_helper_install(nxt):
+                self.ui.lbl_worker_status.setText(
+                    tr("helper_install_try_next").format(name=name, next=nxt))
+                return
+        self._update_after_helper = False
+        self._helper_chain = []
+        self.ui.lbl_worker_status.setText(tr("helper_install_fallback_shelly").format(name=name))
+        self._launch_update_worker("shelly")
 
     def install_component(self, name):
         """

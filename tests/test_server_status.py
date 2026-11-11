@@ -428,3 +428,28 @@ def test_kein_neustart_wenn_beenden_scheitert(window, monkeypatch):
     window._finish_server_shutdown(False)
     assert window._restart_after_stop is False
     assert window._restart_server_now not in planned
+
+
+def test_startpruefung_standardmaessig_an(window):
+    assert window.ui.chk_check_server_on_start.isChecked()
+
+
+def test_startpruefung_korrigiert_falschen_schalter(window, state):
+    window._server_running = True
+    window._set_toggle_silently(True)
+    state["running"] = False
+    window._check_server_on_launch()
+    assert window._server_running is False
+    assert not window.ui.toggle_server.isChecked()
+    assert window._starts == []
+
+
+def test_startpruefung_abschaltbar(window, state, tmp_path):
+    window.ui.chk_check_server_on_start.setChecked(False)
+    assert _config(tmp_path)["check_server_on_start"] is False
+    window._server_running = True
+    window._set_toggle_silently(True)
+    state["running"] = False
+    window._check_server_on_launch()
+    assert window._server_running is True
+    assert window.ui.toggle_server.isChecked()

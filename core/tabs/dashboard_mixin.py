@@ -791,6 +791,12 @@ class DashboardMixin:
                            {"start_server_with_app": bool(checked)}):
             log.warning("'Server mit der App starten' konnte nicht gespeichert werden.")
 
+    def on_check_server_on_start_toggled(self, checked):
+        """Schalter unter Einstellungen -> Erweitert / System."""
+        if not update_json(paths.config_file("config.json"),
+                           {"check_server_on_start": bool(checked)}):
+            log.warning("'Server-Status beim Start pruefen' konnte nicht gespeichert werden.")
+
     def on_autostart_external_toggled(self, checked):
         """Schalter unter Einstellungen -> Erweitert / System."""
         if not update_json(paths.config_file("config.json"),
@@ -991,6 +997,15 @@ class DashboardMixin:
             return
         log.info("[Server] Wird mit der App gestartet.")
         self.ui.toggle_server.setChecked(True)
+
+    _START_CHECK_DELAY_MS = 3000
+
+    def _check_server_on_launch(self):
+        """Einmalige Nachpruefung kurz nach dem App-Start."""
+        if not config_manager.load_saved_settings().get("check_server_on_start", True):
+            return
+        log.info("[Server] Status-Pruefung nach dem Start.")
+        self._check_server_and_refresh()
 
     def _init_server_timer(self):
         """Timer anlegen und den gespeicherten Stand uebernehmen."""

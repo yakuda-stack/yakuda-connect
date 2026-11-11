@@ -1,6 +1,26 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.5.1 — 2026-11-09
+
+#### 🇩🇪 Deutsch
+
+* **Schnelleres Update auf Arch:** Ist paru oder yay installiert, aktualisiert die App darüber – auch auf CachyOS. Shelly fragt beim Update sehr oft nach (teils über 20-mal „y“) und kommt nur noch ohne Helfer zum Zug.
+* **Empfehlung statt Dauer-Nachfragen:** Läuft das Update über Shelly, empfiehlt ein Popup paru oder yay – mit Links, Befehlen und einem Knopf, der den Helfer automatisch installiert (erst paru, sonst yay, zuletzt Shelly). Mit „Nicht mehr anzeigen“ ist Ruhe.
+* **Server-Schalter stimmt nach dem Start:** Kurz nach dem Öffnen prüft die App noch einmal, ob WiVRn wirklich läuft, und korrigiert den Schalter. Standardmäßig an, abschaltbar unter Einstellungen → Erweitert.
+* **Programm-Auswahl mit Icons:** Bei „+ Programm“ hat jedes Programm sein Icon und ein (ⓘ), das kurz erklärt, was es macht. Selten gebrauchte Tools (System, Proton, Development, Input & Bindings) stehen ganz unten.
+* **Steam-Programme im Autostart:** Über „🎮 Steam-Programm hinzufügen …“ lässt sich jedes installierte Steam-Programm in den Autostart packen – auch neue, die yakuda-connect noch nicht kennt.
+
+#### 🇬🇧 English
+
+* **Faster updates on Arch:** If paru or yay is installed the app updates through it – also on CachyOS. Shelly asks very often during an update (sometimes 20+ times “y”) and is only used when there is no helper.
+* **A recommendation instead of endless prompts:** When the update runs through Shelly, a popup recommends paru or yay – with links, commands and a button that installs the helper automatically (paru first, then yay, finally Shelly). “Don't show again” silences it.
+* **Server switch is right after start:** Shortly after opening, the app checks again whether WiVRn is really running and corrects the switch. On by default, can be turned off in Settings → Advanced.
+* **Program picker with icons:** In “+ Program” every program has its icon and an (ⓘ) that briefly explains what it does. Rarely used tools (system, Proton, development, input & bindings) are listed last.
+* **Steam programs in autostart:** “🎮 Add Steam program …” puts any installed Steam program into autostart – even new ones yakuda-connect doesn't know yet.
+
+---
+
 ### 🚀 v1.5.0 — 2026-11-08
 
 #### 🇩🇪 Deutsch

@@ -343,11 +343,13 @@ def is_debian_based():
         and shutil.which("apt") is not None
 
 
-INSTALLABLE_HELPERS = ("yay", "paru")
+INSTALLABLE_HELPERS = ("paru", "yay")
 AUR_DIALOG_SHOWN_KEY = "aur_dialog_start_shown"
 AUR_HELPER_CONFIG_KEY = "aur_helper_custom"
 ARCH_CHOICE_CONFIG_KEY = "arch_helper_choice"
 PARU_URL = "https://github.com/morganamilo/paru"
+YAY_URL = "https://github.com/Jguer/yay"
+SHELLY_HINT_HIDDEN_KEY = "shelly_hint_hidden"
 _HELPER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 _RESERVED_HELPER_NAMES = {"yay", "paru", "shelly", "pacman", "makepkg", "sudo",
                           "dnf", "rpm", "apt", "apt-get", "flatpak", "native"}
@@ -394,10 +396,10 @@ def is_aur_helper(name):
 
 
 def available_aur_helpers():
-    """Installierte AUR-Helfer (yay, paru, dann der eigene) – nur auf Arch-Basis."""
+    """Installierte AUR-Helfer (paru, yay, dann der eigene) – nur auf Arch-Basis."""
     if not is_arch_based():
         return []
-    found = [h for h in ("yay", "paru") if shutil.which(h)]
+    found = [h for h in ("paru", "yay") if shutil.which(h)]
     custom = custom_aur_helper_name()
     if custom and custom not in found and shutil.which(custom):
         found.append(custom)
@@ -481,6 +483,34 @@ def missing_installable_helpers():
     return [h for h in INSTALLABLE_HELPERS if not shutil.which(h)]
 
 
+def helper_url(name):
+    """Projektseite von paru bzw. yay."""
+    return PARU_URL if name == "paru" else YAY_URL
+
+
+def helper_install_commands(name):
+    """(Befehl aus den Paketquellen, Befehle zum Bauen aus dem AUR) fuer paru/yay."""
+    if name not in INSTALLABLE_HELPERS:
+        raise ValueError(f"unbekannter AUR-Helfer: {name}")
+    repo = f"sudo pacman -S --needed {name}"
+    aur = (f"sudo pacman -S --needed git base-devel\n"
+           f"git clone https://aur.archlinux.org/{name}.git\n"
+           f"cd {name}\n"
+           f"makepkg -si")
+    return repo, aur
+
+
+def shelly_hint_hidden():
+    return bool(_read_config().get(SHELLY_HINT_HIDDEN_KEY, False))
+
+
+def should_offer_helper_for_update(method):
+    """True, wenn das Update ueber Shelly laeuft, obwohl kein AUR-Helfer da ist,
+    paru/yay aber installierbar waeren (und der Hinweis nicht abgestellt ist)."""
+    return (method == "shelly" and not available_aur_helpers()
+            and bool(missing_installable_helpers()) and not shelly_hint_hidden())
+
+
 def start_dialog_already_shown():
     return bool(_read_config().get(AUR_DIALOG_SHOWN_KEY, False))
 
@@ -519,7 +549,7 @@ def supported_methods(tool):
 def detect_install_methods(tool):
     """
     Konkrete, auf diesem System verfügbare Methoden (geordnet).
-    Reihenfolge = Vorauswahl-Reihenfolge: appimage zuerst, dann yay, paru, flatpak.
+    Reihenfolge = Vorauswahl-Reihenfolge: appimage zuerst, dann paru, yay, flatpak.
       * Arch-Distros: yay/paru verfügbar (falls installiert).
       * Alle Distros : AppImage und – falls flatpak installiert + flatpak_id gesetzt – Flatpak.
     """
@@ -528,7 +558,7 @@ def detect_install_methods(tool):
     if "appimage" in supported and (tool.get("github_repo") or tool.get("appimage_url")):
         methods.append("appimage")
     if "aur" in supported and tool.get("pkg"):
-        methods.extend(available_aur_helpers())   # yay vor paru
+        methods.extend(available_aur_helpers())   # paru vor yay
         if shelly_available():
             methods.append("shelly")
     if "cargo" in supported:
@@ -752,7 +782,7 @@ def default_method(methods):
 def available_update_methods():
     """
     Verfügbare Methoden für den Installations-Tab (nur noch NATIV, kein Flatpak):
-      Arch    -> yay/paru
+      Arch    -> paru/yay (sonst Shelly)
       Fedora  -> dnf (offizielle Repos: wivrn + opencomposite)
       Ubuntu  -> apt (WiVRn aus der LVRA-PPA, xrizer aus dem GitHub-Release)
       Sonst   -> 'native', falls WiVRn selbst nativ installiert wurde.
@@ -766,7 +796,7 @@ def available_update_methods():
             methods.append("flatpak")
         return methods
     if is_arch_based():
-        methods.extend(available_aur_helpers())     # yay vor paru
+        methods.extend(available_aur_helpers())     # paru vor yay
         if shelly_available():
             methods.append("shelly")
         if not methods and arch_helper_choice() == "flatpak" and shutil.which("flatpak"):
@@ -793,10 +823,16 @@ def wivrn_native_present():
 
 
 def default_update_method(methods):
-    """Vorauswahl: (CachyOS: Shelly) -> yay -> paru -> shelly -> dnf -> apt -> native -> erstes."""
-    if "shelly" in methods and is_cachyos():
-        return "shelly"
-    for pref in ("yay", "paru", "shelly", "dnf", "apt", "flatpak", "native"):
+    """Vorauswahl: paru -> yay -> eigener Helfer -> shelly -> dnf -> apt -> flatpak -> native -> erstes.
+    Shelly (auch auf CachyOS) nur, wenn kein AUR-Helfer da ist: sein Update fragt
+    sehr oft nach."""
+    for pref in ("paru", "yay"):
+        if pref in methods:
+            return pref
+    custom = custom_aur_helper_name()
+    if custom and custom in methods:
+        return custom
+    for pref in ("shelly", "dnf", "apt", "flatpak", "native"):
         if pref in methods:
             return pref
     return methods[0] if methods else ""

@@ -1,5 +1,6 @@
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QPushButton,
-                               QLineEdit, QHBoxLayout)
+                               QLineEdit, QHBoxLayout, QCheckBox)
 
 from translations import tr
 
@@ -7,6 +8,10 @@ CHOICE_PARU_AUTO = "paru_auto"
 CHOICE_PARU_LINK = "paru_link"
 CHOICE_CUSTOM = "custom"
 CHOICE_FLATPAK = "flatpak"
+
+HINT_PARU = "paru"
+HINT_YAY = "yay"
+HINT_SHELLY = "shelly"
 
 
 class AurHelperDialog(QDialog):
@@ -65,3 +70,64 @@ class AurHelperDialog(QDialog):
             return
         self.custom_name = name
         self._pick(CHOICE_CUSTOM)
+
+
+class ShellyHintDialog(QDialog):
+    """Update ueber Shelly, aber paru/yay fehlen: empfiehlt einen der beiden."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(tr("shelly_hint_title"))
+        self.setMinimumWidth(560)
+        self.choice = ""
+
+        lay = QVBoxLayout(self)
+        intro = QLabel(tr("shelly_hint_text"))
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
+
+        for key, label in ((HINT_PARU, "shelly_hint_paru"),
+                           (HINT_YAY, "shelly_hint_yay")):
+            btn = QPushButton(tr(label))
+            btn.clicked.connect(lambda checked=False, k=key: self._pick(k))
+            lay.addWidget(btn)
+
+        info = QLabel(tr("shelly_hint_self"))
+        info.setWordWrap(True)
+        lay.addWidget(info)
+        for name in (HINT_PARU, HINT_YAY):
+            lay.addWidget(self._helper_block(name))
+
+        self.chk_hide = QCheckBox(tr("shelly_hint_dont_show"))
+        lay.addWidget(self.chk_hide)
+
+        row = QHBoxLayout()
+        btn_shelly = QPushButton(tr("shelly_hint_shelly"))
+        btn_shelly.clicked.connect(lambda: self._pick(HINT_SHELLY))
+        row.addWidget(btn_shelly)
+        btn_cancel = QPushButton(tr("shelly_hint_cancel"))
+        btn_cancel.clicked.connect(self.reject)
+        row.addWidget(btn_cancel)
+        lay.addLayout(row)
+
+    @property
+    def hide_hint(self):
+        return self.chk_hide.isChecked()
+
+    def _helper_block(self, name):
+        import appimage_installer as appimg
+        repo, aur = appimg.helper_install_commands(name)
+        url = appimg.helper_url(name)
+        aur_note = tr("shelly_hint_aur_note")
+        label = QLabel(
+            f'<b>{name}</b> – <a href="{url}">{url}</a>'
+            f"<pre>{repo}</pre>{aur_note}<pre>{aur}</pre>")
+        label.setTextFormat(Qt.RichText)
+        label.setOpenExternalLinks(True)
+        label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        label.setWordWrap(True)
+        return label
+
+    def _pick(self, key):
+        self.choice = key
+        self.accept()

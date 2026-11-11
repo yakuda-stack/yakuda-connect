@@ -49,6 +49,9 @@ DEFAULT_SETTINGS = {
     "stop_server_with_app": True,
     # Einstellungen -> Erweitert / System -> "WiVRn-Server mit der App starten".
     "start_server_with_app": False,
+    # Einstellungen -> Erweitert / System -> Server-Status kurz nach dem
+    # Start der App noch einmal pruefen (Schalter an die Realitaet angleichen).
+    "check_server_on_start": True,
     # Einstellungen -> Erweitert / System -> Autostart-Apps auch bei einem
     # ausserhalb der App gestarteten Server.
     "autostart_external_server": True,

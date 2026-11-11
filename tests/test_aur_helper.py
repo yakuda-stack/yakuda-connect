@@ -61,11 +61,56 @@ def test_custom_shelly_does_not_duplicate(monkeypatch):
     assert appimg.available_update_methods() == ["shelly"]
 
 
-def test_cachyos_prefers_shelly(monkeypatch):
+def test_default_prefers_paru_then_yay_then_shelly(monkeypatch):
     monkeypatch.setattr(appimg, "is_cachyos", lambda: True)
-    assert appimg.default_update_method(["yay", "shelly"]) == "shelly"
-    monkeypatch.setattr(appimg, "is_cachyos", lambda: False)
+    assert appimg.default_update_method(["yay", "paru", "shelly"]) == "paru"
     assert appimg.default_update_method(["yay", "shelly"]) == "yay"
+    assert appimg.default_update_method(["shelly"]) == "shelly"
+
+
+def test_custom_helper_beats_shelly(monkeypatch):
+    monkeypatch.setattr(appimg, "_read_config", lambda: {appimg.AUR_HELPER_CONFIG_KEY: "pikaur"})
+    assert appimg.default_update_method(["pikaur", "shelly"]) == "pikaur"
+
+
+def test_paru_is_listed_before_yay(monkeypatch):
+    _arch(monkeypatch, {"yay": "/usr/bin/yay", "paru": "/usr/bin/paru",
+                        "shelly": "/usr/bin/shelly"}, {})
+    assert appimg.available_update_methods() == ["paru", "yay", "shelly"]
+
+
+def test_hint_only_for_shelly_without_helper(monkeypatch):
+    _arch(monkeypatch, {"shelly": "/usr/bin/shelly"}, {})
+    assert appimg.should_offer_helper_for_update("shelly")
+    assert not appimg.should_offer_helper_for_update("paru")
+
+
+def test_no_hint_when_a_helper_is_installed(monkeypatch):
+    _arch(monkeypatch, {"shelly": "/usr/bin/shelly", "yay": "/usr/bin/yay"}, {})
+    assert not appimg.should_offer_helper_for_update("shelly")
+
+
+def test_hint_can_be_hidden(monkeypatch):
+    _arch(monkeypatch, {"shelly": "/usr/bin/shelly"}, {appimg.SHELLY_HINT_HIDDEN_KEY: True})
+    assert not appimg.should_offer_helper_for_update("shelly")
+
+
+def test_no_hint_on_steamos(monkeypatch):
+    _arch(monkeypatch, {"shelly": "/usr/bin/shelly"}, {})
+    monkeypatch.setattr(appimg, "is_steamos", lambda: True)
+    assert not appimg.should_offer_helper_for_update("shelly")
+
+
+def test_helper_install_commands():
+    import pytest
+    repo, aur = appimg.helper_install_commands("paru")
+    assert repo == "sudo pacman -S --needed paru"
+    assert "git clone https://aur.archlinux.org/paru.git" in aur
+    assert aur.endswith("makepkg -si")
+    with pytest.raises(ValueError):
+        appimg.helper_install_commands("x;rm")
+    assert appimg.helper_url("paru") == appimg.PARU_URL
+    assert appimg.helper_url("yay") == appimg.YAY_URL
 
 
 def test_missing_installable_helpers(monkeypatch):

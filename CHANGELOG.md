@@ -1,6 +1,32 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.5.1 — 2026-11-09
+
+#### 🇩🇪 Deutsch
+
+* **Neu: Arch-Update nimmt zuerst paru, dann yay.** Ist einer von beiden installiert, läuft das Update darüber, auch auf CachyOS. Reihenfolge: paru → yay → eigener AUR-Helfer → Shelly (`default_update_method`). Im Methoden-Dropdown steht paru jetzt vor yay.
+* **Neu: Hinweis-Popup beim Update über Shelly ohne paru/yay** (`ShellyHintDialog` in `ui/aur_helper_dialog.py`). Shelly fragt beim Update sehr oft nach (teils über 20-mal „y“), deshalb empfiehlt das Popup paru oder yay. Unten stehen Links und Installationsbefehle zum Selbermachen. Mit „Nicht mehr anzeigen“ (`shelly_hint_hidden`) verschwindet es.
+* **Neu: Automatische Installation aus dem Popup.** „paru installieren“ bzw. „yay installieren“ installiert den Helfer im Terminal (erst pacman, sonst AUR-Bau) und startet danach das Update damit. Klappt es nicht, wird der andere Helfer versucht, zuletzt läuft das Update mit Shelly (`_continue_update_after_helper`).
+* **Fix: Server-Schalter stand nach dem Start auf AN, obwohl WiVRn nicht lief.** Erst „Server-Status prüfen“ hat es korrigiert.
+* **Neu: Server-Status beim Start prüfen** (`check_server_on_start`, Standard an). Etwa 3 Sekunden nach dem Öffnen prüft die App den WiVRn-Server noch einmal und gleicht den Schalter an (`_check_server_on_launch` in `core/tabs/dashboard_mixin.py`). Abschaltbar unter Einstellungen → Erweitert / System.
+* **Neu: Icons und (ⓘ) in der Programm-Auswahl von „+ Programm“.** Jedes Programm zeigt dasselbe Icon wie in der Autostart-Liste. Das (ⓘ) rechts erklärt beim Drüberfahren, was das Programm macht, ein Klick öffnet die Erklärung als Popover (`InfoDelegate`, `tool_icon` in `ui/autostart_row.py`).
+* **Neu: Selten gebrauchte Tools stehen ganz unten.** In der Auswahl von „+ Programm“ kommen System & Proton, Development und Input & Bindings unter einer eigenen Überschrift „Weitere Tools“ ans Ende (`RARE_CATEGORIES`).
+* **Neu: „🎮 Steam-Programm hinzufügen …“** unter „Eigenen Pfad wählen“. Zeigt alle installierten Steam-Programme (Software laut Steam, keine Spiele, ohne Proton/Runtimes) – auch solche, die yakuda-connect noch nicht kennt. Gestartet wird per `steam -applaunch <AppID>`, der Name wird übernommen (`steam_tools.installed_apps`, `pick_steam_app`).
+* Tests: neue Fälle in `test_aur_helper.py` und `test_server_status.py`, neu `test_shelly_hint.py`.
+
+#### 🇬🇧 English
+
+* **New: Arch update uses paru first, then yay.** If either is installed the update runs through it, also on CachyOS. Order: paru → yay → custom AUR helper → Shelly (`default_update_method`). The method dropdown now lists paru before yay.
+* **New: hint popup when updating through Shelly without paru/yay** (`ShellyHintDialog` in `ui/aur_helper_dialog.py`). Shelly asks very often during an update (sometimes 20+ times “y”), so the popup recommends paru or yay. Links and install commands for doing it yourself are shown below. “Don't show again” (`shelly_hint_hidden`) hides it.
+* **New: automatic install from the popup.** “Install paru” / “Install yay” installs the helper in the terminal (pacman first, otherwise built from the AUR) and then runs the update with it. If that fails the other helper is tried, and finally the update runs with Shelly (`_continue_update_after_helper`).
+* **Fix: the server switch showed ON after start although WiVRn was not running.** Only “Check Server Status” corrected it.
+* **New: check server status on start** (`check_server_on_start`, on by default). About 3 seconds after opening, the app checks the WiVRn server again and corrects the switch (`_check_server_on_launch` in `core/tabs/dashboard_mixin.py`). Can be turned off in Settings → Advanced / System.
+* **New: icons and (ⓘ) in the “+ Program” picker.** Each program shows the same icon as in the autostart list. Hovering the (ⓘ) on the right explains what the program does, a click opens the explanation as a popover (`InfoDelegate`, `tool_icon` in `ui/autostart_row.py`).
+* **New: rarely used tools are listed last.** In the “+ Program” picker, System & Proton, Development and Input & Bindings move to the end under a “More tools” heading (`RARE_CATEGORIES`).
+* **New: “🎮 Add Steam program …”** below “Choose custom path”. Lists all installed Steam programs (software according to Steam, no games, without Proton/runtimes) – including ones yakuda-connect doesn't know yet. They start via `steam -applaunch <AppID>` and keep their name (`steam_tools.installed_apps`, `pick_steam_app`).
+* Tests: new cases in `test_aur_helper.py` and `test_server_status.py`, new `test_shelly_hint.py`.
+
 ### 🚀 v1.5.0 — 2026-11-08
 
 #### 🇩🇪 Deutsch

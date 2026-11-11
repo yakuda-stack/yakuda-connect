@@ -25,11 +25,12 @@ on_change/on_delete.
 """
 import os
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QCompleter, QDialog,
                                QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QStyle, QVBoxLayout, QWidget)
+                               QLineEdit, QPushButton, QStyle, QStyledItemDelegate, QToolTip,
+                               QVBoxLayout, QWidget)
 
 import autostart_name
 import killcmd_suggest
@@ -110,7 +111,14 @@ def resolve_icon(row):
     if row["icon"] and os.path.isfile(row["icon"]):
         return QIcon(row["icon"]), False
     tool = row_tool(row)
-    names = [killcmd_suggest.program_name(row["input"].text(), row["combo"].currentText()).lower()]
+    name = killcmd_suggest.program_name(row["input"].text(), row["combo"].currentText()).lower()
+    return tool_icon(tool, [name])
+
+
+def tool_icon(tool, extra_names=()):
+    """Icon eines Tools: Icon-Ordner, Icon des Systems, Standard-Icon.
+    Rueckgabe: (QIcon, ist_Standard-Icon)."""
+    names = list(extra_names)
     if tool:
         path = tool_icons.local_icon(tool)
         if path:
@@ -120,6 +128,73 @@ def resolve_icon(row):
         if name and QIcon.hasThemeIcon(name):
             return QIcon.fromTheme(name), False
     return QApplication.style().standardIcon(QStyle.SP_FileIcon), True
+
+
+DESC_ROLE = Qt.UserRole + 1          # Beschreibung des Tools fuer das (ⓘ)
+INFO_W = 24                          # Breite der (ⓘ)-Flaeche rechts in der Zeile
+
+
+def _info_rect(rect):
+    return rect.adjusted(rect.width() - INFO_W, 0, 0, 0)
+
+
+class InfoDelegate(QStyledItemDelegate):
+    """Zeichnet ein (ⓘ) rechts in Zeilen mit Beschreibung.
+    Hover aufs (ⓘ) = Tooltip, Klick = Popover. Der Rest der Zeile bleibt
+    normale Liste (Auswahl, Doppelklick)."""
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        if not index.data(DESC_ROLE):
+            return
+        rect = _info_rect(option.rect)
+        hover = bool(option.state & QStyle.State_MouseOver)
+        painter.save()
+        painter.setPen(QColor("#88c0d0" if hover else "#7b88a1"))
+        font = painter.font()
+        font.setPointSizeF(font.pointSizeF() + 1)
+        painter.setFont(font)
+        painter.drawText(rect, Qt.AlignCenter, "\u24d8")
+        painter.restore()
+
+    def helpEvent(self, event, view, option, index):
+        desc = index.data(DESC_ROLE)
+        if desc and _info_rect(option.rect).contains(event.pos()):
+            QToolTip.showText(event.globalPos(), desc, view)
+            return True
+        return super().helpEvent(event, view, option, index)
+
+    def editorEvent(self, event, model, option, index):
+        desc = index.data(DESC_ROLE)
+        if (desc and event.type() == QEvent.MouseButtonRelease
+                and _info_rect(option.rect).contains(event.position().toPoint())):
+            _show_desc_popover(self.parent(), event.globalPosition().toPoint(), desc)
+            return True
+        return super().editorEvent(event, model, option, index)
+
+
+def _show_desc_popover(view, global_pos, desc):
+    """Beschreibung als stehenbleibendes Popover an der Klickstelle."""
+    import html
+    from ui.info_popover import InfoPopover
+
+    if InfoPopover._current is not None:
+        try:
+            InfoPopover._current.close()
+        except RuntimeError:
+            InfoPopover._current = None
+    pop = InfoPopover(html.escape(desc).replace("\n", "<br>"), view.window())
+    InfoPopover._current = pop
+    pop.adjustSize()
+    pos = global_pos + QPoint(8, 12)
+    screen = view.screen()
+    if screen is not None:
+        area = screen.availableGeometry()
+        pos.setX(max(area.left() + 8, min(pos.x(), area.right() - pop.width() - 8)))
+        pos.setY(max(area.top() + 8, min(pos.y(), area.bottom() - pop.height() - 8)))
+    pop.move(pos)
+    pop.show()
+    return pop
 
 
 def row_tooltip(row):
@@ -394,6 +469,15 @@ def open_row_settings(host, row, focus_command=False):
     panel.setParent(row["widget"])
 
 
+RARE_CATEGORIES = ("system", "dev", "input")
+
+
+def _is_rare_tool(tool):
+    """System/Proton, Development und Input & Bindings: Werkzeuge, die man
+    selten beim Autostart braucht. Sie stehen in der Auswahl ganz unten."""
+    return bool(tool) and tool.get("category") in RARE_CATEGORIES
+
+
 def pick_program(host):
     """Auswahl fuer "+ Programm". Rueckgabe: Zeilenwerte oder None."""
     from PySide6.QtWidgets import QListWidget, QListWidgetItem
@@ -409,17 +493,38 @@ def pick_program(host):
 
     listw = QListWidget()
     for text, value in ((tr("autostart_pick_custom_cmd"), "custom_cmd"),
-                        (tr("autostart_pick_custom_file"), "custom_file")):
+                        (tr("autostart_pick_custom_file"), "custom_file"),
+                        (tr("autostart_pick_steam"), "steam_app")):
         item = QListWidgetItem(text)
         item.setData(Qt.UserRole, value)
         listw.addItem(item)
     tools = host._installed_tool_commands()
+    known = {t.get("key"): t for t in programs.all_tools() if t.get("key")}
+    show_icons = getattr(host, "_show_autostart_icons", True)
+    listw.setIconSize(QSize(ROW_ICON, ROW_ICON))
+    listw.setMouseTracking(True)
+    listw.setItemDelegate(InfoDelegate(listw))
+    tools = sorted(tools, key=lambda t: _is_rare_tool(known.get(t.get("key"))))
+    header_done = False
     for tool in tools:
+        full = known.get(tool.get("key"))
+        if _is_rare_tool(full) and not header_done:
+            header_done = True
+            header = QListWidgetItem(tr("autostart_pick_more_tools"))
+            header.setFlags(Qt.NoItemFlags)
+            header.setForeground(QColor("#7b88a1"))
+            listw.addItem(header)
         item = QListWidgetItem(tool["name"])
         item.setToolTip(tool["cmd"])
         item.setData(Qt.UserRole, tool["cmd"])
+        if show_icons:
+            item.setIcon(tool_icon(full, [tool["cmd"].split(" ")[0].lower()])[0])
+        desc = programs.tool_text(full, "desc", get_language()) if full else ""
+        if desc:
+            item.setData(DESC_ROLE, desc)
         listw.addItem(item)
-    listw.setCurrentRow(2 if tools else 0)
+    first = 4 if header_done and _is_rare_tool(known.get(tools[0].get("key"))) else 3
+    listw.setCurrentRow(first if tools else 0)
     listw.itemDoubleClicked.connect(lambda _i: dialog.accept())
     v.addWidget(listw)
 
@@ -438,7 +543,53 @@ def pick_program(host):
         path, _ = QFileDialog.getOpenFileName(host, tr("dlg_choose_program"), "/usr/bin",
                                               tr("dlg_all_files"))
         return {"type": "Custom Path", "cmd": path} if path else None
+    if value == "steam_app":
+        return pick_steam_app(host)
     return {"type": "CMD", "cmd": value}
+
+
+def pick_steam_app(host):
+    """Zweite Auswahl: alle installierten Steam-Programme (Software, keine
+    Spiele). Rueckgabe: Zeilenwerte mit Name oder None."""
+    from PySide6.QtWidgets import QListWidget, QListWidgetItem, QMessageBox
+    import steam_tools
+
+    if not steam_tools.available():
+        QMessageBox.information(host, tr("autostart_steam_title"), tr("autostart_steam_no_client"))
+        return None
+    apps = steam_tools.installed_apps()
+    if not apps:
+        QMessageBox.information(host, tr("autostart_steam_title"), tr("autostart_steam_none"))
+        return None
+
+    dialog = QDialog(host)
+    dialog.setWindowTitle(tr("autostart_steam_title"))
+    dialog.setMinimumSize(420, 380)
+    v = QVBoxLayout(dialog)
+    hint = QLabel(tr("autostart_steam_hint"))
+    hint.setWordWrap(True)
+    hint.setStyleSheet("color: #7b88a1; font-size: 11px;")
+    v.addWidget(hint)
+    listw = QListWidget()
+    for app in apps:
+        item = QListWidgetItem(app["name"])
+        item.setToolTip(f"AppID {app['appid']}")
+        item.setData(Qt.UserRole, app)
+        listw.addItem(item)
+    listw.setCurrentRow(0)
+    listw.itemDoubleClicked.connect(lambda _i: dialog.accept())
+    v.addWidget(listw)
+    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    buttons.button(QDialogButtonBox.Cancel).setText(tr("cancel"))
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    v.addWidget(buttons)
+
+    if dialog.exec() != QDialog.Accepted or listw.currentItem() is None:
+        return None
+    app = listw.currentItem().data(Qt.UserRole)
+    cmd = steam_tools.autostart_command(app["appid"])
+    return {"type": "CMD", "cmd": cmd, "name": app["name"]} if cmd else None
 
 
 def add_program(host, append):

@@ -123,14 +123,14 @@ def _tools(host):
 def test_pick_app(host, monkeypatch):
     from ui.autostart_row import pick_program
     _tools(host)
-    _pick(monkeypatch, 2)
+    _pick(monkeypatch, 3)
     assert pick_program(host) == {"type": "CMD", "cmd": "wayvr"}
 
 
 def test_abbrechen_legt_keine_zeile_an(host, monkeypatch):
     from ui.autostart_row import add_program
     _tools(host)
-    _pick(monkeypatch, 2, accept=False)
+    _pick(monkeypatch, 3, accept=False)
     made = []
     assert add_program(host, lambda app: made.append(app)) is None
     assert made == []
@@ -219,3 +219,78 @@ def test_icon_holen_nur_bei_bekanntem_programm_ohne_icon(host, monkeypatch, tmp_
 def test_icons_lassen_sich_ausblenden(host):
     host._show_autostart_icons = False
     assert _row(host, {"type": "CMD", "cmd": "x"})["lbl_icon"].isHidden()
+
+
+def test_auswahl_zeigt_icon_und_info(host, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QListWidget
+    from ui.autostart_row import DESC_ROLE, pick_program
+    host.tools = [{"key": "wayvr", "name": "WayVR", "cmd": "wayvr"},
+                  {"name": "Unbekannt", "cmd": "xyz"}]
+    seen = {}
+
+    def fake_exec(self):
+        listw = self.findChildren(QListWidget)[0]
+        known, unknown = listw.item(3), listw.item(4)
+        seen["icon"] = not known.icon().isNull()
+        seen["info"] = bool(known.data(DESC_ROLE))
+        seen["no_info"] = not unknown.data(DESC_ROLE)
+        return QDialog.Rejected
+    monkeypatch.setattr(QDialog, "exec", fake_exec)
+    pick_program(host)
+    assert seen == {"icon": True, "info": True, "no_info": True}
+
+
+def test_seltene_tools_ganz_unten(host, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QListWidget
+    from ui.autostart_row import pick_program
+    host.tools = [{"key": "obah", "name": "obah", "cmd": "obah"},
+                  {"key": "protonplus", "name": "ProtonPlus", "cmd": "protonplus"},
+                  {"key": "wayvr", "name": "WayVR", "cmd": "wayvr"},
+                  {"key": "unityhub", "name": "Unity Hub", "cmd": "unityhub"},
+                  {"key": "vrcx", "name": "VRCX", "cmd": "vrcx"}]
+    seen = []
+
+    def fake_exec(self):
+        listw = self.findChildren(QListWidget)[0]
+        seen.extend(listw.item(i).text() for i in range(3, listw.count()))
+        listw.setCurrentRow(3)
+        return QDialog.Accepted
+    monkeypatch.setattr(QDialog, "exec", fake_exec)
+    assert pick_program(host) == {"type": "CMD", "cmd": "wayvr"}
+    assert seen[:2] == ["WayVR", "VRCX"]
+    assert seen[3:] == ["obah", "ProtonPlus", "Unity Hub"]
+
+
+def test_steam_programm_hinzufuegen(host, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QListWidget
+    import steam_tools
+    from ui.autostart_row import pick_program
+    monkeypatch.setattr(steam_tools, "available", lambda: True)
+    monkeypatch.setattr(steam_tools, "installed_apps",
+                        lambda: [{"appid": "3329480", "name": "VRCFaceTracking"}])
+    monkeypatch.setattr(steam_tools, "autostart_command",
+                        lambda appid: f"steam -applaunch {appid}")
+    calls = []
+
+    def fake_exec(self):
+        listw = self.findChildren(QListWidget)[0]
+        calls.append(1)
+        listw.setCurrentRow(2 if len(calls) == 1 else 0)
+        return QDialog.Accepted
+    monkeypatch.setattr(QDialog, "exec", fake_exec)
+    assert pick_program(host) == {"type": "CMD", "cmd": "steam -applaunch 3329480",
+                                  "name": "VRCFaceTracking"}
+
+
+def test_steam_apps_nur_software(tmp_path, monkeypatch):
+    import games as games_db
+    import steam_appinfo
+    import steam_tools
+    for appid, name in (("3329480", "VRCFaceTracking"), ("620", "Portal 2"),
+                        ("1493710", "Proton Experimental")):
+        (tmp_path / f"appmanifest_{appid}.acf").write_text(
+            f'"AppState"\n{{\n"appid" "{appid}"\n"name" "{name}"\n}}\n')
+    monkeypatch.setattr(games_db, "_steamapps_dirs", lambda: [str(tmp_path)])
+    monkeypatch.setattr(steam_appinfo, "commons", lambda ids: (
+        {"3329480": {"type": "Application"}, "620": {"type": "Game"}}, True))
+    assert [a["name"] for a in steam_tools.installed_apps()] == ["VRCFaceTracking"]
