@@ -1,7 +1,7 @@
 # Changelog - Yakuda Connect
 
 
-### 🚀 v1.5.1 — 2026-11-09
+### 🚀 v1.5.1 — 2026-11-11
 
 #### 🇩🇪 Deutsch
 

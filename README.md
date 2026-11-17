@@ -10,6 +10,10 @@
 
 🎮 **Controller remapping for OpenVR *and* OpenXR games:** OpenVR games are edited via [obah](https://github.com/galister/obah), OpenXR games (e.g. Unreal games under Proton) via [xrBinder](https://gitlab.com/mittorn/xrBinder) — both in the same controller view in the Controls tab.
 
+
+
+🦐 **Rust Rewrite** I'm working on rewriting it in Rust, and since I'm using less AI and Rust is also more complicated, it's taking longer. But you'll get better performance in return, my friends OwO
+
 ### 🐧 Tested systems
 
 | System | Status | Notes |
