@@ -1,6 +1,24 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.5.2 — 2026-11-21
+
+#### 🇩🇪 Deutsch
+
+* **Proton immer aktuell, direkt von GitHub:** proton-rtsp, Proton-RTSP-Wayland-GE, Proton-GE und proton-cachyos lädt die App jetzt selbst – immer das neueste Release, mit Prüfsumme, ohne ProtonPlus.
+* **Passend zu deiner CPU:** Bei proton-cachyos wird automatisch die richtige Version gewählt (`x86_64_v3` nur, wenn die CPU es kann, sonst `x86_64`; auf ARM `arm64`).
+* **VRChat:** proton-rtsp ist wieder die Haupt-Empfehlung, die Wayland-Variante steht als **Beta** darunter. **✨ Optimieren** setzt proton-rtsp und holt bei Bedarf das neueste Release.
+* **APK installieren ohne android-tools:** Ein Popup fragt nach der Installationsmethode, installiert über den Tools-Tab und macht danach mit der APK weiter.
+
+#### 🇬🇧 English
+
+* **Proton always up to date, straight from GitHub:** proton-rtsp, Proton-RTSP-Wayland-GE, Proton-GE and proton-cachyos are now downloaded by the app itself – always the newest release, checksum-verified, no ProtonPlus needed.
+* **Matched to your CPU:** for proton-cachyos the right build is picked automatically (`x86_64_v3` only if the CPU supports it, otherwise `x86_64`; `arm64` on ARM).
+* **VRChat:** proton-rtsp is the main recommendation again, the Wayland variant is listed below as **Beta**. **✨ Optimize** sets proton-rtsp and fetches the newest release if needed.
+* **Install the APK without android-tools:** a popup asks for the install method, installs via the Tools tab and then continues with the APK.
+
+---
+
 ### 🚀 v1.5.1 — 2026-11-11
 
 #### 🇩🇪 Deutsch

@@ -62,7 +62,7 @@ class _Fake:
     def _use_proton(self, appid, proton):
         self.calls.append(("use", proton["version"]))
 
-    def start_manual_proton_install(self, proton, button=None):
+    def start_manual_proton_install(self, proton, button=None, skip_if_current=False):
         self.calls.append(("install", proton["version"]))
 
 

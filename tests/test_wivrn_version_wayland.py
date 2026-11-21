@@ -78,11 +78,13 @@ def test_vrchat_empfehlung_je_nach_sitzung(clean_config):
     g = clean_config
     game = _vrchat()
     assert g.get_uses_wayland() is None
-    g.set_uses_wayland(True)
-    assert "Wayland" in g.visible_protons(game)[0]["version"]
-    g.set_uses_wayland(False)
-    first = g.visible_protons(game)[0]["version"]
-    assert first.startswith("proton-rtsp") and "Wayland" not in first
+    for wayland in (True, False):
+        g.set_uses_wayland(wayland)
+        protons = g.visible_protons(game)
+        first = protons[0]["version"]
+        assert first.startswith("proton-rtsp") and "Wayland" not in first
+        beta = protons[1]
+        assert "Wayland" in beta["version"] and beta.get("beta")
 
 
 def test_proton_info_links(clean_config):

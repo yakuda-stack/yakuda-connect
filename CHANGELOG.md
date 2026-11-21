@@ -1,6 +1,24 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.5.2 — 2026-11-21
+
+#### 🇩🇪 Deutsch
+
+* **VRChat: proton-rtsp ist wieder Haupt-Empfehlung, Proton-RTSP-Wayland-GE steht als „(Beta)“ darunter** (`beta` in `config/games.json`, games.json 1.3.4).
+* **Neu: Beide RTSP-Builds kommen direkt von GitHub, immer das neueste Release** (`github_repo`, `resolve_latest` in `core/proton_manual_install.py`) — kein ProtonPlus mehr. Fällt die GitHub-API aus, gelten die URLs aus der games.json.
+* **Neu: Proton-GE und proton-cachyos ebenfalls direkt von GitHub, immer das neueste Release.** Bei proton-cachyos wird der passende Build zur CPU gewählt: `x86_64_v3` nur, wenn die CPU es kann, sonst `x86_64`, auf ARM `arm64` (`cpu_x86_level`, `_pick_build`). games.json 1.3.5.
+* **✨ Optimieren nimmt proton-rtsp** und lädt nur, wenn das neueste Release noch nicht installiert ist (`skip_if_current`).
+* **Neu: APK installieren ohne android-tools** öffnet ein Popup mit Installationsmethode; installiert wird über den Tools-Tab, danach läuft die APK-Installation von selbst weiter (`_offer_adb_install` in `core/tabs/dashboard_mixin.py`).
+
+#### 🇬🇧 English
+
+* **VRChat: proton-rtsp is the main recommendation again, Proton-RTSP-Wayland-GE is listed below as “(Beta)”** (`beta` in `config/games.json`, games.json 1.3.4).
+* **New: both RTSP builds come straight from GitHub, always the newest release** (`github_repo`, `resolve_latest` in `core/proton_manual_install.py`) — no ProtonPlus anymore. If the GitHub API fails, the URLs from games.json are used.
+* **New: Proton-GE and proton-cachyos also straight from GitHub, always the newest release.** For proton-cachyos the build matching the CPU is picked: `x86_64_v3` only if the CPU supports it, otherwise `x86_64`, `arm64` on ARM (`cpu_x86_level`, `_pick_build`). games.json 1.3.5.
+* **✨ Optimize uses proton-rtsp** and only downloads if the newest release isn't installed yet (`skip_if_current`).
+* **New: installing the APK without android-tools** opens a popup to pick the install method; it installs via the Tools tab, then the APK install continues automatically (`_offer_adb_install` in `core/tabs/dashboard_mixin.py`).
+
 ### 🚀 v1.5.1 — 2026-11-11
 
 #### 🇩🇪 Deutsch

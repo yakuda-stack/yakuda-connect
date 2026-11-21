@@ -4,7 +4,7 @@
 
 [![Discord](https://img.shields.io/badge/Join_Our_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/ShNKvvZu74)
 [![Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/yakuda_)
-[![Version](https://img.shields.io/badge/Version-v1.5.1-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
+[![Version](https://img.shields.io/badge/Version-v1.5.2-81a1c1?style=for-the-badge)](https://github.com/yakuda-stack/yakuda-connect/releases)
 
 `yakuda-connect` is a powerful configuration hub and dashboard for Linux VR. It eliminates the need for complex terminal commands, allowing you to manage, configure, and launch your WiVRn environment with a single click.
 
@@ -102,7 +102,9 @@ All screenshots: [assets/README.md](assets/README.md)
 * **Steam programs in autostart:** **+ Program → 🎮 Add Steam program …** lists every installed Steam program (no games) and starts it via Steam.
 * **Autostart with an externally started server:** If WiVRn was started outside the app, your autostart apps still start once the headset connects and close when the server is gone (checked at the moments listed above). Turn it off in Settings → Advanced (on by default).
 * **VR Games Library:** The Games tab auto-detects every installed Steam VR game and shows it as a cover tile — with curated Proton profiles and tested launch options for games like VRChat, auto-recommendations for everything else, and one-click **Use** (set Proton version) and **▶ Play** (launch via Steam) buttons.
-* **Wayland or X11 for VRChat:** When you open VRChat in the Games tab, the app asks once whether you use Wayland — on Wayland it recommends [Proton-RTSP-Wayland-GE](https://github.com/Go08er/Proton-RTSP-Wayland-GE), on X11 the regular [proton-rtsp](https://github.com/SpookySkeletons/proton-rtsp). Change it any time via **Session: … · change** above the Proton list.
+* **Proton for VRChat:** the main recommendation is [proton-rtsp](https://github.com/SpookySkeletons/proton-rtsp), [Proton-RTSP-Wayland-GE](https://github.com/Go08er/Proton-RTSP-Wayland-GE) is offered as **Beta**. Both are downloaded straight from GitHub — always the newest release (SHA-512 checked), no ProtonPlus needed. **✨ Optimize** sets proton-rtsp and updates it to the newest release if needed.
+* **Proton-GE & proton-cachyos direct from GitHub:** like RTSP, always the newest release, no ProtonPlus needed. For proton-cachyos the app picks the build that matches your CPU (`x86_64_v3` only if the CPU supports it, otherwise `x86_64`; `arm64` on ARM).
+* **WiVRn APK without adb:** clicking **Download & install APK** without android-tools opens a popup to pick the install method; the install runs via the Tools tab and the APK install continues automatically.
 * **Game settings popup:** hover over a game for a big ▶ (start right away) and "⚙ Settings". Settings open in the middle of the window with collapsible sections: Proton versions (description, Wayland switch, dropdown with Use / Copy / Install), game-specific options and launch options.
 * **VRChat pictures are kept:** when you switch Proton for VRChat, the app offers to move your old pictures to `Pictures/Backup_VRchat/VRchat_<date>` so a fresh Proton prefix doesn't take them with it. Buttons open the pictures folder in the prefix and the backup folder. Video Player Fix & Check point to Proton-RTSP-Wayland-GE-Beta4, which makes VRCVideoCacher unnecessary.
 * **VRChat options:** start straight in VR with `--launch-in-vr`, and make VRChat's cache bigger with a slider — from 30 GB (default) up to 130 GB. More cache = worlds and avatars need re-downloading less often. Saved in VRChat's own `config.json` inside the Proton prefix, applies from the next VRChat start.

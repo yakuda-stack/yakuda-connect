@@ -1853,6 +1853,8 @@ class GamesTabMixin:
             text = installed_tool or proton.get("version", "")
             if proton.get("untested"):
                 text = f"{text} {tr('games_untested_suffix')}"
+            if proton.get("beta"):
+                text = f"{text} {tr('games_beta_suffix')}"
             if proton.get("role") == rec_role:
                 rec_idx = i
                 text = "★ " + text
@@ -1900,6 +1902,8 @@ class GamesTabMixin:
             badge = ((tr("games_recommended_cachyos") if rec_role == "main_cachyos"
                       else tr("games_recommended")) if is_rec
                      else role_labels.get(proton.get("role"), ""))
+            if proton.get("beta"):
+                badge = (badge + "   " if badge else "") + tr("games_beta_badge")
             if i == active_idx:
                 badge = (badge + "   " if badge else "") + tr("games_active_badge")
             lbl_badges.setText(badge)
@@ -2617,11 +2621,12 @@ class GamesTabMixin:
         self.ui.lbl_games_status.setText(tr("games_pp_done") if ok else tr("games_pp_missing"))
         self.optimize_after_proton_install(ok)
 
-    def start_manual_proton_install(self, proton, button=None):
+    def start_manual_proton_install(self, proton, button=None, skip_if_current=False):
         """Laedt einen manuell verteilten Proton-Build (Tarball vom Release).
 
         Laeuft im Worker-Thread: der Download ist je nach Build ueber ein
         Gigabyte gross und wuerde die Oberflaeche sonst einfrieren.
+        skip_if_current: neuestes Release schon da -> nichts laden.
         """
         if getattr(self, "_manual_worker", None) and self._manual_worker.isRunning():
             return
@@ -2630,7 +2635,7 @@ class GamesTabMixin:
             button.setEnabled(False)
         self.ui.lbl_games_status.setText(tr("games_manual_downloading"))
 
-        self._manual_worker = ManualProtonInstallWorker(proton)
+        self._manual_worker = ManualProtonInstallWorker(proton, skip_if_current=skip_if_current)
         self._manual_worker.progress_signal.connect(self._on_manual_progress)
         self._manual_worker.status_signal.connect(self._on_manual_status)
         self._manual_worker.finished_signal.connect(self._on_manual_install_done)
@@ -2643,7 +2648,8 @@ class GamesTabMixin:
             self._detail_status(text)
 
     def _on_manual_status(self, phase):
-        key = {"download": "games_manual_downloading",
+        key = {"resolve":  "games_manual_resolving",
+               "download": "games_manual_downloading",
                "verify":   "games_manual_verifying",
                "extract":  "games_manual_extracting"}.get(phase)
         if key:
@@ -2662,6 +2668,13 @@ class GamesTabMixin:
             QMessageBox.warning(self, tr("games_manual_failed_title"),
                                 tr("games_manual_failed").format(error=msg))
             self.optimize_after_proton_install(False)
+            return
+
+        worker = getattr(self, "_manual_worker", None)
+        if worker is not None and getattr(worker, "already_current", False):
+            self.ui.lbl_games_status.setText(tr("games_manual_current").format(tool=msg))
+            self._detail_status(tr("games_manual_current").format(tool=msg), "#a3be8c")
+            self.optimize_after_proton_install(True)
             return
 
         self.ui.lbl_games_status.setText(tr("games_manual_done").format(tool=msg))

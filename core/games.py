@@ -285,8 +285,10 @@ def _proton_entry(pv_map, pd_map, key, role, desc=None, cachyos_only=False,
     }
     # Manuell installierbare Builds (nicht in AUR/ProtonPlus): Ordner-Praefix
     # zum Erkennen + URLs fuer den Download-Knopf an der Karte.
+    # github_repo: beim Installieren immer das neueste Release holen.
+    # beta: die Karte bekommt ein „(Beta)“ hinter den Namen.
     for field in ("tool_prefix", "download_url", "checksum_url",
-                  "release_url", "manual", "min_version"):
+                  "release_url", "manual", "min_version", "github_repo", "beta"):
         if meta.get(field):
             entry[field] = meta[field]
     if cachyos_only:
@@ -1815,7 +1817,18 @@ def _pinned_ge_meta():
     if not isinstance(meta, dict) or not meta.get("version"):
         return {}
     return {k: meta[k] for k in ("version", "tool_prefix", "min_version", "download_url",
-                                 "checksum_url", "release_url") if meta.get(k)}
+                                 "checksum_url", "release_url", "github_repo")
+            if meta.get(k)}
+
+
+def _pinned_cachyos_meta():
+    """Download-Felder von proton-cachyos aus games.json (CachyOSPro11),
+    damit ungetestete Spiele es genauso direkt von GitHub laden."""
+    meta = ((GAMES_CONFIG or {}).get("proton_versions", {}) or {}).get("CachyOSPro11")
+    if not isinstance(meta, dict):
+        return {}
+    return {k: meta[k] for k in ("download_url", "checksum_url", "release_url",
+                                 "github_repo") if meta.get(k)}
 
 
 def dynamic_protons():
@@ -1837,6 +1850,7 @@ def dynamic_protons():
             "role": "main_cachyos",
             "untested": True,
             "protonplus_runner": "proton-cachyos",
+            **_pinned_cachyos_meta(),
             "desc": {
                 "de": ("Automatische Empfehlung für CachyOS — für dieses Spiel "
                        "noch nicht von uns getestet."),

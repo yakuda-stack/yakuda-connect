@@ -726,6 +726,8 @@ class DashboardMixin:
         # es albern, deswegen abzulehnen — die Datei landet ja bloss im
         # Dateisystem.
         if mode == "install" and not shutil.which("adb"):
+            if self._offer_adb_install():
+                return
             self.ui.lbl_apk_status.setText(tr("apk_no_adb"))
             self.ui.lbl_apk_status.setStyleSheet(
                 "color: #ebcb8b; font-size: 11px; font-weight: bold;")
@@ -745,6 +747,62 @@ class DashboardMixin:
         self._apk_worker.finished_signal.connect(self._on_apk_finished)
         self._release_worker_on_finish("_apk_worker")
         self._apk_worker.start()
+
+    def _offer_adb_install(self):
+        """
+        Fehlt adb, fragt ein Popup nach der Methode und installiert
+        android-tools ueber den Tools-Tab (gleicher Weg wie im Controls-Tab).
+        Danach geht die APK-Installation von selbst weiter.
+
+        True = Installation laeuft, False = abgebrochen / nicht moeglich.
+        """
+        key = "android-tools"
+        if not hasattr(self, "_ask_install_method"):
+            return False
+        worker = getattr(self, "tool_worker", None)
+        if worker is not None and worker.isRunning():
+            QMessageBox.information(self, tr("controls_busy_title"), tr("controls_busy_text"))
+            return False
+        method = self._ask_install_method(key)
+        if not method:
+            return False
+
+        self._ensure_tools_ui()
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return False
+        combo = card.get("combo_method")
+        if combo is not None:
+            idx = combo.findData(method)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+
+        before = worker
+        self._apk_adb_pending = True
+        self.install_tool(key)
+        started = getattr(self, "tool_worker", None)
+        if started is before or started is None:
+            self._apk_adb_pending = False
+            return False
+
+        self.ui.btn_apk_install.setEnabled(False)
+        self.ui.lbl_apk_status.setText(tr("apk_adb_installing"))
+        self.ui.lbl_apk_status.setStyleSheet("color: #88c0d0; font-size: 11px;")
+        return True
+
+    def on_apk_adb_install_finished(self, key, success):
+        """Vom Tools-Tab: android-tools fertig -> APK-Installation fortsetzen."""
+        if key != "android-tools" or not getattr(self, "_apk_adb_pending", False):
+            return
+        self._apk_adb_pending = False
+        self.ui.btn_apk_install.setEnabled(True)
+        if success and shutil.which("adb"):
+            self.start_apk_install()
+            return
+        text = tr("apk_adb_missing_after") if success else tr("apk_adb_failed")
+        self.ui.lbl_apk_status.setText(text)
+        self.ui.lbl_apk_status.setStyleSheet(
+            "color: #ebcb8b; font-size: 11px; font-weight: bold;")
 
     def cancel_apk_install(self):
         if self._apk_worker:

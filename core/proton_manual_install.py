@@ -25,7 +25,9 @@ Drei Dinge, die hier bewusst so geloest sind:
    Transfer soll nicht als halbes Compat-Tool liegenbleiben.
 """
 import hashlib
+import json
 import os
+import re
 import shutil
 import tarfile
 import tempfile
@@ -128,11 +130,171 @@ def _safe_extract(tar, target):
     tar.extractall(target)
 
 
-def install_manual_proton(proton, progress=None, status=None):
+_ARCHIVE_EXTS = (".tar.gz", ".tar.xz", ".tar.zst", ".tgz")
+
+
+def _strip_archive_ext(name):
+    for ext in _ARCHIVE_EXTS:
+        if name.endswith(ext):
+            return name[:-len(ext)]
+    return name
+
+
+# x86-64-Level nach psABI. proton-cachyos gibt es als x86_64 und x86_64_v3;
+# v3 laeuft auf CPUs ohne AVX2 & Co. gar nicht (Illegal instruction).
+_X86_LEVEL_FLAGS = {
+    2: {"cx16", "lahf_lm", "popcnt", "sse4_1", "sse4_2", "ssse3"},
+    3: {"avx", "avx2", "bmi1", "bmi2", "f16c", "fma", "abm", "movbe", "xsave"},
+    4: {"avx512f", "avx512bw", "avx512cd", "avx512dq", "avx512vl"},
+}
+
+
+def cpu_x86_level():
+    """Hoechster x86-64-Level dieser CPU (1-4), 0 wenn nicht x86_64."""
+    if os.uname().machine not in ("x86_64", "amd64"):
+        return 0
+    flags = set()
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if line.startswith("flags"):
+                    flags = set(line.split(":", 1)[1].split())
+                    break
+    except OSError:
+        return 1
+    level = 1
+    for lvl in (2, 3, 4):
+        if _X86_LEVEL_FLAGS[lvl] <= flags:
+            level = lvl
+        else:
+            break
+    return level
+
+
+def _asset_rank(name, machine, x86_level):
+    """Wie gut passt ein Build-Archiv zu diesem Rechner? None = gar nicht.
+
+    Archive ohne Architektur im Namen (proton-rtsp, Wayland-GE) passen
+    immer. Sonst: arm64/aarch64 nur auf ARM, x86_64 auf x86_64, und
+    x86_64_vN nur, wenn die CPU Level N kann — der hoechste passende gewinnt.
+    """
+    low = name.lower()
+    is_arm = "arm64" in low or "aarch64" in low
+    is_x86 = "x86_64" in low or "amd64" in low
+    on_arm = machine in ("aarch64", "arm64")
+    if is_arm:
+        return 1 if on_arm else None
+    if is_x86:
+        if on_arm:
+            return None
+        for lvl in (4, 3, 2):
+            if f"_v{lvl}" in low:
+                return lvl if x86_level >= lvl else None
+        return 1
+    return 0
+
+
+def _pick_build(names):
+    machine = os.uname().machine
+    level = cpu_x86_level()
+    best, best_rank = None, None
+    for n in names:
+        if not n.endswith(_ARCHIVE_EXTS) or _reject_source_archive(n):
+            continue
+        rank = _asset_rank(n, machine, level)
+        if rank is None:
+            continue
+        if best_rank is None or rank > best_rank:
+            best, best_rank = n, rank
+    return best
+
+
+def resolve_latest(repo):
+    """Neuestes Release eines GitHub-Repos als Download-Felder — oder None.
+
+    Die games.json nennt immer einen Stand von gestern; proton-rtsp und der
+    Wayland-Fork erscheinen aber im Wochentakt. Deshalb wird beim Klick auf
+    Installieren das aktuelle Release gefragt. Klappt das nicht (offline,
+    API-Limit), bleiben die in der games.json eingetragenen URLs der Rueckfall.
+
+    Stabile Releases gehen vor; nur wenn es keins gibt, zaehlt auch eine
+    Vorabversion.
+    """
+    url = f"https://api.github.com/repos/{repo}/releases?per_page=10"
+    try:
+        req = urllib.request.Request(
+            url, headers={**_UA, "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            releases = json.loads(r.read().decode("utf-8", "ignore"))
+    except Exception as exc:
+        log.warning("Neuestes Release von %s nicht abrufbar — %s", repo, exc)
+        return None
+    if not isinstance(releases, list):
+        return None
+    usable = [r for r in releases if isinstance(r, dict) and not r.get("draft")]
+    stable = [r for r in usable if not r.get("prerelease")]
+    for rel in (stable or usable):
+        assets = {a.get("name", ""): a.get("browser_download_url", "")
+                  for a in rel.get("assets") or []}
+        build = _pick_build(assets)
+        if not build:
+            continue
+        out = {
+            "version": _strip_archive_ext(build),
+            "download_url": assets[build],
+            "release_url": rel.get("html_url", ""),
+            "tool_root": _strip_archive_ext(build),
+        }
+        checksum = assets.get(build + ".sha512sum") \
+            or assets.get(_strip_archive_ext(build) + ".sha512sum")
+        out["checksum_url"] = checksum or ""
+        return out
+    return None
+
+
+_ARCH_SUFFIX = re.compile(r"[-_](x86_64(_v\d)?|amd64|aarch64|arm64)$", re.IGNORECASE)
+
+
+def _already_installed(root):
+    """Liegt dieses Release schon in einem compatibilitytools.d?
+
+    Der Ordner im Archiv heisst nicht immer wie das Archiv: GE packt
+    „GE-Proton11-12-x86_64.tar.gz“ nach „GE-Proton11-12“. Deshalb wird auch
+    der Name ohne Architektur-Endung geprueft.
+    """
+    names = {root, _ARCH_SUFFIX.sub("", root)}
+    for d in games_db.compat_tools_dirs():
+        for n in names:
+            if os.path.isfile(os.path.join(d, n, "compatibilitytool.vdf")):
+                return True
+    return False
+
+
+def install_manual_proton(proton, progress=None, status=None, skip_if_current=False):
     """Laedt, prueft und entpackt einen manuell verteilten Proton-Build.
 
-    Rueckgabe: (ok: bool, meldung_oder_ordnername: str)
+    Mit ``github_repo`` im Eintrag wird immer das NEUESTE Release geholt.
+    ``skip_if_current``: liegt genau dieses Release schon da, wird nichts
+    geladen (Optimieren-Knopf — sonst bei jedem Klick ein Gigabyte).
+
+    Rueckgabe: (ok: bool, meldung_oder_ordnername: str, schon_aktuell: bool)
     """
+    if proton.get("github_repo"):
+        if status:
+            status("resolve")
+        latest = resolve_latest(proton["github_repo"])
+        if latest:
+            if skip_if_current and _already_installed(latest["tool_root"]):
+                return True, latest["tool_root"], True
+            proton = {**proton, **latest}
+            if not latest.get("checksum_url"):
+                proton.pop("checksum_url", None)
+
+    ok, msg = _install_from_url(proton, progress, status)
+    return ok, msg, False
+
+
+def _install_from_url(proton, progress=None, status=None):
     url = proton.get("download_url")
     if not url:
         return False, "keine download_url hinterlegt"
@@ -204,14 +366,18 @@ class ManualProtonInstallWorker(QThread):
     status_signal = QtSignal(str)
     finished_signal = QtSignal(bool, str)
 
-    def __init__(self, proton):
+    def __init__(self, proton, skip_if_current=False):
         super().__init__()
         self.proton = proton
+        self.skip_if_current = skip_if_current
+        self.already_current = False
 
     def run(self):
-        ok, msg = install_manual_proton(
+        ok, msg, current = install_manual_proton(
             self.proton,
             progress=self.progress_signal.emit,
             status=self.status_signal.emit,
+            skip_if_current=self.skip_if_current,
         )
+        self.already_current = current
         self.finished_signal.emit(ok, msg)

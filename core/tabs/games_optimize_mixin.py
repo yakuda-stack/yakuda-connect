@@ -129,6 +129,13 @@ class GamesOptimizeMixin:
         # Proton zuletzt: kann Rueckfragen stellen (Backup, Steam beenden)
         if rec is None:
             return
+        # Builds mit github_repo (proton-rtsp, Wayland-GE): immer auf das
+        # neueste Release bringen. Liegt es schon da, laedt der Worker nichts
+        # und setzt es nur.
+        if rec.get("github_repo") and rec.get("download_url"):
+            self._optimize_pending_proton = (appid, rec)
+            self.start_manual_proton_install(rec, skip_if_current=True)
+            return
         _tool, found, _k = games_db.resolve_steam_tool(rec)
         if found:
             if not self._is_active_proton(appid, rec):
@@ -151,5 +158,5 @@ class GamesOptimizeMixin:
             return
         appid, rec = pending
         _tool, found, _k = games_db.resolve_steam_tool(rec)
-        if found:
+        if found and not self._is_active_proton(appid, rec):
             self._use_proton(appid, rec)

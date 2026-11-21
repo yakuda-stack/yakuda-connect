@@ -836,3 +836,6 @@ class ToolsTabMixin:
         # Kam die Installation aus dem Controls-Tab? Dann dort Schalter setzen.
         if hasattr(self, "on_control_install_finished"):
             self.on_control_install_finished(key, success)
+        # Kam die Installation vom APK-Knopf (adb fehlte)? Dann dort weiter.
+        if hasattr(self, "on_apk_adb_install_finished"):
+            self.on_apk_adb_install_finished(key, success)
