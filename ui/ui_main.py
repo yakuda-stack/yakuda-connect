@@ -3100,7 +3100,26 @@ class Ui_MainWindow:
             QPushButton:hover { background-color: #81a1c1; }
             QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
         """)
-        card_layout.addWidget(btn_install)
+        btn_replace = None
+        if tool.get("replaces"):
+            btn_replace = QPushButton(tr("tools_replace_btn").format(name=tool["replaces"]))
+            btn_replace.setCursor(Qt.PointingHandCursor)
+            btn_replace.setFixedHeight(26)
+            btn_replace.setToolTip(tr("tools_replace_tip"))
+            btn_replace.setStyleSheet("""
+                QPushButton { background-color: #b48ead; color: white; font-weight: bold;
+                              font-size: 11px; border-radius: 4px; border: none; }
+                QPushButton:hover { background-color: #c9a6c2; }
+                QPushButton:disabled { background-color: #3b4252; color: #4c566a; }
+            """)
+            btn_replace.setVisible(False)
+            install_row = QHBoxLayout()
+            install_row.setSpacing(6)
+            install_row.addWidget(btn_install, 1)
+            install_row.addWidget(btn_replace, 1)
+            card_layout.addLayout(install_row)
+        else:
+            card_layout.addWidget(btn_install)
 
         # Tools ohne jeden Installationsweg von hier aus (XR HOTAS: nur ueber
         # cargo, VIVE Hub: nur als Tarball von HTC) bekommen statt des toten
@@ -3140,6 +3159,7 @@ class Ui_MainWindow:
             "lbl_desc":     lbl_desc,
             "lbl_note":     lbl_note,
             "btn_install":  btn_install,
+            "btn_replace":  btn_replace,
             "btn_copy":     btn_copy,
             "btn_start":    btn_start,
             "cmd_widget":   cmd_widget,

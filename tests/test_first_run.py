@@ -22,6 +22,7 @@ def chain(window, monkeypatch):
     w.are_critical_packages_missing = lambda: False
     calls = []
     monkeypatch.setattr(vopt, "pending_steps", lambda: [])
+    monkeypatch.setattr(vopt, "realtime_state", lambda: vopt.RT_OK)
     state = {"wayvr_async": False, "installing": False}
     # Echte Paketpruefung/Installation ist umgebungsabhaengig (Dauer, yay …)
     # — hier zaehlt nur die Logik der Kette. installation_running() selbst
@@ -166,6 +167,7 @@ def test_startup_jump_runs_chain_exactly_once(packages_present, window, monkeypa
     w.installation_running = lambda: False
     calls = []
     monkeypatch.setattr(vopt, "pending_steps", lambda: [])
+    monkeypatch.setattr(vopt, "realtime_state", lambda: vopt.RT_OK)
     w.maybe_offer_wayvr = lambda: calls.append("wayvr") or False
     w.maybe_offer_tour = lambda: calls.append("tour")
     with open(vopt.APP_CONFIG_FILE, "w") as fh:

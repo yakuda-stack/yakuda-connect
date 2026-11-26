@@ -68,10 +68,13 @@ class DashboardOptimizeMixin:
         self._optimize_manual = manual
         try:
             steps = vopt.pending_steps()
+            rt_state = vopt.realtime_state()
         except Exception as exc:                               # noqa: BLE001
             log.warning("[Optimize] Pruefung fehlgeschlagen: %s", exc)
             self._optimize_next(manual)
             return
+        if rt_state in (vopt.RT_RELOGIN, vopt.RT_UNSUPPORTED) and vopt.priority_binary():
+            QMessageBox.information(self, tr("optimize_title"), tr(f"optimize_rt_{rt_state}"))
         if not steps:
             log.info("[Optimize] Alle Fixes schon aktiv — kein Popup.")
             if manual:
@@ -79,12 +82,24 @@ class DashboardOptimizeMixin:
             self._optimize_next(manual)
             return
 
-        items = "\n".join("• " + tr(f"optimize_item_{s}") for s in steps)
-        answer = QMessageBox.question(
-            self, tr("optimize_title"),
-            tr("optimize_ask_manual" if manual else "optimize_ask").format(items=items),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-        if answer != QMessageBox.Yes:
+        if vopt.RTSETUP in steps:
+            answer = QMessageBox.question(
+                self, tr("optimize_title"), tr("optimize_rt_ask"),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if answer != QMessageBox.Yes:
+                steps.remove(vopt.RTSETUP)
+
+        others = [s for s in steps if s != vopt.RTSETUP]
+        if others:
+            items = "\n".join("• " + tr(f"optimize_item_{s}") for s in others)
+            answer = QMessageBox.question(
+                self, tr("optimize_title"),
+                tr("optimize_ask_manual" if manual else "optimize_ask").format(items=items),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if answer != QMessageBox.Yes:
+                steps = [s for s in steps if s == vopt.RTSETUP]
+
+        if not steps:
             self._optimize_next(manual)
             return
 
@@ -115,6 +130,8 @@ class DashboardOptimizeMixin:
         key = "optimize_done" if all_ok else "optimize_partial"
         box = QMessageBox.information if all_ok else QMessageBox.warning
         box(self, tr("optimize_title"), tr(key).format(items="\n".join(lines)))
+        if results.get(vopt.RTSETUP, (False,))[0]:
+            QMessageBox.information(self, tr("optimize_title"), tr("optimize_rt_relogin"))
         self._optimize_next(getattr(self, "_optimize_manual", False))
 
     def _optimize_next(self, manual):

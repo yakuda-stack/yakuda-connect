@@ -38,6 +38,7 @@ import proc
 from ui.advanced_panel import AdvancedBox
 import vr_autotune as autotune
 import vr_environment as venv
+import vr_optimize as vopt
 from logging_setup import get_logger
 from translations import tr
 
@@ -383,6 +384,12 @@ class VrRuntimeWidget(QWidget):
         path = self._wivrn_server_path()
         if not path:
             QMessageBox.warning(self, tr("error"), tr("streaming_prio_missing"))
+            return
+        rt_state = vopt.realtime_state()
+        if rt_state != vopt.RT_OK:
+            key = ("streaming_prio_needs_setup" if rt_state == vopt.RT_SETUP
+                   else f"optimize_rt_{rt_state}")
+            QMessageBox.information(self, tr("optimize_title"), tr(key))
             return
         try:
             # Absoluter Pfad: pkexec startet mit aufgeraeumter Umgebung, und

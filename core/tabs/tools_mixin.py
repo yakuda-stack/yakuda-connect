@@ -362,6 +362,7 @@ class ToolsTabMixin:
         cache[key] = status
         self._save_programs_cache(cache)
         self._render_tool_card(key, status)
+        self._update_replace_buttons()
         # Nach Installation/Entfernung kann die Karte aus dem aktiven
         # Status-Filter herausfallen (oder neu hineinfallen).
         self.apply_tools_filter()
@@ -724,6 +725,103 @@ class ToolsTabMixin:
         # danach den echten Zustand (yay -Q entscheidet, nicht der Returncode).
         self._refresh_single_tool(key)
 
+    # ------------------------------------------------------------------
+    #  Ersetzen (z. B. VRCX -> VRCX-0, Feld "replaces" in tools.json)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _is_tool_installed(status):
+        status = status or {}
+        return any(status.get(k) for k in (
+            "appimage_installed", "pm_installed", "flatpak_installed",
+            "cargo_installed", "script_installed", "steam_installed"))
+
+    def _update_replace_buttons(self):
+        """Ersetzen-Knopf nur zeigen, wenn das alte Tool installiert ist."""
+        for card in self.ui.tool_cards.values():
+            btn = card.get("btn_replace")
+            if btn is None:
+                continue
+            old = self.ui.tool_cards.get(card["tool"].get("replaces"))
+            if not old:
+                btn.setVisible(False)
+                continue
+            btn.setText(tr("tools_replace_btn").format(name=old["tool"].get("name", "")))
+            btn.setVisible(self._is_tool_installed(old.get("status")))
+
+    def replace_tool(self, key):
+        """Neues Tool installieren (falls noetig), danach das alte entfernen — ohne dessen Daten."""
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        tool = card.get("tool", {})
+        old_key = tool.get("replaces")
+        old_card = self.ui.tool_cards.get(old_key)
+        if not old_card:
+            return
+        new_name = tool.get("name", key)
+        old_name = old_card["tool"].get("name", old_key)
+        text = tr("tools_replace_text").format(old=old_name, new=new_name)
+        note = programs.tool_text(tool, "replace_note", get_language())
+        if note:
+            text += "\n\n" + note
+        reply = QMessageBox.question(
+            self, tr("tools_replace_title").format(old=old_name, new=new_name), text,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if reply != QMessageBox.Yes:
+            return
+        card["btn_replace"].setEnabled(False)
+        if self._is_tool_installed(card.get("status")):
+            self._remove_replaced_tool(key)
+            return
+        self._replace_pending = key
+        self.install_tool(key)
+
+    def _remove_replaced_tool(self, key):
+        """Das alte Tool entfernen, Config/Daten bleiben liegen."""
+        card = self.ui.tool_cards.get(key)
+        old_key = card["tool"].get("replaces")
+        old_card = self.ui.tool_cards.get(old_key)
+        status = old_card.get("status") or {}
+        old_tool = old_card.get("tool", {})
+        if status.get("appimage_installed"):
+            try:
+                appimg.uninstall(old_tool)
+            except Exception as e:
+                log.warning(f"[Tools] Ersetzen: Entfernen von {old_key} fehlgeschlagen: {e}")
+            self._refresh_single_tool(old_key)
+            self._on_replace_finished(key, True)
+        elif status.get("pm_installed") and old_tool.get("pkg"):
+            helper = status.get("pm_helper") or "yay"
+            old_card["btn_install"].setEnabled(False)
+            old_card["btn_install"].setText(tr("tools_deleting"))
+            self.tool_worker = RemoveWorker([old_tool["pkg"]], helper=helper)
+            self.tool_worker.finished_signal.connect(
+                lambda ok, k=key, o=old_key: (self._on_tool_removed(o, ok, False),
+                                              self._on_replace_finished(k, ok)))
+            self.tool_worker.start()
+        else:
+            QMessageBox.information(
+                self, tr("tools_replace_title").format(
+                    old=old_tool.get("name", old_key), new=card["tool"].get("name", key)),
+                tr("tools_replace_manual").format(old=old_tool.get("name", old_key)))
+            self._on_replace_finished(key, False)
+
+    def _on_replace_finished(self, key, success):
+        card = self.ui.tool_cards.get(key)
+        if not card:
+            return
+        if card.get("btn_replace") is not None:
+            card["btn_replace"].setEnabled(True)
+        self._update_replace_buttons()
+        if not success:
+            return
+        old_card = self.ui.tool_cards.get(card["tool"].get("replaces")) or {}
+        QMessageBox.information(
+            self, card["tool"].get("name", key),
+            tr("tools_replace_done").format(
+                old=(old_card.get("tool") or {}).get("name", ""),
+                new=card["tool"].get("name", key)))
+
     def _refresh_single_tool(self, key):
         """Berechnet den Status eines einzelnen Tools neu (lokal/PM) und rendert ihn."""
         card = self.ui.tool_cards.get(key)
@@ -817,10 +915,16 @@ class ToolsTabMixin:
         if success:
             self._refresh_single_tool(key)
             self.fetch_tool_icon(key)
+            if getattr(self, "_replace_pending", None) == key:
+                self._replace_pending = None
+                self._remove_replaced_tool(key)
             # Nach WayVR-Installation: Hinweis auf das bessere UI-Design in den Settings
             if key == "wayvr" and not self.wayvr_install_finished(True):
                 QMessageBox.information(self, tr("overlay_popup_title"), tr("overlay_popup_text"))
         else:
+            if getattr(self, "_replace_pending", None) == key:
+                self._replace_pending = None
+                self._on_replace_finished(key, False)
             if key == "wayvr":
                 self.wayvr_install_finished(False)
             msg = tr("tools_install_error")

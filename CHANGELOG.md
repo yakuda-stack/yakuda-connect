@@ -1,6 +1,30 @@
 # Changelog - Yakuda Connect
 
 
+### 🚀 v1.5.3 — 2026-11-26
+
+#### 🇩🇪 Deutsch
+
+* **Fix: WiVRn wurde beim Start eines VR-Spiels beendet (SIGKILL)**, wenn `CAP_SYS_NICE` gesetzt war, das System aber keine Echtzeit-Priorität erlaubt (RTPRIO 0, z. B. normales Arch). Das ⚡ Performance-Setup prüft das jetzt vorher (`realtime_state` in `core/vr_optimize.py`).
+* **Neu: Echtzeit-Rechte einrichten.** Bei RTPRIO 0 fragt das Performance-Setup in einem eigenen Popup, ob `realtime-privileges` installiert und der Nutzer zur Gruppe `realtime` hinzugefügt werden soll (neuer Schritt `rtsetup`, im selben pkexec). Nach dem Neu-Anmelden wird die VR-Priorität gesetzt. Bei „Nein“ wird kein `setcap` gesetzt. Ohne pacman wird die VR-Priorität ausgelassen.
+* **Der Einzel-Button „VR-Priorität aktivieren“** prüft dasselbe (`enable_vr_priority` in `ui/vr_runtime_widget.py`).
+* **VRChat: proton-rtsp ist immer vorausgewählt**, auch wenn gerade die Beta-Variante aktiv ist. ✨ Optimieren setzt weiterhin das neueste proton-rtsp.
+* **Neu: blaues BETA-Icon** neben Proton-RTSP-Wayland-GE statt „(Beta)“ hinter dem Namen (`ui/beta_badge.py`). Das Badge unter der Auswahl ist ebenfalls blau.
+* **Neu im Tools-Tab: VRCX-0**, das in Rust neu geschriebene VRCX (Beta, [Map1en/VRCX-0](https://github.com/Map1en/VRCX-0)). Installierbar als AppImage, über das AUR (`vrcx-0-bin`) oder als RPM, immer das neueste Release inklusive Vorab-Versionen (`config/tools.json` 1.3.4).
+* **Neu: Knopf „⇄ VRCX ersetzen“** auf der VRCX-0-Karte, sichtbar, solange VRCX installiert ist. Nach einer Rückfrage wird VRCX-0 installiert (falls nötig) und danach VRCX deinstalliert, ohne dessen Daten zu löschen. VRCX-0 übernimmt die VRCX-Datenbank beim ersten Start selbst. Allgemein über das neue Feld `replaces` in `tools.json` (`replace_tool` in `core/tabs/tools_mixin.py`).
+* Tests: `realtime_state` in `test_first_run.py` ersetzt.
+
+#### 🇬🇧 English
+
+* **Fix: WiVRn got killed (SIGKILL) when a VR game started**, if `CAP_SYS_NICE` was set but the system doesn't allow realtime priority (RTPRIO 0, e.g. plain Arch). ⚡ Performance Setup now checks this first (`realtime_state` in `core/vr_optimize.py`).
+* **New: set up realtime permissions.** With RTPRIO 0, Performance Setup asks in its own popup whether to install `realtime-privileges` and add the user to the `realtime` group (new step `rtsetup`, in the same pkexec). After logging in again, VR priority is set. On “No”, `setcap` is not set. Without pacman, VR priority is skipped.
+* **The single “Enable VR Priority” button** checks the same (`enable_vr_priority` in `ui/vr_runtime_widget.py`).
+* **VRChat: proton-rtsp is always preselected**, even if the beta variant is currently active. ✨ Optimize still sets the newest proton-rtsp.
+* **New: blue BETA icon** next to Proton-RTSP-Wayland-GE instead of “(Beta)” after the name (`ui/beta_badge.py`). The badge below the picker is blue too.
+* **New in the Tools tab: VRCX-0**, the Rust rewrite of VRCX (beta, [Map1en/VRCX-0](https://github.com/Map1en/VRCX-0)). Installable as AppImage, from the AUR (`vrcx-0-bin`) or as RPM, always the newest release including pre-releases (`config/tools.json` 1.3.4).
+* **New: “⇄ Replace VRCX” button** on the VRCX-0 card, visible while VRCX is installed. After a confirmation, VRCX-0 gets installed (if needed) and then VRCX gets uninstalled without deleting its data. VRCX-0 imports the VRCX database by itself on first start. Generic via the new `replaces` field in `tools.json` (`replace_tool` in `core/tabs/tools_mixin.py`).
+* Tests: `realtime_state` replaced in `test_first_run.py`.
+
 ### 🚀 v1.5.2 — 2026-11-21
 
 #### 🇩🇪 Deutsch

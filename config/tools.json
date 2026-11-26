@@ -1,7 +1,7 @@
 {
   "info": {
-    "version": "1.3.3",
-    "last_updated": "2026-10-07"
+    "version": "1.3.4",
+    "last_updated": "2026-11-26"
   },
   "_comment": "Werkzeugliste des Tools-Tabs. Feldbedeutung siehe Kopf von core/programs.py. Eigene Eintraege gehoeren NICHT hier hinein, sondern in die Nutzerkopie unter ~/.config/yakuda-connect/config/tools.json — die wird zusaetzlich eingelesen und ueberlebt jedes App-Update.",
   "apps": [
@@ -53,6 +53,34 @@
         "~/.config/autostart/VRCX.desktop"
       ],
       "category": "vrchat"
+    },
+    {
+      "key": "vrcx-0",
+      "name": "VRCX-0",
+      "pkg": "vrcx-0-bin",
+      "desc": "Komplett neu geschriebenes VRCX in Rust (Tauri): schneller und leichter, mit eingebautem KI-Assistenten und MCP-Server. Freunde verfolgen, Begegnungen loggen, Favoriten verwalten. Noch Beta.",
+      "desc_eng": "A full rewrite of VRCX in Rust (Tauri): faster and lighter, with a built-in AI assistant and MCP server. Keep up with friends, log who you meet, manage favorites. Still beta.",
+      "desc_fr": "Une réécriture complète de VRCX en Rust (Tauri) : plus rapide et plus léger, avec assistant IA intégré et serveur MCP. Suivre ses amis, enregistrer ses rencontres, gérer ses favoris. Encore en bêta.",
+      "start_cmd": "vrcx-0",
+      "link": "https://github.com/Map1en/VRCX-0",
+      "install_methods": [
+        "appimage",
+        "aur",
+        "rpm"
+      ],
+      "github_repo": "Map1en/VRCX-0",
+      "asset_match": "_linux_x86_64.AppImage",
+      "rpm_asset_match": "_linux_x86_64.rpm",
+      "include_prerelease": true,
+      "icon_url": "https://raw.githubusercontent.com/Map1en/VRCX-0/master/src-tauri/icons/128x128.png",
+      "config_dirs": [
+        "com.vrcx-0.app"
+      ],
+      "category": "vrchat",
+      "replaces": "vrcx",
+      "replace_note": "VRCX-0 übernimmt deine VRCX-Datenbank und Einstellungen beim ersten Start automatisch. Die alte Datenbank wird dabei nicht verändert.",
+      "replace_note_eng": "VRCX-0 imports your VRCX database and settings automatically on first start. The old database is never modified.",
+      "replace_note_fr": "VRCX-0 importe automatiquement votre base de données et vos paramètres VRCX au premier lancement. L'ancienne base de données n'est jamais modifiée."
     },
     {
       "key": "protonplus",

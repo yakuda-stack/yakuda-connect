@@ -24,8 +24,13 @@ Bewusst ohne Qt: testbar ohne Anzeige. Die Dialoge baut
 core/tabs/dashboard_optimize_mixin.py.
 """
 import datetime
+import getpass
+import grp
 import os
 import re
+import resource
+import shlex
+import shutil
 
 import firewall as fw
 import netbuffers as nbuf
@@ -48,8 +53,17 @@ FIREWALL = "firewall"
 NETBUFFERS = "netbuffers"
 RUNTIME = "runtime"
 PRIORITY = "priority"
+RTSETUP = "rtsetup"
 
-ROOT_STEPS = (FIREWALL, NETBUFFERS, PRIORITY)
+ROOT_STEPS = (FIREWALL, NETBUFFERS, RTSETUP, PRIORITY)
+
+RT_PACKAGE = "realtime-privileges"
+RT_GROUP = "realtime"
+
+RT_OK = "ok"
+RT_SETUP = "setup"
+RT_RELOGIN = "relogin"
+RT_UNSUPPORTED = "unsupported"
 
 
 # --------------------------------------------------------------------------- #
@@ -130,6 +144,25 @@ def priority_needed():
     return bool(path) and not has_vr_priority(path)
 
 
+def _in_realtime_group():
+    try:
+        group = grp.getgrnam(RT_GROUP)
+    except KeyError:
+        return False
+    return getpass.getuser() in group.gr_mem
+
+
+def realtime_state():
+    """RT_OK, RT_SETUP, RT_RELOGIN oder RT_UNSUPPORTED."""
+    if resource.getrlimit(resource.RLIMIT_RTPRIO)[0] != 0:
+        return RT_OK
+    if _in_realtime_group():
+        return RT_RELOGIN
+    if not shutil.which("pacman"):
+        return RT_UNSUPPORTED
+    return RT_SETUP
+
+
 def runtime_needed():
     """WiVRn ist aktive Runtime UND die active_runtime.json ist korrekt."""
     if not oxr.find_wivrn_libs()[0]:
@@ -149,8 +182,11 @@ def pending_steps():
         steps.append(NETBUFFERS)
     if runtime_needed():
         steps.append(RUNTIME)
-    if priority_needed():
+    rt = realtime_state()
+    if priority_needed() and rt == RT_OK:
         steps.append(PRIORITY)
+    if rt == RT_SETUP and priority_binary():
+        steps.append(RTSETUP)
     return steps
 
 
@@ -166,6 +202,10 @@ def _step_scripts(steps):
             out.append((FIREWALL, fw._script(kind)))
     if NETBUFFERS in steps:
         out.append((NETBUFFERS, nbuf._script(True)))
+    if RTSETUP in steps:
+        user = shlex.quote(getpass.getuser())
+        out.append((RTSETUP,
+                    f"pacman -S --needed --noconfirm {RT_PACKAGE} && usermod -aG {RT_GROUP} {user}"))
     if PRIORITY in steps:
         path = priority_binary()
         if path:

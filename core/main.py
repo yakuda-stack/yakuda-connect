@@ -42,7 +42,7 @@ import webbrowser
 # scripts/bump_version.py haelt sie automatisch mit core/version.py gleich,
 # und der Smoke-Test bricht ab, falls beide auseinanderlaufen oder das Muster
 # mehr als einmal vorkommt.
-APP_VERSION = "v1.5.2"
+APP_VERSION = "v1.5.3"
 
 # Community-Links (Settings -> "Community & Updates").
 # HIER werden Discord und Ko-fi gepflegt — es gibt keine zweite Stelle im
@@ -1364,6 +1364,10 @@ class VRApp(DashboardMixin, DashboardOptimizeMixin, DashboardWayVRMixin, TourMix
             card["btn_start"].clicked.connect(
                 lambda checked=False, k=key: self.start_tool(k)
             )
+            if card.get("btn_replace") is not None:
+                card["btn_replace"].clicked.connect(
+                    lambda checked=False, k=key: self.replace_tool(k)
+                )
             self._populate_method_combo(card)
         self.ui.btn_tools_check.clicked.connect(self.start_tools_update_check)
         # Filterleiste erst hier aufbauen: sie liest die Kategorien aus den

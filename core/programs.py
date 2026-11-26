@@ -56,6 +56,11 @@ Installationsmethoden (distro-abhängig automatisch gefiltert):
                      Gestartet wird über core/tool_launcher.py.
   remove_entries   : Vom Programm selbst angelegte .desktop-/Autostart-Dateien,
                      die bei Installation/Deinstallation entfernt werden (Pfade mit ~).
+  replaces         : key eines anderen Tools, das dieses ersetzt (VRCX-0 -> "vrcx").
+                     Die Karte bekommt neben „Installieren“ einen Knopf
+                     „⇄ <Name> ersetzen“: installiert dieses Tool (falls noetig)
+                     und entfernt danach das alte — dessen Daten/Config bleiben.
+  replace_note / replace_note_eng / replace_note_fr : Zusatz im Ersetzen-Popup.
   note / note_eng / note_fr : Optionaler Hinweis (klein, kursiv, gelb) unter der
                      Beschreibung — z. B. Installations-Hinweise für Nutzer,
                      denen keine Methode zur Verfügung steht (kein AppImage

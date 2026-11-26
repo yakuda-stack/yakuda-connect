@@ -1837,7 +1837,9 @@ class GamesTabMixin:
         combo = QComboBox()
         combo.setMinimumWidth(260)
         from ui.opaque_combo import make_opaque
+        from ui.beta_badge import ICON_SIZE, beta_html, beta_icon
         make_opaque(combo)                  # sonst scheint der Inhalt durch die Liste
+        combo.setIconSize(ICON_SIZE)
         active_idx, rec_idx = -1, 0
         tool_names = []
         for i, proton in enumerate(protons):
@@ -1853,8 +1855,6 @@ class GamesTabMixin:
             text = installed_tool or proton.get("version", "")
             if proton.get("untested"):
                 text = f"{text} {tr('games_untested_suffix')}"
-            if proton.get("beta"):
-                text = f"{text} {tr('games_beta_suffix')}"
             if proton.get("role") == rec_role:
                 rec_idx = i
                 text = "★ " + text
@@ -1862,7 +1862,10 @@ class GamesTabMixin:
             if sel and sel in (proton.get("version"), installed_tool):
                 active_idx = i
                 text += "  ✓"
-            combo.addItem(text)
+            if proton.get("beta"):
+                combo.addItem(beta_icon(), text)
+            else:
+                combo.addItem(text)
         pick_row.addWidget(combo, 1)
 
         btn_use = QPushButton(tr("games_use_btn"))
@@ -1903,7 +1906,7 @@ class GamesTabMixin:
                       else tr("games_recommended")) if is_rec
                      else role_labels.get(proton.get("role"), ""))
             if proton.get("beta"):
-                badge = (badge + "   " if badge else "") + tr("games_beta_badge")
+                badge = (badge + "   " if badge else "") + beta_html(tr("games_beta_badge"))
             if i == active_idx:
                 badge = (badge + "   " if badge else "") + tr("games_active_badge")
             lbl_badges.setText(badge)
@@ -1950,7 +1953,8 @@ class GamesTabMixin:
         btn_inst.clicked.connect(lambda _=False: do_install())
         btn_info.clicked.connect(
             lambda _=False: btn_info._url and QDesktopServices.openUrl(QUrl(btn_info._url)))
-        combo.setCurrentIndex(active_idx if active_idx >= 0 else rec_idx)
+        active_is_beta = active_idx >= 0 and (protons[active_idx] or {}).get("beta")
+        combo.setCurrentIndex(active_idx if active_idx >= 0 and not active_is_beta else rec_idx)
         update_view()
         box.addWidget(sec)
 

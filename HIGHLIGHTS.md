@@ -1,6 +1,22 @@
 # Highlights - Yakuda Connect
 
 
+### 🚀 v1.5.3 — 2026-11-26
+
+#### 🇩🇪 Deutsch
+
+* **Kein Abbruch mehr beim Spielstart:** Auf Systemen ohne Echtzeit-Rechte (z. B. normales Arch) wurde WiVRn durch die VR-Priorität beim Start eines Spiels beendet. Das Performance-Setup prüft das jetzt und richtet die Rechte auf Wunsch ein (`realtime-privileges`, einmal neu anmelden).
+* **VRChat:** proton-rtsp ist immer vorausgewählt, die Wayland-Variante trägt ein blaues **BETA**-Icon.
+* **Neu im Tools-Tab: VRCX-0**, das schnellere VRCX in Rust (Beta) – als AppImage, aus dem AUR oder als RPM. Mit **⇄ VRCX ersetzen** wechselst du mit einem Klick, deine VRCX-Daten bleiben erhalten.
+
+#### 🇬🇧 English
+
+* **No more disconnects when a game starts:** on systems without realtime permissions (e.g. plain Arch), VR priority caused WiVRn to be killed when a game started. Performance Setup now checks this and sets up the permissions if you want (`realtime-privileges`, log in again once).
+* **VRChat:** proton-rtsp is always preselected, the Wayland variant gets a blue **BETA** icon.
+* **New in the Tools tab: VRCX-0**, the faster VRCX rewritten in Rust (beta) – as AppImage, from the AUR or as RPM. **⇄ Replace VRCX** switches over in one click, your VRCX data is kept.
+
+---
+
 ### 🚀 v1.5.2 — 2026-11-21
 
 #### 🇩🇪 Deutsch
