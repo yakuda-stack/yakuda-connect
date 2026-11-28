@@ -12,7 +12,7 @@
 
 
 
-🦐 **Rust Rewrite** I'm working on rewriting it in Rust, and since I'm using less AI and Rust is also more complicated, it's taking longer. But you'll get better performance in return, my friends OwO
+🦐 **Rust Rewrite** I'm working on rewriting it in Rust, and since I'm using less AI and Rust is also more complicated, it's taking longer. But you'll get better performance in return, my friends OwO — [see the progress](#-rust-rewrite--progress)
 
 ### 🐧 Tested systems
 
@@ -390,6 +390,48 @@ The full changelog lives in its own file — it is kept in both English and Germ
 ➡️ **[CHANGELOG.md](CHANGELOG.md)**
 
 🧭 For contributors: **[ARCHITEKTUR.md](ARCHITEKTUR.md)** (German) maps every tab to the files that hold its logic.
+
+---
+
+## 🦀 Rust Rewrite — Progress
+
+> 🚧 **Work in progress, not released yet.** The Python version above stays the version you install and use. When the Rust version is ready, the Python version moves into a `legacy` folder in this repo (the curl installer keeps working), and the AUR package switches to Rust.
+
+<table>
+  <tr>
+    <td><b>Installation</b><br><img src="assets/rust/install.png" alt="Rust – Installation" width="300"/></td>
+    <td><b>Dashboard</b><br><img src="assets/rust/dash.png" alt="Rust – Dashboard" width="300"/></td>
+    <td><b>Tools</b><br><img src="assets/rust/tools.png" alt="Rust – Tools" width="300"/></td>
+  </tr>
+</table>
+
+### ✅ Already working
+
+| Tab | What's in |
+|---|---|
+| **Installation** | Distro detection, component list with versions and updates, install / update / remove (AUR, dnf, apt, emerge, Flatpak), xrizer from GitHub where there's no package, WiVRn APK for the headset via adb |
+| **Dashboard** | Start / stop the WiVRn server, headset card (USB / Wi-Fi), paired headsets, pairing with PIN popup, connect via USB (also automatically), options |
+| **Streaming** | Encoder (Auto / nvenc / vaapi / Vulkan / x264), graphics card selection |
+| **Tools** | Tool list (same `tools.json` as Python), installed status with source and version, ▶ Start |
+| **App** | English, German, French (switch while running), GPU or software renderer |
+
+### 🔄 What changed compared to the Python version
+
+- **One package manager for everything** — no more source choice per component. On Arch xrizer comes from the AUR too; GitHub only where there's no package.
+- **AUR helpers:** yay, paru, pikaur and trizen. Shelly support was dropped. No AUR helper? The app offers to install paru (CachyOS via pacman, Arch via `paru-bin`).
+- **Flatpak on Arch / CachyOS** is opt-in ("Offer Flatpak") with a warning about its limits.
+- **Tabs stay locked until all components are installed** (a WiVRn Flatpak unlocks them too).
+- **Faster start:** once everything is installed, the app opens straight on the Dashboard and checks in the background.
+- **New Dashboard layout:** server and headset side by side, collapsible cards, small (i) hints instead of long texts. The GPU selection moved to the Streaming tab.
+- **SteamVR tracked devices** (Lighthouse) options with an extrapolation slider, plus a "Restart now" hint when a change needs a server restart.
+- **The WiVRn server is also stopped on Ctrl+C or a closed terminal**, not only when closing the window.
+- **Streaming:** resolution, bitrate, codec and foveated encoding are gone — since WiVRn 25.12 they're set in the headset. The encoder is written in the current WiVRn format.
+- **Tools started from the app keep running** when you close yakuda-connect.
+- **New config folder** `~/.config/yakuda-connect-rust/` — the old settings can be imported on first start (planned).
+
+### ⏳ Still to come
+
+Games, Controls, the rest of Settings, Autostart, installing tools from the Tools tab, the rest of the Streaming tab (connection settings, OpenVR compatibility) and the app self-update.
 
 ---
 
